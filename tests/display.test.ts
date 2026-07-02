@@ -460,6 +460,21 @@ describe('scope, MIDI indicator, program loads', () => {
     expect(calls).toContain('stroke')
   })
 
+  it('scope keeps repainting while the param overlay is active', () => {
+    const { store, display, calls } = make()
+    pump()
+    store.setParam(P.CUTOFF, 500, 'ui')
+    pump()
+    expect(display.debugState.screen).toBe('overlay')
+    const data = new Float32Array(256)
+    for (let i = 0; i < data.length; i++) data[i] = Math.sin((i / 256) * Math.PI * 8)
+    calls.length = 0
+    display.scopeFrame(data) // no param change — frame alone must repaint
+    pump()
+    expect(calls).toContain('stroke')
+    expect(display.debugState.screen).toBe('overlay')
+  })
+
   it('setMidiActive(true) shows the MIDI dot and auto-clears after ~150ms', () => {
     const { display, texts } = make()
     pump()

@@ -153,7 +153,7 @@ export class Display {
     })
     store.onSeq(() => this.scheduleRender())
     store.onPlayhead(() => {
-      if (this.screen === 'home') this.scheduleRender()
+      if (this.screen !== 'menu') this.scheduleRender()
     })
     store.onRecChange(() => this.onRecEvent())
 
@@ -167,7 +167,9 @@ export class Display {
   /** Latest post-FX mono frame from the engine (~256 samples, ~20fps). */
   scopeFrame(data: Float32Array): void {
     this.scope = data
-    if (this.screen === 'home') this.scheduleRender()
+    // The param overlay renders on top of the home screen, scope included —
+    // keep repainting for every frame unless the menu is open.
+    if (this.screen !== 'menu') this.scheduleRender()
   }
 
   /** Small MIDI-activity dot on the status line; auto-clears (~150ms). */

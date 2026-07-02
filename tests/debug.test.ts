@@ -44,7 +44,10 @@ describe('engine SERVICE MODE taps', () => {
     expect(info.on).toBe(true)
     expect(info.note).toBe(64)
     expect(info.amp).toBeGreaterThan(0)
-    expect(Math.abs(info.drift)).toBeLessThan(6)
+    expect(Math.abs(info.drift1)).toBeLessThan(6)
+    expect(Math.abs(info.drift2)).toBeLessThan(6)
+    // Independent per-VCO drift: distinct seeds must not track each other.
+    expect(info.drift1).not.toBe(info.drift2)
     e.noteOff(64)
   })
 })
@@ -61,10 +64,10 @@ describe('DebugPanel', () => {
       taps,
       postFx: new Float32Array(256),
       voices: [
-        { note: 60, on: true, amp: 0.8, drift: 1.2 },
-        { note: 64, on: true, amp: 0.5, drift: -2.4 },
-        { note: 0, on: false, amp: 0, drift: 0 },
-        { note: 0, on: false, amp: 0, drift: 0 },
+        { note: 60, on: true, amp: 0.8, drift1: 1.2, drift2: -0.7 },
+        { note: 64, on: true, amp: 0.5, drift1: -2.4, drift2: 0.3 },
+        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0 },
+        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0 },
       ],
       load: 0.31,
       tapped: 1,
@@ -90,8 +93,8 @@ describe('DebugPanel', () => {
     expect(p.el.querySelectorAll('.xd-svc-lane')[1].classList.contains('is-tapped')).toBe(true)
     expect(p.el.querySelector('.xd-svc-htext')!.textContent).toBe('31%')
     const drifts = [...p.el.querySelectorAll('.xd-svc-drift-text')].map((n) => n.textContent)
-    expect(drifts[0]).toBe('+1.2¢')
-    expect(drifts[1]).toBe('-2.4¢')
+    expect(drifts[0]).toBe('+1.2 -0.7¢')
+    expect(drifts[1]).toBe('-2.4 +0.3¢')
   })
 
   it('close button fires onClose; null 2d context never throws', () => {

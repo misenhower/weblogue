@@ -69,7 +69,11 @@ export class Voice {
   private readonly ampEg: AdsrEg
   private readonly modEg: AdEg
   private readonly lfo: Lfo
-  private readonly drift: Drift
+  // Independent per-VCO drift like the hardware's two physical analog
+  // oscillators (they beat against each other); the digital MULTI engine is
+  // deliberately drift-free.
+  private readonly drift1: Drift
+  private readonly drift2: Drift
 
   // --- pitch state ---
   private _note = 60 // semitone used for filter keytrack
@@ -132,7 +136,9 @@ export class Voice {
     this.ampEg = new AdsrEg(sr)
     this.modEg = new AdEg(sr)
     this.lfo = new Lfo(sr)
-    this.drift = new Drift(sr, ((voiceIndex | 0) + 1) * 0x9e3779b9)
+    const vi = (voiceIndex | 0) + 1
+    this.drift1 = new Drift(sr, vi * 2 * 0x9e3779b9)
+    this.drift2 = new Drift(sr, (vi * 2 + 1) * 0x9e3779b9)
   }
 
   /* ------------------------------------------------------------- events -- */
@@ -152,7 +158,8 @@ export class Voice {
     this.modEg.gateOn(retrigger)
     if (retrigger) {
       this.multi.noteOn()
-      this.drift.noteOn()
+      this.drift1.noteOn()
+      this.drift2.noteOn()
       if (this.lfoKeySync || this.lfoMode === LFO_MODE.ONE_SHOT) this.lfo.trigger()
     }
   }
@@ -194,7 +201,8 @@ export class Voice {
   tapV2 = 0
   tapMix = 0
   tapFilt = 0
-  lastDrift = 0
+  lastDrift1 = 0
+  lastDrift2 = 0
   lastAmp = 0
 
   get active(): boolean {
@@ -388,7 +396,8 @@ export class Voice {
 
   tick(): number {
     // Modulators.
-    const driftC = this.drift.tick()
+    const drift1C = this.drift1.tick()
+    const drift2C = this.drift2.tick()
     const lfoV = this.lfo.tick()
     const egV = this.modEg.tick()
     const ampV = this.ampEg.tick()
@@ -416,10 +425,10 @@ export class Voice {
     const lp2 = to !== TO_MULTI ? lfoPitch : 0
     const lpM = to === TO_ALL || to === TO_MULTI ? lfoPitch : 0
 
-    const det = this.detuneCents + driftC
-    const f1 = baseHz * this.oct1 * pow2((this.pitch1Cents + det + egAll + lp1) * CENT)
-    const f2 = baseHz * this.oct2 * pow2((this.pitch2Cents + det + eg2 + lp2) * CENT)
-    const fM = baseHz * this.octM * pow2((det + egAll + lpM) * CENT)
+    const det = this.detuneCents
+    const f1 = baseHz * this.oct1 * pow2((this.pitch1Cents + det + drift1C + egAll + lp1) * CENT)
+    const f2 = baseHz * this.oct2 * pow2((this.pitch2Cents + det + drift2C + eg2 + lp2) * CENT)
+    const fM = baseHz * this.octM * pow2((det + egAll + lpM) * CENT) // digital: no drift
 
     // LFO -> SHAPE on the routed oscillators only.
     const lfoShape = this.lfoTarget === LT_SHAPE ? this.lfoInt01 * LFO_MAX_SHAPE * lfoV : 0
@@ -464,7 +473,8 @@ export class Voice {
       this.tapV2 = ch2
       this.tapMix = x
       this.tapFilt = y
-      this.lastDrift = driftC
+      this.lastDrift1 = drift1C
+      this.lastDrift2 = drift2C
       this.lastAmp = ampV
     }
 

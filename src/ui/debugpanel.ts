@@ -24,7 +24,8 @@ interface Lane {
   led: HTMLElement
   note: HTMLElement
   ampFill: HTMLElement
-  driftNeedle: HTMLElement
+  driftNeedle1: HTMLElement
+  driftNeedle2: HTMLElement
   driftText: HTMLElement
   row: HTMLElement
 }
@@ -111,15 +112,17 @@ export class DebugPanel {
       amp.appendChild(ampFill)
       const drift = document.createElement('div')
       drift.className = 'xd-svc-drift'
-      const driftNeedle = document.createElement('div')
-      driftNeedle.className = 'xd-svc-drift-needle'
-      drift.appendChild(driftNeedle)
+      const driftNeedle1 = document.createElement('div')
+      driftNeedle1.className = 'xd-svc-drift-needle'
+      const driftNeedle2 = document.createElement('div')
+      driftNeedle2.className = 'xd-svc-drift-needle xd-svc-drift-needle--v2'
+      drift.append(driftNeedle1, driftNeedle2)
       const driftText = document.createElement('span')
       driftText.className = 'xd-svc-drift-text'
-      driftText.textContent = '+0.0¢'
+      driftText.textContent = '+0.0 +0.0¢'
       row.append(led, name, note, amp, drift, driftText)
       lanes.appendChild(row)
-      this.lanes.push({ led, note, ampFill, driftNeedle, driftText, row })
+      this.lanes.push({ led, note, ampFill, driftNeedle1, driftNeedle2, driftText, row })
     }
 
     /* --- health strip ---------------------------------------------------- */
@@ -162,9 +165,12 @@ export class DebugPanel {
       lane.note.textContent = v.on ? noteName(v.note) : '--'
       const amp = Math.max(0, Math.min(1, v.amp))
       lane.ampFill.style.width = (amp * 100).toFixed(1) + '%'
-      const drift = Math.max(-5, Math.min(5, v.drift))
-      lane.driftNeedle.style.left = (50 + drift * 10).toFixed(1) + '%'
-      lane.driftText.textContent = (v.drift >= 0 ? '+' : '') + v.drift.toFixed(1) + '¢'
+      const d1 = Math.max(-5, Math.min(5, v.drift1))
+      const d2 = Math.max(-5, Math.min(5, v.drift2))
+      lane.driftNeedle1.style.left = (50 + d1 * 10).toFixed(1) + '%'
+      lane.driftNeedle2.style.left = (50 + d2 * 10).toFixed(1) + '%'
+      lane.driftText.textContent =
+        (v.drift1 >= 0 ? '+' : '') + v.drift1.toFixed(1) + ' ' + (v.drift2 >= 0 ? '+' : '') + v.drift2.toFixed(1) + '¢'
     }
 
     const pct = Math.round(m.load * 100)

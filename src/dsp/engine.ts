@@ -1359,9 +1359,9 @@ export class Engine {
   }
 
   /** Per-voice state for the debug panel's voice lanes. */
-  debugVoiceInfo(i: number): { note: number; on: boolean; amp: number; drift: number } {
+  debugVoiceInfo(i: number): { note: number; on: boolean; amp: number; drift1: number; drift2: number } {
     const v = this.voices[i]
-    return { note: v.note, on: v.active, amp: v.lastAmp, drift: v.lastDrift }
+    return { note: v.note, on: v.active, amp: v.lastAmp, drift1: v.lastDrift1, drift2: v.lastDrift2 }
   }
 
   /** Post-FX peak since the last call (meter); resets on read. */

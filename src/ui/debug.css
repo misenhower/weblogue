@@ -154,10 +154,13 @@
   border-radius: 1px;
   transition: left 60ms linear;
 }
+.xd-svc-drift-needle--v2 {
+  background: #8fb8e0;
+}
 .xd-svc-drift-text {
   font-size: 9px;
   font-variant-numeric: tabular-nums;
-  width: 44px;
+  width: 74px;
   text-align: right;
   color: #e0c98f;
 }

@@ -26,7 +26,8 @@ export interface DbgVoice {
   note: number
   on: boolean
   amp: number // amp EG level 0..1
-  drift: number // cents
+  drift1: number // VCO1 drift, cents
+  drift2: number // VCO2 drift, cents (independent, like the hardware)
 }
 
 export type FromEngine =

@@ -1,0 +1,348 @@
+/* ==================================================================
+   minilogue xd panel replica — layout + panel-specific chrome.
+   Relies on the CSS variables + component styling in theme.css
+   (and kbd.css for the keybed/joystick); imports nothing itself.
+   ================================================================== */
+
+/* ---------------------------------------------------------------- */
+/* scale wrapper + chassis                                           */
+/* ---------------------------------------------------------------- */
+
+.xd-panel-scale {
+  --xd-scale: 1;
+  width: 1440px;
+  transform: scale(var(--xd-scale));
+  transform-origin: top left;
+}
+
+.xd-panel-root {
+  width: 1440px;
+  box-sizing: border-box;
+  padding: 16px 18px 18px;
+  border-radius: 8px;
+}
+
+.xd-panel-root *,
+.xd-panel-root *::before,
+.xd-panel-root *::after {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------- */
+/* rows + sections                                                   */
+/* ---------------------------------------------------------------- */
+
+.xd-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.xd-row + .xd-row {
+  margin-top: 12px;
+}
+
+.xd-row-a > .xd-section,
+.xd-row-b > .xd-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+.xd-ctl-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-evenly;
+  gap: 8px;
+}
+
+.xd-ctl-col {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* keep silkscreen labels compact so sections pack tight */
+.xd-panel-root .xd-knob-label {
+  max-width: 68px;
+}
+
+.xd-panel-root .xd-selector-pos {
+  font-size: 8px;
+}
+
+/* ---------------------------------------------------------------- */
+/* MASTER / VOICE MODE                                               */
+/* ---------------------------------------------------------------- */
+
+.xd-sec-master {
+  min-width: 168px;
+}
+
+.xd-sec-vm {
+  min-width: 128px;
+}
+
+/* ---------------------------------------------------------------- */
+/* MULTI ENGINE                                                      */
+/* ---------------------------------------------------------------- */
+
+.xd-multi-typeblock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.xd-multi-display,
+.xd-fx-display {
+  background: var(--xd-oled);
+  color: var(--xd-oled-fg);
+  border: 1px solid #000;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.9),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.xd-multi-display {
+  min-width: 72px;
+  padding: 4px 8px;
+}
+
+/* the multi TYPE encoder is a small thumb wheel on hardware */
+.xd-sec-multi .xd-encoder-svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* ---------------------------------------------------------------- */
+/* FILTER                                                            */
+/* ---------------------------------------------------------------- */
+
+.xd-filter-row {
+  align-items: center;
+}
+
+.xd-filter-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------- */
+/* EFFECTS                                                           */
+/* ---------------------------------------------------------------- */
+
+.xd-fx-btns {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.xd-fx-display {
+  min-width: 92px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: center;
+}
+
+.xd-fx-line1 {
+  opacity: 0.55;
+  font-size: 8px;
+}
+
+.xd-fx-line2 {
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- */
+/* PROGRAM / DISPLAY block                                           */
+/* ---------------------------------------------------------------- */
+
+.xd-sec-prog {
+  min-width: 442px;
+  flex: 0 0 auto;
+}
+
+.xd-prog-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.xd-prog-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1 1 auto;
+  background: var(--xd-oled);
+  border: 1px solid #000;
+  border-radius: 3px;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.9);
+  padding: 4px 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--xd-oled-fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.xd-prog-num {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.xd-prog-name {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xd-midi-ind {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.xd-prog-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.xd-display-slot {
+  width: 330px;
+  height: 140px;
+  flex: 0 0 auto;
+  background: var(--xd-oled);
+  border: 1px solid #000;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 2px 10px rgba(0, 0, 0, 0.95),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.xd-prog-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 140px;
+}
+
+/* ---------------------------------------------------------------- */
+/* SEQUENCER strip                                                   */
+/* ---------------------------------------------------------------- */
+
+.xd-row-seq {
+  align-items: center;
+  border: 1px solid var(--xd-line);
+  border-radius: 2px;
+  padding: 8px 12px;
+  gap: 16px;
+}
+
+.xd-seq-transport {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.xd-seq-steps {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+/* hardware groups the 16 step keys in fours */
+.xd-seq-steps .xd-step:nth-child(4n + 1):not(:first-child) {
+  margin-left: 14px;
+}
+
+/* ---------------------------------------------------------------- */
+/* keybed row — charcoal chassis lip with joystick at left           */
+/* ---------------------------------------------------------------- */
+
+.xd-row-kbd {
+  align-items: flex-end;
+  justify-content: center;
+  gap: 26px;
+  background: linear-gradient(180deg, #1b1b1f 0%, #121215 30%, #0e0e11 100%);
+  border: 1px solid #08080a;
+  border-radius: 5px;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
+  padding: 14px 20px 0;
+}
+
+.xd-joy-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 14px;
+}
+
+.xd-joy-caption {
+  font-size: 8px;
+}
+
+/* ---------------------------------------------------------------- */
+/* LED behaviors: step-rec blink + WRITE flash + SHIFT hint          */
+/* ---------------------------------------------------------------- */
+
+@keyframes xd-led-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.12;
+  }
+}
+
+.xd-ledbtn.xd-blink .xd-ledbtn-led::after {
+  animation: xd-led-blink 0.8s step-start infinite;
+}
+
+@keyframes xd-led-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.xd-ledbtn.xd-flash .xd-ledbtn-led::after {
+  animation: xd-led-flash 0.45s ease-out 1;
+}
+
+/* subtle full-panel hint while SHIFT is active */
+.xd-shift-on .xd-sec-prog .xd-section-title {
+  color: var(--xd-led-white);
+}

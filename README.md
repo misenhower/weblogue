@@ -1,0 +1,60 @@
+# minilogue xd — web
+
+A feature-complete replica of the **Korg minilogue xd** hybrid synthesizer that runs entirely in the
+browser. The whole signal path is modeled in TypeScript inside an AudioWorklet — no samples, no external
+libraries.
+
+## Quick start
+
+```bash
+npm install
+npm run dev        # http://localhost:5199
+```
+
+Click **POWER ON** (browsers require a user gesture to start audio), then play:
+
+- **Mouse/touch**: click the keys (vertical position sets velocity), drag knobs (Shift = fine,
+  double-click = default), use the joystick for pitch bend / modulation.
+- **Computer keyboard**: `a w s e d f t g y h u j k o l p ;` play notes, `z` / `x` shift octave.
+- **MIDI**: plug in a controller — notes, pitch bend, sustain, and the minilogue xd's own CC map
+  (including Korg's 10-bit CC#63 LSB scheme) are supported.
+
+## What's modeled
+
+| Section | Details |
+|---|---|
+| Voices | 4-voice paraphonic architecture, mono-summed pre-FX like the hardware |
+| VCO 1/2 | PolyBLEP anti-aliased SQR/TRI/SAW with per-wave SHAPE morphing, BLEP-corrected hard sync, ring mod, audio-rate cross modulation, per-voice analog drift |
+| Multi Engine | 4 noise modes (High/Low/Peak/Decim), all 16 VPM types with the 6 menu trim parameters, 4 built-in "user" oscillators (MORPH / SPRSAW / PWMCLS / ORGAN) |
+| Filter | 2-pole zero-delay-feedback lowpass, tanh-in-the-loop resonance, 3-position drive at 2× oversampling, keytrack centered on C4 |
+| Modulation | ADSR amp EG, AD mod EG (PITCH / PITCH 2 / CUTOFF targets), per-voice LFO (1-shot half-cycle / normal / BPM-sync with Korg's 16 divisions), joystick assigns |
+| Effects | Mod FX (8 choruses, 3 ensembles, 8 phasers, 8 flangers + rotary/trem), 12 delay types, 10 reverb types (incl. octave-up Riser and octave-down Submarine), independent dry/wet per section |
+| Voice modes | POLY (with DUO zone), UNISON detune, all 14 CHORD types, ARP with latch and all 13 pattern types |
+| Sequencer | 16 steps, 8 notes/step, step + realtime recording, ties, active-step skipping, swing, and 4 motion lanes with the hardware's 5-points-per-step smoothing |
+| Programs | 500 slots persisted in localStorage, 32 original factory-style presets, program write/browse |
+
+Parameter behavior follows Korg's official documentation exactly where published — the piecewise VCO
+pitch knob curve, the quadratic EG INT law, chord/arp knob zones, LFO BPM divisions, and the MIDI CC map
+all come from the official minilogue xd MIDI implementation. The compiled hardware spec lives in
+[docs/xd-spec.md](docs/xd-spec.md).
+
+The one intentional departure: the hardware's user oscillator/FX slots load compiled ARM binaries via
+Korg's logue SDK, which can't run in a browser — the USR slots ship with built-in custom oscillators
+instead.
+
+## Development
+
+```bash
+npm test           # 486 vitest tests: DSP rendering, mapping tables, sequencer timing, UI, MIDI decode
+npm run build      # typecheck + production bundle
+```
+
+Architecture: `src/shared/` holds the parameter registry, hardware mapping curves, program format, and
+the UI↔engine message protocol; `src/dsp/` is the engine (plain TS classes, worklet-glued in
+`processor.ts`); `src/ui/` is the framework-free panel; `src/state/` is the program store; `src/midi/`
+is Web MIDI input.
+
+## Disclaimer
+
+Unofficial fan project for education and fun. Not affiliated with or endorsed by KORG Inc.
+"minilogue" is a trademark of KORG Inc. All presets are original sound design.

@@ -1,0 +1,195 @@
+/* minilogue xd replica — keyboard + joystick
+   Dark hardware panel, slim white keys with flat fronts. */
+
+/* ---------------------------------------------------------------- keyboard */
+
+.xd-kbd {
+  --xd-kbd-h: 150px;
+  display: inline-block;
+  padding: 8px 9px 12px;
+  background: linear-gradient(180deg, #141416 0%, #1c1c1f 100%);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 4px 14px rgba(0, 0, 0, 0.45);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.xd-kbd-keys {
+  position: relative;
+  height: var(--xd-kbd-h);
+  touch-action: none;
+  /* dark overhang strip above the keybed, like the panel lip */
+  border-top: 4px solid #0c0c0e;
+  background: #0c0c0e;
+}
+
+.xd-key {
+  position: absolute;
+  top: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* Slim white key: flat front, subtle rounding, faint side bevels. */
+.xd-key--white {
+  height: 100%;
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    #cfccc6 0%,
+    #eae8e3 6%,
+    #f6f4f0 45%,
+    #f1efe9 88%,
+    #dcdad4 96%,
+    #c8c6c0 100%
+  );
+  border-radius: 0 0 2.5px 2.5px;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset -1px 0 0 rgba(0, 0, 0, 0.12),
+    inset 0 6px 7px -5px rgba(0, 0, 0, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.1);
+}
+
+.xd-key--white.xd-key--down {
+  background: linear-gradient(180deg, #b9b6b0 0%, #d7d5cf 30%, #e3e1db 100%);
+  box-shadow:
+    inset 0 5px 9px rgba(0, 0, 0, 0.32),
+    inset 1px 0 0 rgba(0, 0, 0, 0.08),
+    inset -1px 0 0 rgba(0, 0, 0, 0.14);
+  transform: translateY(1px);
+}
+
+/* Black key: overlaps whites, glossy top, tapered look via bevels. */
+.xd-key--black {
+  height: 62%;
+  z-index: 2;
+  background: linear-gradient(
+    180deg,
+    #47474b 0%,
+    #1a1a1d 12%,
+    #222226 78%,
+    #2e2e33 90%,
+    #0a0a0c 100%
+  );
+  border-radius: 0 0 2.5px 2.5px;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.09),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7),
+    inset 0 -3px 3px rgba(255, 255, 255, 0.04),
+    0 3px 4px rgba(0, 0, 0, 0.55);
+}
+
+.xd-key--black.xd-key--down {
+  height: 61%;
+  background: linear-gradient(180deg, #29292c 0%, #121215 15%, #17171a 100%);
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7),
+    0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Sequencer / arp LED feedback: warm red glow at the key front. */
+.xd-key--white.xd-key--lit {
+  box-shadow:
+    inset 0 -18px 16px -10px rgba(255, 64, 40, 0.6),
+    inset 0 -2px 2px rgba(255, 90, 60, 0.5),
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset -1px 0 0 rgba(0, 0, 0, 0.12),
+    inset 0 6px 7px -5px rgba(0, 0, 0, 0.4);
+}
+
+.xd-key--black.xd-key--lit {
+  box-shadow:
+    inset 0 -14px 14px -8px rgba(255, 70, 45, 0.75),
+    inset 1px 0 0 rgba(255, 255, 255, 0.09),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7),
+    0 3px 4px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------------------------------------------------------------- joystick */
+
+.xd-joy {
+  display: inline-block;
+  padding: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.xd-joy-well {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 42%, #232327 0%, #17171a 55%, #101013 100%);
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    inset 2px 0 4px rgba(0, 0, 0, 0.4),
+    inset -2px 0 4px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+  touch-action: none;
+  cursor: grab;
+}
+
+.xd-joy-well:active {
+  cursor: grabbing;
+}
+
+/* Subtle engraved cross-hair. */
+.xd-joy-cross {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.xd-joy-cross::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9%;
+  bottom: 9%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.7) 50%, rgba(255, 255, 255, 0.06) 50%);
+}
+
+.xd-joy-cross::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 9%;
+  right: 9%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.7) 50%, rgba(255, 255, 255, 0.06) 50%);
+}
+
+/* Round rubber-capped stick. Positioned via inline left/top from JS. */
+.xd-joy-stick {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 28%, #737379 0%, #3a3a3f 45%, #232327 70%, #101013 100%);
+  box-shadow:
+    0 4px 7px rgba(0, 0, 0, 0.65),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.xd-joy-stick:active {
+  cursor: grabbing;
+}

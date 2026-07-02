@@ -1,0 +1,60 @@
+/* OLED display module (minimal chrome; canvas draws the screen itself). */
+.xd-oled {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--xd-oled, #0a0c0a);
+  border: 1px solid #101014;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.xd-oled-screen {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.xd-oled-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.xd-oled-glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04), transparent 35%),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.7);
+}
+.xd-oled-soft {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--xd-panel-edge, #151517);
+  border-top: 1px solid #000;
+}
+.xd-oled-softbtn {
+  flex: 1;
+  font: 600 8.5px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.08em;
+  color: var(--xd-legend-dim, #909097);
+  background: #1d1d21;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 4px 0;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.xd-oled-softbtn:hover {
+  color: var(--xd-legend, #d8d8dc);
+}
+.xd-oled-softbtn.is-active,
+.xd-oled-softbtn:active {
+  color: var(--xd-oled-fg, #e8f4e8);
+  background: #2a2a30;
+  border-color: #55555c;
+}

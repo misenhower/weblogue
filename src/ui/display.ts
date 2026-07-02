@@ -493,11 +493,12 @@ export class Display {
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H)
     ctx.globalAlpha = 1
     ctx.shadowBlur = 0
-    if (this.screen === 'overlay' && PARAMS[this.overlayId]) {
-      this.renderOverlay(ctx, fg, bg)
-    } else if (this.screen === 'menu') {
+    if (this.screen === 'menu') {
       this.renderMenu(ctx, fg, bg)
     } else {
+      // 'overlay' renders as HOME with a param readout in the header, so the
+      // oscilloscope stays visible while a value is being adjusted (as on
+      // the hardware).
       this.renderHome(ctx, fg)
     }
   }
@@ -526,10 +527,26 @@ export class Display {
     const store = this.store
     ctx.fillStyle = fg
 
-    /* program slot + name */
-    const slotStr = String(store.slot + 1).padStart(3, '0')
-    this.text(ctx, slotStr, 10, 26, 22)
-    this.text(ctx, store.program.name.toUpperCase(), 62, 25, 15)
+    /* header: program slot + name, or the param readout while adjusting */
+    const overlayMeta = this.screen === 'overlay' ? PARAMS[this.overlayId] : undefined
+    if (overlayMeta) {
+      const v = store.getParam(overlayMeta.id)
+      this.text(ctx, overlayMeta.label, 10, 25, 11, { alpha: 0.85 })
+      this.text(ctx, formatParam(overlayMeta.id, v), SCREEN_W - 10, 26, 15, { align: 'right' })
+      if (overlayMeta.kind === 'knob') {
+        const span = overlayMeta.max - overlayMeta.min || 1
+        const t = Math.max(0, Math.min(1, (v - overlayMeta.min) / span))
+        ctx.globalAlpha = 0.25
+        ctx.fillRect(8, 30, SCREEN_W - 16, 2)
+        ctx.globalAlpha = 1
+        ctx.fillStyle = fg
+        ctx.fillRect(8, 30, Math.round((SCREEN_W - 16) * t), 2)
+      }
+    } else {
+      const slotStr = String(store.slot + 1).padStart(3, '0')
+      this.text(ctx, slotStr, 10, 26, 22)
+      this.text(ctx, store.program.name.toUpperCase(), 62, 25, 15)
+    }
     ctx.globalAlpha = 0.3
     ctx.fillRect(8, 33, SCREEN_W - 16, 1)
     ctx.globalAlpha = 1
@@ -632,24 +649,6 @@ export class Display {
   }
 
   /* ---------------------------- OVERLAY ----------------------------- */
-
-  private renderOverlay(ctx: CanvasRenderingContext2D, fg: string, bg: string): void {
-    const meta = PARAMS[this.overlayId]
-    const v = this.store.getParam(meta.id)
-    ctx.fillStyle = fg
-    this.text(ctx, meta.label, SCREEN_W / 2, 34, 13, { align: 'center', alpha: 0.85 })
-    this.text(ctx, formatParam(meta.id, v), SCREEN_W / 2, 76, 30, { align: 'center' })
-    if (meta.kind === 'knob') {
-      const span = meta.max - meta.min || 1
-      const t = Math.max(0, Math.min(1, (v - meta.min) / span))
-      ctx.globalAlpha = 0.25
-      ctx.fillRect(30, 92, SCREEN_W - 60, 5)
-      ctx.globalAlpha = 1
-      ctx.fillStyle = fg
-      ctx.fillRect(30, 92, Math.round((SCREEN_W - 60) * t), 5)
-    }
-    void bg
-  }
 
   /* ------------------------------ MENU ------------------------------ */
 

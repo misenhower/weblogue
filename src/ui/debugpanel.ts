@@ -193,13 +193,24 @@ export class DebugPanel {
     ctx.globalAlpha = 1
     ctx.lineWidth = 1.4
     ctx.beginPath()
+    // Trigger on a rising zero crossing inside the first third of the frame
+    // so periodic waveforms hold still; fall back to the frame start.
     const n = data.length
-    for (let x = 0; x < n; x++) {
-      let s = data[x]
+    const searchSpan = Math.floor(n / 3)
+    let trig = 0
+    for (let x = 1; x < searchSpan; x++) {
+      if (data[x - 1] <= 0 && data[x] > 0) {
+        trig = x
+        break
+      }
+    }
+    const win = n - searchSpan
+    for (let x = 0; x < win; x++) {
+      let s = data[trig + x]
       if (!Number.isFinite(s)) s = 0
       if (s > 1.4) s = 1.4
       else if (s < -1.4) s = -1.4
-      const px = (x / (n - 1)) * w
+      const px = (x / (win - 1)) * w
       const py = h / 2 - s * (h / 2 - 3) * 0.71
       if (x === 0) ctx.moveTo(px, py)
       else ctx.lineTo(px, py)

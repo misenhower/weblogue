@@ -13,7 +13,7 @@ import type { ToEngine } from '../shared/messages'
 
 const SCOPE_INTERVAL_S = 0.05
 const VOICES_INTERVAL_S = 0.03
-const DBG_INTERVAL_S = 0.085
+const DBG_INTERVAL_S = 0.033 // ~30 fps service-mode telemetry
 
 const nowMs: () => number =
   typeof globalThis.performance?.now === 'function'

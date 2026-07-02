@@ -184,6 +184,19 @@ export class Voice {
     this.ampEg.kill()
   }
 
+  /**
+   * SERVICE MODE taps: when tapOn, tick() stores its intermediate stages and
+   * modulator values here for the debug panel. Off = zero overhead beyond one
+   * predictable branch per sample.
+   */
+  tapOn = false
+  tapV1 = 0
+  tapV2 = 0
+  tapMix = 0
+  tapFilt = 0
+  lastDrift = 0
+  lastAmp = 0
+
   get active(): boolean {
     return this.ampEg.active
   }
@@ -445,6 +458,15 @@ export class Voice {
     this.filter.setCutoff(fc)
     let y = this.filter.tick(x)
     if (this.multiPost) y += this.lvlM * oM // Post VCF: multi bypasses filter
+
+    if (this.tapOn) {
+      this.tapV1 = o1
+      this.tapV2 = ch2
+      this.tapMix = x
+      this.tapFilt = y
+      this.lastDrift = driftC
+      this.lastAmp = ampV
+    }
 
     // VCA: amp EG x amp velocity (0 = velocity ignored) x voice gain.
     const ampVelGain = 1 + (this.vel01 - 1) * this.ampVel01

@@ -6,11 +6,13 @@ import './ui/theme.css'
 import './ui/kbd.css'
 import './ui/panel.css'
 import './ui/display.css'
+import './ui/debug.css'
 import processorUrl from './dsp/processor.ts?worker&url'
 import { Store } from './state/store'
 import { FACTORY_PRESETS } from './state/presets'
 import { Panel } from './ui/panel'
 import { Display } from './ui/display'
+import { DebugPanel } from './ui/debugpanel'
 import { attachComputerKeyboard } from './ui/keyboard'
 import { MidiInput } from './midi/midi'
 import { resolveMidiParam } from './midi/resolve'
@@ -115,6 +117,9 @@ async function powerOn(): Promise<void> {
       case 'voices':
         panel.setVoices(m.notes)
         break
+      case 'dbg':
+        debugPanel?.update(m)
+        break
     }
   }
 
@@ -127,6 +132,40 @@ async function powerOn(): Promise<void> {
   void initMidi()
 }
 overlay.querySelector('button')!.addEventListener('click', () => void powerOn())
+
+// --- SERVICE MODE (debug drawer): ` key or the corner chip ---------------
+let debugPanel: DebugPanel | null = null
+let debugOpen = false
+
+const svcChip = document.createElement('button')
+svcChip.className = 'xd-svc-chip'
+svcChip.textContent = 'SERVICE'
+svcChip.addEventListener('click', () => toggleDebug())
+app.appendChild(svcChip)
+
+function toggleDebug(on = !debugOpen): void {
+  if (on === debugOpen) return
+  debugOpen = on
+  if (on) {
+    if (!debugPanel) {
+      debugPanel = new DebugPanel()
+      debugPanel.onClose = () => toggleDebug(false)
+    }
+    app.appendChild(debugPanel.el)
+    svcChip.style.display = 'none'
+  } else if (debugPanel) {
+    debugPanel.el.remove()
+    svcChip.style.display = ''
+  }
+  send({ t: 'debug', on })
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== '`' || e.repeat) return
+  const t = document.activeElement
+  if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
+  toggleDebug()
+})
 
 // --- MIDI ----------------------------------------------------------------
 function midiActivity(): void {

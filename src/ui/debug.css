@@ -1,0 +1,217 @@
+/* SERVICE MODE drawer */
+.xd-svc {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 60;
+  width: 820px;
+  max-width: calc(100vw - 24px);
+  background: #101014;
+  border: 1px solid #3a3a40;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+  padding: 10px 12px 12px;
+  color: var(--xd-legend, #d8d8dc);
+  font-family: Futura, 'Century Gothic', 'Avenir Next Condensed', system-ui;
+}
+.xd-svc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.xd-svc-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #8fe0a0;
+}
+.xd-svc-close {
+  background: none;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  color: var(--xd-legend-dim, #909097);
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.xd-svc-close:hover {
+  color: var(--xd-legend, #d8d8dc);
+}
+
+/* block-diagram flow */
+.xd-svc-flow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.xd-svc-tap {
+  flex: 1;
+  min-width: 0;
+}
+.xd-svc-scope {
+  width: 100%;
+  height: 52px;
+  display: block;
+  background: var(--xd-oled, #0a0c0a);
+  border: 1px solid #26262b;
+  border-radius: 3px;
+}
+.xd-svc-label {
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--xd-legend-dim, #909097);
+  text-align: center;
+  margin-top: 3px;
+}
+.xd-svc-arrow {
+  color: #4d4d55;
+  font-size: 12px;
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+}
+
+/* voice lanes */
+.xd-svc-lanes {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.xd-svc-lane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 1px solid #1d1d21;
+  border-radius: 4px;
+  background: #141417;
+}
+.xd-svc-lane.is-tapped {
+  border-color: #3f5a45;
+}
+.xd-svc-led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #26262b;
+  flex: 0 0 auto;
+}
+.xd-svc-led.is-on {
+  background: #8fe0a0;
+  box-shadow: 0 0 6px #8fe0a0;
+}
+.xd-svc-vname {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--xd-legend-dim, #909097);
+  width: 18px;
+}
+.xd-svc-note {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  width: 34px;
+  color: var(--xd-legend, #d8d8dc);
+}
+.xd-svc-amp {
+  flex: 1;
+  height: 5px;
+  background: #1d1d21;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.xd-svc-amp-fill {
+  height: 100%;
+  width: 0%;
+  background: #8fe0a0;
+  opacity: 0.8;
+  transition: width 60ms linear;
+}
+.xd-svc-drift {
+  position: relative;
+  flex: 0 0 90px;
+  height: 8px;
+  background: #1d1d21;
+  border-radius: 3px;
+}
+.xd-svc-drift::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: #3a3a40;
+}
+.xd-svc-drift-needle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: #e0c98f;
+  border-radius: 1px;
+  transition: left 60ms linear;
+}
+.xd-svc-drift-text {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  width: 44px;
+  text-align: right;
+  color: #e0c98f;
+}
+
+/* health strip */
+.xd-svc-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xd-svc-hlabel {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--xd-legend-dim, #909097);
+}
+.xd-svc-load {
+  flex: 1;
+  height: 6px;
+  background: #1d1d21;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.xd-svc-load-fill {
+  height: 100%;
+  width: 0%;
+  background: #8fe0a0;
+  transition: width 120ms linear;
+}
+.xd-svc-load-fill.is-hot {
+  background: #ff6b5e;
+}
+.xd-svc-htext {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: var(--xd-legend, #d8d8dc);
+}
+
+/* floating toggle chip */
+.xd-svc-chip {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 59;
+  background: #16161a;
+  border: 1px solid #3a3a40;
+  border-radius: 5px;
+  color: var(--xd-legend-dim, #909097);
+  font: 700 9px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.16em;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.xd-svc-chip:hover {
+  color: #8fe0a0;
+  border-color: #3f5a45;
+}

@@ -7,12 +7,18 @@
  * only shared/* and dsp/*. process() is exception-guarded so the processor
  * can never die, handles any block size, and always returns true.
  */
-import { Engine } from './engine'
+import { Engine, DBG_TAP_SIZE } from './engine'
 import { PROCESSOR_NAME, SCOPE_SIZE } from '../shared/messages'
 import type { ToEngine } from '../shared/messages'
 
 const SCOPE_INTERVAL_S = 0.05
 const VOICES_INTERVAL_S = 0.03
+const DBG_INTERVAL_S = 0.085
+
+const nowMs: () => number =
+  typeof globalThis.performance?.now === 'function'
+    ? () => globalThis.performance.now()
+    : () => Date.now()
 
 class XdProcessor extends AudioWorkletProcessor {
   private readonly engine = new Engine(sampleRate)
@@ -29,6 +35,13 @@ class XdProcessor extends AudioWorkletProcessor {
 
   private lastNotes: number[] = []
   private readonly noteScratch: number[] = []
+
+  // SERVICE MODE telemetry (only while the debug panel is open).
+  private readonly dbgFrames = Math.max(1, Math.round(DBG_INTERVAL_S * sampleRate))
+  private dbgCount = 0
+  private busyMs = 0
+  private wallFrames = 0
+  private load = 0
 
   /** Right-channel scratch when the node is given a mono output. */
   private scratchR = new Float32Array(128)
@@ -84,6 +97,12 @@ class XdProcessor extends AudioWorkletProcessor {
       case 'scope':
         this.scopeOn = m.on === true
         return
+      case 'debug':
+        this.engine.setDebug(m.on === true)
+        this.busyMs = 0
+        this.wallFrames = 0
+        this.dbgCount = 0
+        return
       default:
         break
     }
@@ -104,7 +123,13 @@ class XdProcessor extends AudioWorkletProcessor {
     }
     const frames = l.length
     try {
+      const dbg = this.engine.debugOn
+      const t0 = dbg ? nowMs() : 0
       this.engine.process(l, r, frames)
+      if (dbg) {
+        this.busyMs += nowMs() - t0
+        this.wallFrames += frames
+      }
 
       // Scope ring: post-FX mono, written every block (cheap).
       const ring = this.scopeRing
@@ -126,6 +151,14 @@ class XdProcessor extends AudioWorkletProcessor {
         this.voicesCount = 0
         this.postVoicesIfChanged()
       }
+
+      if (this.engine.debugOn) {
+        this.dbgCount += frames
+        if (this.dbgCount >= this.dbgFrames) {
+          this.dbgCount = 0
+          this.postDebug()
+        }
+      }
     } catch {
       // Never let the processor die: emit silence for this block.
       for (let c = 0; c < out.length; c++) out[c].fill(0)
@@ -142,6 +175,33 @@ class XdProcessor extends AudioWorkletProcessor {
     data.set(ring.subarray(w), 0)
     data.set(ring.subarray(0, w), tail)
     this.port.postMessage({ t: 'scope', data }, [data.buffer])
+  }
+
+  private postDebug(): void {
+    // Audio-thread load: engine time vs realtime budget over the window.
+    if (this.wallFrames > 0) {
+      const wallMs = (this.wallFrames / sampleRate) * 1000
+      this.load = Math.min(1, this.busyMs / wallMs)
+      this.busyMs = 0
+      this.wallFrames = 0
+    }
+    const taps = [
+      new Float32Array(DBG_TAP_SIZE),
+      new Float32Array(DBG_TAP_SIZE),
+      new Float32Array(DBG_TAP_SIZE),
+      new Float32Array(DBG_TAP_SIZE),
+    ]
+    this.engine.copyDebugTaps(taps)
+    const postFx = new Float32Array(SCOPE_SIZE)
+    const ring = this.scopeRing
+    const w = this.ringW
+    postFx.set(ring.subarray(w), 0)
+    postFx.set(ring.subarray(0, w), SCOPE_SIZE - w)
+    const voices = [0, 1, 2, 3].map((i) => this.engine.debugVoiceInfo(i))
+    this.port.postMessage(
+      { t: 'dbg', taps, postFx, voices, load: this.load, tapped: this.engine.debugVoice },
+      [taps[0].buffer, taps[1].buffer, taps[2].buffer, taps[3].buffer, postFx.buffer],
+    )
   }
 
   private postVoicesIfChanged(): void {

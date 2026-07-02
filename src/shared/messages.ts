@@ -20,12 +20,28 @@ export type ToEngine =
   | { t: 'sustain'; on: boolean }
   | { t: 'pressure'; v: number } // 0..1 channel aftertouch -> MIDI_AT_ASSIGN dest
   | { t: 'scope'; on: boolean }
+  | { t: 'debug'; on: boolean } // SERVICE MODE telemetry stream
+
+export interface DbgVoice {
+  note: number
+  on: boolean
+  amp: number // amp EG level 0..1
+  drift: number // cents
+}
 
 export type FromEngine =
   | { t: 'scope'; data: Float32Array } // post-FX mono frames for the OLED
   | { t: 'step'; i: number } // playhead step index, -1 = stopped
   | { t: 'voices'; notes: number[] } // sounding MIDI notes (key/LED feedback)
   | { t: 'level'; v: number } // output meter 0..1
+  | {
+      t: 'dbg' // SERVICE MODE frame (~12/s while enabled)
+      taps: Float32Array[] // [vco1, vco2, mix, postFilter], DBG_TAP_SIZE each
+      postFx: Float32Array // post-FX mono, SCOPE_SIZE
+      voices: DbgVoice[] // 4 lanes
+      load: number // audio-thread load 0..1
+      tapped: number // voice index feeding the taps
+    }
 
 /** AudioWorkletProcessor registration name. */
 export const PROCESSOR_NAME = 'xd-processor'

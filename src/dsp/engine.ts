@@ -54,6 +54,8 @@ import { DelayFx } from './fx/delay'
 import { ReverbFx } from './fx/reverb'
 
 const NV = 4
+/** Samples per SERVICE-MODE tap frame (matches the OLED scope size). */
+export const DBG_TAP_SIZE = 256
 
 /** Voice modes (params.ts order). */
 const VM_ARP = 0
@@ -183,6 +185,17 @@ export class Engine {
   private gainSm = 1
   private readonly gainCoef: number
   private peak = 0
+
+  // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
+  private dbgOn = false
+  private dbgVoice = 0 // most recently triggered voice index
+  private readonly dbgRings = [
+    new Float32Array(DBG_TAP_SIZE),
+    new Float32Array(DBG_TAP_SIZE),
+    new Float32Array(DBG_TAP_SIZE),
+    new Float32Array(DBG_TAP_SIZE),
+  ]
+  private dbgW = 0
 
   constructor(sampleRate: number) {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -1070,6 +1083,7 @@ export class Engine {
     retrig: boolean, glide: boolean, det: number, gain: number, stacked: boolean,
   ): void {
     const v = this.voices[i]
+    this.dbgVoice = i
     const hz = this.noteHz(soundNote)
     const semis = this.calcSemis
     v.setDetuneCents(det)
@@ -1278,6 +1292,15 @@ export class Engine {
       if (!Number.isFinite(sum)) sum = 0
       outL[s] = sum
       outR[s] = sum
+      if (this.dbgOn) {
+        const tv = vs[this.dbgVoice]
+        const w = this.dbgW
+        this.dbgRings[0][w] = tv.tapV1
+        this.dbgRings[1][w] = tv.tapV2
+        this.dbgRings[2][w] = tv.tapMix
+        this.dbgRings[3][w] = tv.tapFilt
+        this.dbgW = (w + 1) % DBG_TAP_SIZE
+      }
     }
 
     this.modfx.process(outL, outR, frames)
@@ -1304,6 +1327,38 @@ export class Engine {
   }
 
   /* -------------------------------------------------------- telemetry ---- */
+
+  /** Enable/disable SERVICE MODE taps (all voices record their stages). */
+  setDebug(on: boolean): void {
+    this.dbgOn = on
+    for (let i = 0; i < NV; i++) this.voices[i].tapOn = on
+  }
+
+  get debugOn(): boolean {
+    return this.dbgOn
+  }
+
+  get debugVoice(): number {
+    return this.dbgVoice
+  }
+
+  /** Copy the four tap rings (chronological order) into dst[0..3]. */
+  copyDebugTaps(dst: Float32Array[]): void {
+    const w = this.dbgW
+    const tail = DBG_TAP_SIZE - w
+    for (let t = 0; t < 4; t++) {
+      const ring = this.dbgRings[t]
+      const d = dst[t]
+      d.set(ring.subarray(w), 0)
+      d.set(ring.subarray(0, w), tail)
+    }
+  }
+
+  /** Per-voice state for the debug panel's voice lanes. */
+  debugVoiceInfo(i: number): { note: number; on: boolean; amp: number; drift: number } {
+    const v = this.voices[i]
+    return { note: v.note, on: v.active, amp: v.lastAmp, drift: v.lastDrift }
+  }
 
   /** Post-FX peak since the last call (meter); resets on read. */
   takePeak(): number {

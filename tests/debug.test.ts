@@ -53,6 +53,22 @@ describe('engine SERVICE MODE taps', () => {
   })
 })
 
+describe('idle drift (analog VCOs free-run)', () => {
+  it('drift keeps evolving while no voice is active', () => {
+    const e = new Engine(SR)
+    e.setDebug(true)
+    render(e, 0.1) // never played a note
+    const a1 = e.debugVoiceInfo(0).drift1
+    const a2 = e.debugVoiceInfo(0).drift2
+    render(e, 1.5)
+    const b1 = e.debugVoiceInfo(0).drift1
+    const b2 = e.debugVoiceInfo(0).drift2
+    expect(e.debugVoiceInfo(0).on).toBe(false)
+    expect(b1).not.toBe(a1)
+    expect(b2).not.toBe(a2)
+  })
+})
+
 describe('round-robin voice allocation (hardware cycles voices)', () => {
   it('repeated presses of the same key cycle through all four voices', () => {
     const e = new Engine(SR)

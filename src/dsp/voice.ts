@@ -394,6 +394,20 @@ export class Voice {
 
   /* --------------------------------------------------------------- tick -- */
 
+  /**
+   * Idle tick: the hardware's analog VCOs free-run, so their drift keeps
+   * evolving while the voice is silent. The engine calls this instead of
+   * tick() for inactive voices — drift generators only, nothing else runs.
+   */
+  tickIdle(): void {
+    const d1 = this.drift1.tick()
+    const d2 = this.drift2.tick()
+    if (this.tapOn) {
+      this.lastDrift1 = d1
+      this.lastDrift2 = d2
+    }
+  }
+
   tick(): number {
     // Modulators.
     const drift1C = this.drift1.tick()

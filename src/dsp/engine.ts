@@ -1318,9 +1318,13 @@ export class Engine {
       this.gainSm += gc * (this.gainT - this.gainSm)
       let sum = 0
       if (vs[0].active) sum += vs[0].tick()
+      else vs[0].tickIdle()
       if (vs[1].active) sum += vs[1].tick()
+      else vs[1].tickIdle()
       if (vs[2].active) sum += vs[2].tick()
+      else vs[2].tickIdle()
       if (vs[3].active) sum += vs[3].tick()
+      else vs[3].tickIdle()
       sum *= VOICE_MIX * this.gainSm
       if (!Number.isFinite(sum)) sum = 0
       outL[s] = sum

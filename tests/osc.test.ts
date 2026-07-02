@@ -104,6 +104,59 @@ describe('wrapped flag', () => {
   })
 })
 
+describe('SAW shape morph (spec §4: attenuates EVEN harmonics)', () => {
+  /** Goertzel mean-square power of the component at freqHz (exact-bin use). */
+  function goertzelMs(buf: Float32Array, from: number, n: number, freqHz: number): number {
+    const w = (2 * Math.PI * freqHz) / SR
+    const coeff = 2 * Math.cos(w)
+    let s1 = 0
+    let s2 = 0
+    for (let i = 0; i < n; i++) {
+      const s0 = buf[from + i] + coeff * s1 - s2
+      s2 = s1
+      s1 = s0
+    }
+    return (2 * (s1 * s1 + s2 * s2 - coeff * s1 * s2)) / (n * n)
+  }
+
+  const F0 = 187.5 // 48000/256: exact integer periods for f0 and 2*f0
+  const SETTLE = 4800
+  const N = SR // 1 s analysis window = whole number of cycles
+
+  function renderSaw(shape: number): Float32Array {
+    const v = makeVco(VCO_WAVE.SAW, F0, shape)
+    const buf = new Float32Array(SETTLE + N)
+    for (let i = 0; i < buf.length; i++) buf[i] = v.tick()
+    return buf
+  }
+
+  it('shape=1 is square-like: 2nd-harmonic energy collapses vs shape=0', () => {
+    const evenRatio = (buf: Float32Array): number =>
+      goertzelMs(buf, SETTLE, N, 2 * F0) / goertzelMs(buf, SETTLE, N, F0)
+    // pure saw: a2/a1 = 1/2 -> 2f/f power ratio ~0.25
+    expect(evenRatio(renderSaw(0))).toBeGreaterThan(0.1)
+    // square: even harmonics cancel (tiny residue from the analog-softness LP)
+    expect(evenRatio(renderSaw(1))).toBeLessThan(0.01)
+  })
+
+  it('keeps ~equal RMS and ~zero DC across the shape sweep', () => {
+    for (const shape of [0, 0.25, 0.5, 0.75, 1]) {
+      const buf = renderSaw(shape)
+      let sum = 0
+      let sq = 0
+      for (let i = SETTLE; i < buf.length; i++) {
+        sum += buf[i]
+        sq += buf[i] * buf[i]
+      }
+      const mean = sum / N
+      const rms = Math.sqrt(sq / N)
+      expect(Math.abs(mean), `shape ${shape} DC`).toBeLessThan(0.02)
+      expect(rms, `shape ${shape} RMS low`).toBeGreaterThan(0.45)
+      expect(rms, `shape ${shape} RMS high`).toBeLessThan(0.75)
+    }
+  })
+})
+
 describe('pulse DC removal', () => {
   it('200 Hz pulse at shape = 1 (narrow ~5% pulse) keeps |DC| < 0.02', () => {
     const v = makeVco(VCO_WAVE.SQR, 200, 1)

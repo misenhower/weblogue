@@ -75,6 +75,65 @@ function meanAbsDiff(buf: Float32Array, from: number, to: number): number {
   return sum / (to - from - 1)
 }
 
+/** Normalized brightness: mean |diff| over RMS (spectral tilt proxy). */
+function brightness(buf: Float32Array, skip = 4800): number {
+  const st = stats(buf.subarray(skip))
+  return meanAbsDiff(buf, skip, buf.length) / Math.max(1e-9, st.rms)
+}
+
+/** RMS of the sub-fcHz band (two cascaded one-pole lowpasses, offline). */
+function lowBandRms(buf: Float32Array, fcHz: number, skip = 4800): number {
+  const a = 1 - Math.exp((-2 * Math.PI * fcHz) / SR)
+  let lp1 = 0
+  let lp2 = 0
+  let sum = 0
+  let n = 0
+  for (let i = 0; i < buf.length; i++) {
+    lp1 += a * (buf[i] - lp1)
+    lp2 += a * (lp1 - lp2)
+    if (i >= skip) {
+      sum += lp2 * lp2
+      n++
+    }
+  }
+  return Math.sqrt(sum / Math.max(1, n))
+}
+
+/** Normalized autocorrelation at an integer lag — tonality proxy. */
+function autocorrAt(buf: Float32Array, lag: number, skip = 4800): number {
+  let num = 0
+  let den = 0
+  for (let i = skip; i < buf.length - lag; i++) {
+    num += buf[i] * buf[i + lag]
+    den += buf[i] * buf[i]
+  }
+  return num / Math.max(1e-12, den)
+}
+
+/** S&H hold-rate proxy: count of sample-to-sample value changes. */
+function holdChanges(buf: Float32Array, skip = 100): number {
+  let n = 0
+  for (let i = skip + 1; i < buf.length; i++) {
+    if (buf[i] !== buf[i - 1]) n++
+  }
+  return n
+}
+
+/** Goertzel mean-square power of the component at freqHz (exact-bin use). */
+function goertzelMs(buf: Float32Array, freqHz: number, from = 0): number {
+  const n = buf.length - from
+  const w = (2 * Math.PI * freqHz) / SR
+  const coeff = 2 * Math.cos(w)
+  let s1 = 0
+  let s2 = 0
+  for (let i = from; i < buf.length; i++) {
+    const s0 = buf[i] + coeff * s1 - s2
+    s2 = s1
+    s1 = s0
+  }
+  return (2 * (s1 * s1 + s2 * s2 - coeff * s1 * s2)) / (n * n)
+}
+
 function expectHealthy(buf: Float32Array, label: string): void {
   const st = stats(buf)
   expect(st.finite, `${label}: all samples finite`).toBe(true)
@@ -108,8 +167,24 @@ describe('NOISE oscillator', () => {
     }
   }
 
-  it('PEAK center tracks note frequency', () => {
-    // ratio = 1 at shape 0, so the bandpass center sits on the note itself
+  it('HIGH: raising SHAPE (HPF 10 Hz..21 kHz) shrinks the low band', () => {
+    // shape 0.1 -> HPF ~21 Hz (nearly full-band white); 0.9 -> HPF ~9.7 kHz
+    const open = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.HIGH, 220, 0.1))
+    const high = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.HIGH, 220, 0.9))
+    const lowFrac = (buf: Float32Array): number => lowBandRms(buf, 300) / stats(buf).rms
+    expect(lowFrac(open)).toBeGreaterThan(lowFrac(high) * 5)
+    expect(brightness(high)).toBeGreaterThan(brightness(open) * 1.1)
+  })
+
+  it('LOW: lowering SHAPE (LPF 10 Hz..21 kHz) shrinks the high band', () => {
+    // shape 0.3 -> LPF ~99 Hz (dark rumble); 0.95 -> LPF ~14 kHz (near-white)
+    const dark = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.LOW, 220, 0.3))
+    const wide = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.LOW, 220, 0.95))
+    expect(brightness(wide)).toBeGreaterThan(brightness(dark) * 2)
+  })
+
+  it('PEAK center tracks the note frequency', () => {
+    // center = note * 4 (fixed keytrack ratio), independent of SHAPE
     const lo = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 110, 0))
     const hi = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 1760, 0))
     const zLo = zeroCrossings(lo)
@@ -118,17 +193,37 @@ describe('NOISE oscillator', () => {
     expect(zHi).toBeGreaterThan(zLo * 4) // 16x pitch => far denser crossings
   })
 
-  it('PEAK SHAPE sweeps the center ratio upward', () => {
-    const low = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 110, 0.1))
-    const high = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 110, 0.9))
-    expect(zeroCrossings(high)).toBeGreaterThan(zeroCrossings(low) * 3)
+  it('PEAK SHAPE widens the bandwidth (110..880 Hz): narrow = tonal + quieter', () => {
+    // note 375 Hz -> center 1500 Hz -> one period = exactly 32 samples
+    const narrow = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 375, 0))
+    const wide = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.PEAK, 375, 1))
+    // narrowband noise stays correlated over a cycle; wideband decorrelates
+    const rNarrow = autocorrAt(narrow, 32)
+    const rWide = autocorrAt(wide, 32)
+    expect(rNarrow).toBeGreaterThan(0.5)
+    expect(rNarrow).toBeGreaterThan(rWide + 0.2)
+    // a narrower band passes less noise power
+    expect(stats(narrow).rms).toBeLessThan(stats(wide).rms * 0.75)
   })
 
-  it('DECIM hold rate scales with note frequency (chromatic)', () => {
-    const lo = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 110, 0.3))
-    const hi = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 880, 0.3))
-    // more S&H steps per second => more sign flips per second
-    expect(zeroCrossings(hi)).toBeGreaterThan(zeroCrossings(lo) * 3)
+  it('DECIM SHIFT+SHAPE=0: absolute rate, notes an octave apart hold equally', () => {
+    const a = holdChanges(render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 110, 0.4, 0)))
+    const b = holdChanges(render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 220, 0.4, 0)))
+    expect(Math.abs(a - b)).toBeLessThan(Math.max(a, b) * 0.1)
+  })
+
+  it('DECIM SHIFT+SHAPE=1: full keytrack, an octave apart => ~2x hold rate', () => {
+    const a = holdChanges(render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 110, 0.4, 1)))
+    const b = holdChanges(render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 220, 0.4, 1)))
+    expect(b / a).toBeGreaterThan(1.7)
+    expect(b / a).toBeLessThan(2.3)
+  })
+
+  it('DECIM SHIFT+SHAPE audibly changes the rate away from C4', () => {
+    // at 110 Hz, full keytrack scales the rate by (110/C4) ~ 0.42
+    const fixed = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 110, 0.4, 0))
+    const tracked = render(makeEngine(MULTI_TYPE.NOISE, NOISE_TYPE.DECIM, 110, 0.4, 1))
+    expect(holdChanges(fixed)).toBeGreaterThan(holdChanges(tracked) * 1.5)
   })
 })
 
@@ -144,7 +239,7 @@ describe('VPM oscillator', () => {
   }
 
   it('DECAY1 internal envelope darkens the tone over time', () => {
-    const e = makeEngine(MULTI_TYPE.VPM, VPM_TYPE.DECAY1, 220, 0.9, 0)
+    const e = makeEngine(MULTI_TYPE.VPM, VPM_TYPE.DECAY1, 220, 0.9, 0.5)
     const buf = render(e, 0.5)
     const early = meanAbsDiff(buf, 480, 5280) // right after the pluck
     const late = meanAbsDiff(buf, 19200, 24000) // env ~gone (tau 0.15 s)
@@ -159,6 +254,40 @@ describe('VPM oscillator', () => {
     // sine RMS is ~0.707 * amplitude; trimmed carrier should be close
     expect(st.rms).toBeGreaterThan(0.4)
     expect(st.maxAbs).toBeLessThan(1.0)
+  })
+
+  it('SIN1 at the center detent (stored 512) is a pure sine at shape=0', () => {
+    // SHIFT+SHAPE is a RATIO OFFSET, neutral at the detent: Sin1 must be a
+    // clean 2-op sine with no feedback/offset bleed. THD proxy: nearly all
+    // energy sits on the fundamental (exact bin: 220 cycles in 1 s).
+    const e = makeEngine(MULTI_TYPE.VPM, VPM_TYPE.SIN1, 220, 0, 512 / 1023)
+    const buf = render(e, 1.0)
+    let tot = 0
+    for (let i = 0; i < buf.length; i++) tot += buf[i] * buf[i]
+    tot /= buf.length
+    const fund = goertzelMs(buf, 220)
+    expect(tot).toBeGreaterThan(0.1) // it actually sounds
+    expect(fund / tot).toBeGreaterThan(0.999) // off-fundamental < 0.1%
+  })
+
+  it('SHIFT+SHAPE ratio offset: flat across the center zone, stepped outside', () => {
+    const at = (ss: number): Float32Array =>
+      render(makeEngine(MULTI_TYPE.VPM, VPM_TYPE.SIN1, 220, 0.6, ss), 0.3)
+    // both values sit inside the neutral x1 zone -> bit-identical output
+    const a = at(0.45)
+    const b = at(0.55)
+    let maxDiff = 0
+    for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]))
+    expect(maxDiff).toBe(0)
+    // the x4 zone retunes the modulator: audibly different spectrum
+    const hi = at(0.9)
+    let sum = 0
+    for (let i = 0; i < a.length; i++) {
+      const d = a[i] - hi[i]
+      sum += d * d
+    }
+    expect(Math.sqrt(sum / a.length)).toBeGreaterThan(0.05)
+    expectHealthy(hi, 'SIN1 ss x4')
   })
 })
 
@@ -225,13 +354,13 @@ describe('VPM menu trims', () => {
     feedback: 0, noiseDepth: 0, shapeModInt: 0, modAttack: 0, modDecay: 0, keyTrack: 0,
   }
 
-  /** VPM engine with trims applied before noteOn. */
+  /** VPM engine with trims applied before noteOn (shift at the neutral detent). */
   function makeTrimmed(
     sub: number,
     freq: number,
     over: Partial<VpmTrims>,
     shape = 0.5,
-    shift = 0,
+    shift = 0.5,
   ): MultiEngine {
     const e = new MultiEngine(SR)
     e.setType(MULTI_TYPE.VPM)
@@ -255,7 +384,7 @@ describe('VPM menu trims', () => {
   }
 
   it('neutral trims leave VPM output bit-identical to the untrimmed engine', () => {
-    const plain = render(makeEngine(MULTI_TYPE.VPM, VPM_TYPE.FAT1, 220, 0.5, 0), 0.3)
+    const plain = render(makeEngine(MULTI_TYPE.VPM, VPM_TYPE.FAT1, 220, 0.5, 0.5), 0.3)
     const trimmed = render(makeTrimmed(VPM_TYPE.FAT1, 220, {}), 0.3)
     expect(diffRms(plain, trimmed)).toBeLessThan(1e-12)
   })

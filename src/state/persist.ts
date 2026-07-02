@@ -40,11 +40,16 @@ function safeGet(key: string): string | null {
   }
 }
 
-function safeSet(key: string, value: string): void {
+/** Returns false when the write did not persist (quota / storage unavailable). */
+function safeSet(key: string, value: string): boolean {
   try {
-    storage()?.setItem(key, value)
+    const s = storage()
+    if (!s) return false
+    s.setItem(key, value)
+    return true
   } catch {
     /* quota exceeded / storage unavailable: keep running in-memory */
+    return false
   }
 }
 
@@ -145,14 +150,19 @@ export function loadBank(factory: Program[]): Program[] {
   })
 }
 
-/** Write-through save of a single slot; O(1) in the number of slots. */
-export function saveBankSlot(slot: number, p: Program): void {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= NUM_SLOTS) return
-  safeSet(slotKey(slot), serializeProgram(p))
+/**
+ * Write-through save of a single slot; O(1) in the number of slots.
+ * Returns false when the write did not persist (e.g. QuotaExceededError);
+ * the in-memory names index is still updated (the program is live).
+ */
+export function saveBankSlot(slot: number, p: Program): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= NUM_SLOTS) return false
+  const slotOk = safeSet(slotKey(slot), serializeProgram(p))
   const names = ensureNames()
   names[slot] = p.name
-  safeSet(NAMES_KEY, JSON.stringify(names))
+  const namesOk = safeSet(NAMES_KEY, JSON.stringify(names))
   if (safeGet(BANK_KEY) === null) safeSet(BANK_KEY, '1')
+  return slotOk && namesOk
 }
 
 /** Cheap name lookup from the names index (no program deserialization). */

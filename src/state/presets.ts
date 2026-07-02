@@ -422,7 +422,7 @@ function buildPresets(): Program[] {
       [P.MULTI_TYPE, M_VPM],
       [P.SELECT_VPM, V_SIN4],
       [P.SHAPE_VPM, 550],
-      [P.SHIFTSHAPE_VPM, 640],
+      [P.SHIFTSHAPE_VPM, 700], // ratio offset x2: glassy 10:1 bell partials
       [P.MULTI_OCTAVE, OCT4],
       [P.MULTI_LEVEL, 1023],
       [P.VPM_MOD_DECAY, 140], // +40%

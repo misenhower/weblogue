@@ -4,6 +4,8 @@ A feature-complete replica of the **Korg minilogue xd** hybrid synthesizer that 
 browser. The whole signal path is modeled in TypeScript inside an AudioWorklet — no samples, no external
 libraries.
 
+**Play it now: <https://misenhower.github.io/weblogue/>**
+
 ## Quick start
 
 ```bash
@@ -23,7 +25,7 @@ Click **POWER ON** (browsers require a user gesture to start audio), then play:
 
 | Section | Details |
 |---|---|
-| Voices | 4-voice paraphonic architecture, mono-summed pre-FX like the hardware |
+| Voices | 4-voice polyphonic architecture (independent filter + EGs + LFO per voice), mono-summed pre-FX like the hardware |
 | VCO 1/2 | PolyBLEP anti-aliased SQR/TRI/SAW with per-wave SHAPE morphing, BLEP-corrected hard sync, ring mod, audio-rate cross modulation, per-voice analog drift |
 | Multi Engine | 4 noise modes (High/Low/Peak/Decim), all 16 VPM types with the 6 menu trim parameters, 4 built-in "user" oscillators (MORPH / SPRSAW / PWMCLS / ORGAN) |
 | Filter | 2-pole zero-delay-feedback lowpass, tanh-in-the-loop resonance, 3-position drive at 2× oversampling, keytrack centered on C4 |
@@ -38,15 +40,23 @@ pitch knob curve, the quadratic EG INT law, chord/arp knob zones, LFO BPM divisi
 all come from the official minilogue xd MIDI implementation. The compiled hardware spec lives in
 [docs/xd-spec.md](docs/xd-spec.md).
 
-The one intentional departure: the hardware's user oscillator/FX slots load compiled ARM binaries via
-Korg's logue SDK, which can't run in a browser — the USR slots ship with built-in custom oscillators
-instead.
+### Intentional departures from the hardware
+
+- The user oscillator/FX slots load compiled ARM binaries via Korg's logue SDK, which can't run in a
+  browser — the USR oscillator slots ship with built-in custom oscillators, the USER mod-FX slots with
+  Rotary/Trem, and the delay/reverb USER slots are omitted.
+- Microtuning is a subset (Ionian/Dorian/Aeolian and the AFX/DC/user scales are not included).
+- Global settings (master tune, velocity curves, knob pickup modes) and MIDI output/SysEx are not
+  implemented; MIDI is input-only.
+- The sequencer's per-note trigger-switch bit is simplified: a tied note continues when the same note
+  reappears in the next triggered step, and releases otherwise.
 
 ## Development
 
 ```bash
-npm test           # 486 vitest tests: DSP rendering, mapping tables, sequencer timing, UI, MIDI decode
+npm test           # vitest suite: DSP rendering, mapping tables, sequencer timing, UI, MIDI decode
 npm run build      # typecheck + production bundle
+npm run preview    # serve the production build on http://localhost:4173
 ```
 
 Architecture: `src/shared/` holds the parameter registry, hardware mapping curves, program format, and

@@ -3,12 +3,12 @@
  * write/reload roundtrips (Map-backed localStorage shim), step/realtime/motion
  * recording behaviors from docs/xd-spec.md §11, and seq message coalescing.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { NUM_SLOTS } from '../src/state/persist'
 import { P, MOTION_PITCH_BEND, PARAMS } from '../src/shared/params'
 import { initProgram, NOTES_PER_STEP, MOTION_POINTS, type Program } from '../src/shared/program'
-import { GATE_TIE } from '../src/shared/maps'
+import { GATE_TIE, STEP_RESOLUTIONS } from '../src/shared/maps'
 import type { ToEngine } from '../src/shared/messages'
 
 // ---------------------------------------------------------------- test shims
@@ -253,6 +253,29 @@ describe('bank persistence', () => {
     expect(s.getParam(P.CUTOFF)).toBe(999) // written value came back
     s.setName('Renamed')
     expect(s.dirty).toBe(true)
+  })
+
+  it('writeSlot returns false and stays dirty when the storage write fails', () => {
+    const s = new Store(makeFactory())
+    s.setParam(P.CUTOFF, 222)
+    s.setName('No Room')
+    expect(s.dirty).toBe(true)
+    mock.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    expect(s.writeSlot(5)).toBe(false)
+    expect(s.dirty).toBe(true) // still needs a (re)write
+    expect(s.slot).toBe(5) // the in-memory bank switch still happened
+    expect(s.slotNames()[5]).toBe('No Room') // live name index updated
+    s.loadSlot(5)
+    expect(s.program.name).toBe('No Room') // in-memory bank has the program
+  })
+
+  it('writeSlot returns true when persistence succeeds', () => {
+    const s = new Store(makeFactory())
+    s.setParam(P.CUTOFF, 321)
+    expect(s.writeSlot(9)).toBe(true)
+    expect(s.dirty).toBe(false)
   })
 
   it('edits do not leak into the bank until writeSlot', () => {
@@ -566,6 +589,94 @@ describe('realtime recording', () => {
     s.setPlaying(false)
     expect(s.recMode).toBe('off')
     expect(s.playhead).toBe(-1)
+  })
+
+  it('records real gate lengths: staccato vs held notes differ', () => {
+    vi.useFakeTimers()
+    try {
+      const s = playingStore()
+      const stepMs = (STEP_RESOLUTIONS[s.program.seq.stepResolution].beatsPerStep * 60000) / s.program.seq.bpm
+      expect(stepMs).toBe(125) // 120 BPM, 1/16 steps
+      s.recNoteOn(60, 100) // staccato: ~20% of the step
+      vi.advanceTimersByTime(25)
+      s.recNoteOff(60)
+      s.setPlayhead(4)
+      s.recNoteOn(62, 100) // held: ~80% of the step
+      vi.advanceTimersByTime(100)
+      s.recNoteOff(62)
+      const g0 = s.program.seq.steps[3].gates[0]
+      const g1 = s.program.seq.steps[4].gates[0]
+      expect(g0).toBe(Math.round((72 * 25) / 125)) // 14
+      expect(g1).toBe(Math.round((72 * 100) / 125)) // 58
+      expect(g0).toBeLessThan(g1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hold across a step boundary writes TIE and chains into the next step', () => {
+    vi.useFakeTimers()
+    try {
+      const s = playingStore()
+      s.recNoteOn(60, 90)
+      vi.advanceTimersByTime(125) // full step elapses
+      s.setPlayhead(4) // boundary: TIE into step 3, note re-added to step 4
+      expect(s.program.seq.steps[3].gates).toEqual([GATE_TIE])
+      expect(s.program.seq.steps[4].notes).toEqual([60])
+      expect(s.program.seq.steps[4].vels).toEqual([90])
+      expect(s.program.seq.steps[4].on).toBe(true)
+      vi.advanceTimersByTime(62) // release ~half-way into step 4
+      s.recNoteOff(60)
+      expect(s.program.seq.steps[4].gates).toEqual([Math.round((72 * 62) / 125)]) // 36
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hold across two boundaries chains TIE, TIE, then the remainder', () => {
+    vi.useFakeTimers()
+    try {
+      const s = playingStore()
+      s.recNoteOn(48, 100)
+      vi.advanceTimersByTime(125)
+      s.setPlayhead(4)
+      vi.advanceTimersByTime(125)
+      s.setPlayhead(5)
+      vi.advanceTimersByTime(125)
+      s.recNoteOff(48) // full third step: clamps at 100%
+      expect(s.program.seq.steps[3].gates).toEqual([GATE_TIE])
+      expect(s.program.seq.steps[4].gates).toEqual([GATE_TIE])
+      expect(s.program.seq.steps[5].notes).toEqual([48])
+      expect(s.program.seq.steps[5].gates).toEqual([72])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('notes still held when playback stops finalize with what elapsed', () => {
+    vi.useFakeTimers()
+    try {
+      const s = playingStore()
+      s.recNoteOn(60, 100)
+      vi.advanceTimersByTime(50)
+      s.setPlaying(false) // exits realtime rec: finalize held notes
+      expect(s.recMode).toBe('off')
+      expect(s.program.seq.steps[3].gates).toEqual([Math.round((72 * 50) / 125)]) // 29
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('very short taps still record a non-zero gate', () => {
+    vi.useFakeTimers()
+    try {
+      const s = playingStore()
+      s.recNoteOn(60, 100)
+      s.recNoteOff(60) // zero elapsed: gate clamps to 1, not 0
+      expect(s.program.seq.steps[3].gates).toEqual([1])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports playhead updates to listeners', () => {

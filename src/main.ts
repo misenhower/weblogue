@@ -12,14 +12,9 @@ import { FACTORY_PRESETS } from './state/presets'
 import { Panel } from './ui/panel'
 import { Display } from './ui/display'
 import { attachComputerKeyboard } from './ui/keyboard'
-import {
-  MidiInput,
-  CC_ID_MULTI_SHAPE,
-  CC_ID_MULTI_SHIFT_SHAPE,
-  CC_ID_MULTI_SUB,
-  CC_ID_MODFX_SUB,
-} from './midi/midi'
-import { P, clampParam } from './shared/params'
+import { MidiInput } from './midi/midi'
+import { resolveMidiParam } from './midi/resolve'
+import { P, MOTION_PITCH_BEND } from './shared/params'
 import { PROCESSOR_NAME } from './shared/messages'
 import type { FromEngine, ToEngine } from './shared/messages'
 
@@ -40,13 +35,21 @@ function send(msg: ToEngine): void {
 // --- State + UI ----------------------------------------------------------
 const store = new Store(FACTORY_PRESETS)
 
+// MASTER knob level (panel default 0.8), tracked even before power-on so
+// pre-boot knob moves are applied when the audio graph comes up.
+let masterLevel = 0.8
+
 const panel = new Panel({
   store,
   onNoteOn: (note, vel) => send({ t: 'noteOn', note, vel }),
   onNoteOff: (note) => send({ t: 'noteOff', note }),
-  onBend: (v) => send({ t: 'bend', v }),
+  onBend: (v) => {
+    send({ t: 'bend', v })
+    store.recKnob(MOTION_PITCH_BEND, v) // gates on rec mode/playing internally
+  },
   onJoyY: (v) => send({ t: 'joyY', v }),
   onMaster: (v) => {
+    masterLevel = v
     if (masterGain) masterGain.gain.value = v * v // audio taper
   },
 })
@@ -92,7 +95,7 @@ async function powerOn(): Promise<void> {
     outputChannelCount: [2],
   })
   masterGain = ctx.createGain()
-  masterGain.gain.value = 0.64 // master knob default 0.8, squared taper
+  masterGain.gain.value = masterLevel * masterLevel // squared audio taper
   analyser = ctx.createAnalyser()
   analyser.fftSize = 2048
   node.connect(masterGain)
@@ -111,8 +114,6 @@ async function powerOn(): Promise<void> {
         break
       case 'voices':
         panel.setVoices(m.notes)
-        break
-      case 'level':
         break
     }
   }
@@ -133,36 +134,6 @@ function midiActivity(): void {
   display.setMidiActive(true)
 }
 
-/** Resolve engine-dependent sentinel CC ids to concrete params. */
-function resolveMidiParam(id: number, v: number): { id: number; v: number } | null {
-  if (id >= 0) return { id, v }
-  const multiType = store.getParam(P.MULTI_TYPE)
-  switch (id) {
-    case CC_ID_MULTI_SHAPE:
-      return { id: [P.SHAPE_NOISE, P.SHAPE_VPM, P.SHAPE_USER][multiType], v }
-    case CC_ID_MULTI_SHIFT_SHAPE:
-      return { id: [P.SHIFTSHAPE_NOISE, P.SHIFTSHAPE_VPM, P.SHIFTSHAPE_USER][multiType], v }
-    case CC_ID_MULTI_SUB: {
-      const pid = [P.SELECT_NOISE, P.SELECT_VPM, P.SELECT_USER][multiType]
-      return { id: pid, v: clampParam(pid, v) }
-    }
-    case CC_ID_MODFX_SUB: {
-      const type = store.getParam(P.MODFX_TYPE)
-      const pid = [
-        P.MODFX_SUB_CHORUS,
-        P.MODFX_SUB_ENSEMBLE,
-        P.MODFX_SUB_PHASER,
-        P.MODFX_SUB_FLANGER,
-        P.MODFX_SUB_USER,
-      ][type]
-      const zones = [8, 3, 8, 8, 2][type]
-      return { id: pid, v: Math.min(zones - 1, Math.floor((v * zones) / 128)) }
-    }
-    default:
-      return null
-  }
-}
-
 async function initMidi(): Promise<void> {
   const midi = new MidiInput({
     noteOn: (note, vel) => {
@@ -174,14 +145,20 @@ async function initMidi(): Promise<void> {
       send({ t: 'noteOff', note })
       store.recNoteOff(note)
     },
-    bend: (v) => send({ t: 'bend', v }),
+    bend: (v) => {
+      send({ t: 'bend', v })
+      store.recKnob(MOTION_PITCH_BEND, v) // gates on rec mode/playing internally
+    },
     sustain: (on) => send({ t: 'sustain', on }),
     param: (id, v) => {
       midiActivity()
-      const r = resolveMidiParam(id, v)
+      const r = resolveMidiParam(id, v, store.getParam(P.MULTI_TYPE), store.getParam(P.MODFX_TYPE))
       if (r) store.setParam(r.id, r.v, 'midi')
     },
-    channelPressure: () => {},
+    channelPressure: (v) => {
+      midiActivity()
+      send({ t: 'pressure', v })
+    },
     programChange: (bankLsb, prog) => {
       const slot = bankLsb * 100 + prog
       if (slot >= 0 && slot < 500) store.loadSlot(slot)

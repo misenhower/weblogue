@@ -18,6 +18,7 @@ export type ToEngine =
   | { t: 'bend'; v: number } // -1..1 (joystick X / MIDI pitch bend)
   | { t: 'joyY'; v: number } // -1..1
   | { t: 'sustain'; on: boolean }
+  | { t: 'pressure'; v: number } // 0..1 channel aftertouch -> MIDI_AT_ASSIGN dest
   | { t: 'scope'; on: boolean }
 
 export type FromEngine =

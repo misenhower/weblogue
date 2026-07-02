@@ -14,6 +14,7 @@ import {
   formatParam,
   motionParamLabel,
   MOTION_PARAM_IDS,
+  MOTION_GATE_TIME,
   P,
   type ParamMeta,
 } from '../shared/params'
@@ -225,10 +226,23 @@ export class Display {
       delay = null
       repeat = null
     }
+    // An aborted press (released off-button or cancelled) produces no
+    // trailing click; sawPointer must reset or it would swallow the next
+    // keyboard/synthetic click. A release on the button keeps sawPointer so
+    // its trailing click is still ignored.
+    const windowRelease = (e: Event): void => {
+      window.removeEventListener('pointerup', windowRelease)
+      window.removeEventListener('pointercancel', windowRelease)
+      stop()
+      const onBtn = e.target instanceof Node && btn.contains(e.target)
+      if (e.type === 'pointercancel' || !onBtn) sawPointer = false
+    }
     btn.addEventListener('pointerdown', () => {
       sawPointer = true
       fn()
       stop()
+      window.addEventListener('pointerup', windowRelease)
+      window.addEventListener('pointercancel', windowRelease)
       delay = setTimeout(() => {
         repeat = setInterval(fn, HOLD_REPEAT_MS)
       }, HOLD_DELAY_MS)
@@ -356,6 +370,11 @@ export class Display {
                 ? seq.swing
                 : seq.defaultGate
       store.setSeqField(p.def.field, cur + dir * p.def.step)
+      // Spec §11: GATE TIME is motion-recordable — editing DEFAULT GATE
+      // during realtime rec also writes the gate-time motion lane.
+      if (p.def.field === 'defaultGate' && store.recMode === 'realtime' && store.playing) {
+        store.recKnob(MOTION_GATE_TIME, store.program.seq.defaultGate)
+      }
     } else {
       this.adjustMotion(p.lane, dir)
     }

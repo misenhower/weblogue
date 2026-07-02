@@ -373,9 +373,65 @@ describe('Panel: program block', () => {
     write.dispatchEvent(pev('pointerdown'))
     write.dispatchEvent(pev('pointerup'))
     expect(store.dirty).toBe(false)
+    expect(write.parentElement!.classList.contains('xd-flash')).toBe(true) // success flash
+    expect(write.parentElement!.classList.contains('xd-blink')).toBe(false)
     // the written value survives a reload of the slot
     store.loadSlot(0)
     expect(store.getParam(P.CUTOFF)).toBe(123)
+  })
+
+  it('WRITE shows the ~1s error blink and stays dirty when storage fails', () => {
+    vi.useFakeTimers()
+    try {
+      const { store, panel } = make()
+      const ls = (globalThis as unknown as { localStorage: LocalStorageMock }).localStorage
+      ls.setItem = () => {
+        throw new DOMException('quota exceeded', 'QuotaExceededError')
+      }
+      store.setParam(P.CUTOFF, 123)
+      const write = button(panel, 'WRITE')
+      write.dispatchEvent(pev('pointerdown'))
+      write.dispatchEvent(pev('pointerup'))
+      expect(store.dirty).toBe(true) // write did not persist
+      const root = write.parentElement!
+      expect(root.classList.contains('xd-blink')).toBe(true) // error treatment
+      expect(root.classList.contains('xd-flash')).toBe(false)
+      vi.advanceTimersByTime(1000)
+      expect(root.classList.contains('xd-blink')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('SHIFT+WRITE inits the edit buffer instead of writing the slot', () => {
+    const { store, panel } = make()
+    const factoryName = store.program.name
+    const factoryCutoff = store.getParam(P.CUTOFF)
+    store.setParam(P.CUTOFF, 777)
+    const shift = button(panel, 'SHIFT')
+    shift.dispatchEvent(pev('pointerdown')) // hold SHIFT
+    const write = button(panel, 'WRITE')
+    write.dispatchEvent(pev('pointerdown'))
+    write.dispatchEvent(pev('pointerup'))
+    shift.dispatchEvent(pev('pointerup'))
+    expect(store.program.name).toBe('Init Program') // edit buffer initialized
+    expect(store.dirty).toBe(true) // init is an edit, not a save
+    store.loadSlot(0) // the slot itself was not overwritten
+    expect(store.program.name).toBe(factoryName)
+    expect(store.getParam(P.CUTOFF)).toBe(factoryCutoff)
+  })
+
+  it('double-clicking the program name prompts for a rename', () => {
+    const { store, panel } = make()
+    const name = panel.el.querySelector<HTMLElement>('.xd-prog-name')!
+    window.prompt = vi.fn(() => '  My Great Patch Name  ') // trimmed + capped
+    name.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    expect(store.program.name).toBe('My Great Patch N') // 16 chars max
+    expect(store.dirty).toBe(true)
+    expect(name.textContent).toBe('My Great Patch N') // readout follows
+    window.prompt = vi.fn(() => null) // cancel: ignored
+    name.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    expect(store.program.name).toBe('My Great Patch N')
   })
 })
 
@@ -387,6 +443,40 @@ describe('Panel: master + keyboard glue', () => {
     expect(opts.onMaster).toHaveBeenCalledWith(0)
     dragToMax(el)
     expect(opts.onMaster).toHaveBeenCalledWith(1)
+  })
+
+  it('TEMPO knob steps in 0.1 BPM increments', () => {
+    const { store, panel } = make()
+    const tempo = knob(panel, '.xd-sec-master', 'TEMPO')
+    const before = store.program.seq.bpm
+    // arrow keys move a knob by exactly one step (happy-dom drops shiftKey
+    // from WheelEvent, so SHIFT+wheel can't probe the fine step here)
+    tempo.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }),
+    )
+    expect(store.program.seq.bpm).toBeCloseTo(before + 0.1, 5)
+    expect(tempo.getAttribute('aria-valuetext')).toBe((before + 0.1).toFixed(1))
+    tempo.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    )
+    expect(store.program.seq.bpm).toBeCloseTo(before, 5)
+  })
+
+  it('ARP LATCH LED blinks while latched (spec §3)', () => {
+    const { store, panel } = make()
+    const latch = button(panel, 'LATCH')
+    const root = latch.parentElement!
+    expect(root.classList.contains('xd-blink')).toBe(false)
+    latch.click() // latching button: toggles P.ARP_LATCH on
+    expect(store.getParam(P.ARP_LATCH)).toBe(1)
+    expect(root.classList.contains('xd-blink')).toBe(true)
+    store.setParam(P.ARP_LATCH, 0, 'midi') // external change syncs too
+    expect(root.classList.contains('xd-blink')).toBe(false)
+    store.setParam(P.ARP_LATCH, 1, 'midi')
+    expect(root.classList.contains('xd-blink')).toBe(true)
+    store.loadSlot(1) // program load resyncs from the loaded value (0)
+    expect(store.getParam(P.ARP_LATCH)).toBe(0)
+    expect(root.classList.contains('xd-blink')).toBe(false)
   })
 
   it('OCTAVE param moves the keybed octave shift', () => {

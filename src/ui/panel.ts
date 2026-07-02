@@ -12,6 +12,15 @@
  *   store.onSeq      -> step LEDs + tempo
  *   store.onRecChange-> REC LED + step-rec cursor
  *
+ * Program management gestures:
+ *   - WRITE commits the working program (green-flash on success; if the
+ *     localStorage write fails the red LED blinks for ~1s and the program
+ *     stays dirty).
+ *   - SHIFT + WRITE initializes the edit buffer (store.initCurrent), like
+ *     the hardware's init-program menu action.
+ *   - Double-clicking the program NAME readout prompts for a new name
+ *     (trimmed, max 16 chars; cancel is ignored).
+ *
  * Layout/styling lives in src/ui/panel.css (the app imports it alongside
  * theme.css and kbd.css — this module imports no CSS).
  */
@@ -151,8 +160,10 @@ export class Panel {
   private progNum!: HTMLElement
   private progName!: HTMLElement
   private writeBtn!: LedButton
+  private latchBtn!: LedButton
   private midiLed!: Led
   private midiTimer: ReturnType<typeof setTimeout> | null = null
+  private writeErrTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(opts: PanelOpts) {
     this.opts = opts
@@ -323,6 +334,7 @@ export class Panel {
     if (id === P.SELECT_NOISE || id === P.SELECT_VPM || id === P.SELECT_USER) {
       this.updateMultiDisplay()
     }
+    if (id === P.ARP_LATCH) this.syncLatchLed()
     if (FX_PANEL_IDS.has(id)) this.syncFxPanel()
   }
 
@@ -339,6 +351,7 @@ export class Panel {
     this.updateStepLeds()
     this.updateProgramReadout()
     this.syncRec()
+    this.syncLatchLed()
     this.keyboard.setOctaveShift(this.store.getParam(P.OCTAVE) - 2, { silent: true })
   }
 
@@ -595,9 +608,47 @@ export class Panel {
     this.tempoKnob.setValue(this.store.program.seq.bpm, { silent: true })
   }
 
+  /** ARP LATCH LED blinks while latched (spec §3). */
+  private syncLatchLed(): void {
+    this.latchBtn.el.classList.toggle('xd-blink', this.store.getParam(P.ARP_LATCH) === 1)
+  }
+
   private updateProgramReadout(): void {
     this.progNum.textContent = String(this.store.slot + 1).padStart(3, '0')
     this.progName.textContent = this.store.program.name
+  }
+
+  /** WRITE commits the program; SHIFT+WRITE inits the edit buffer instead. */
+  private writePress(): void {
+    if (this.shiftOn) {
+      this.store.initCurrent() // OLED/readout follow via the onProgram flow
+      return
+    }
+    const ok = this.store.writeSlot()
+    // restart whichever LED animation applies (class swap restarts it)
+    this.writeBtn.el.classList.remove('xd-flash', 'xd-blink')
+    void (this.writeBtn.el as HTMLElement).offsetWidth
+    if (this.writeErrTimer !== null) {
+      clearTimeout(this.writeErrTimer)
+      this.writeErrTimer = null
+    }
+    if (ok) {
+      this.writeBtn.el.classList.add('xd-flash')
+    } else {
+      // persistence failed (localStorage quota): blink the red LED for ~1s
+      this.writeBtn.el.classList.add('xd-blink')
+      this.writeErrTimer = setTimeout(() => {
+        this.writeErrTimer = null
+        this.writeBtn.el.classList.remove('xd-blink')
+      }, 1000)
+    }
+  }
+
+  /** Double-click on the NAME readout: prompt-based program rename. */
+  private renamePrompt(): void {
+    const next = window.prompt('Program name', this.store.program.name)
+    if (next === null) return
+    this.store.setName(next.trim().slice(0, 16))
   }
 
   /* ================================================================ */
@@ -622,7 +673,7 @@ export class Panel {
       size: 'm',
       min: TEMPO_MIN,
       max: TEMPO_MAX,
-      step: 1,
+      step: 0.1, // hardware tempo resolution is 0.1 BPM
       value: this.store.program.seq.bpm,
       defaultValue: 120,
       format: (v) => v.toFixed(1),
@@ -647,6 +698,7 @@ export class Panel {
       latching: true,
       onInput: (v) => this.store.setParam(P.ARP_LATCH, v, 'ui'),
     })
+    this.latchBtn = latch
     this.bind(P.ARP_LATCH, latch)
 
     const depth = this.paramKnob(P.VM_DEPTH, 'l', {
@@ -758,6 +810,8 @@ export class Panel {
   private buildProgram(): HTMLElement {
     this.progNum = div('xd-prog-num')
     this.progName = div('xd-prog-name')
+    // double-click the name readout = rename the working program
+    this.progName.addEventListener('dblclick', () => this.renamePrompt())
     const readout = div('xd-prog-readout')
     readout.append(this.progNum, this.progName)
 
@@ -776,13 +830,7 @@ export class Panel {
     this.writeBtn = new LedButton({
       label: 'WRITE',
       led: 'red',
-      onPress: () => {
-        this.store.writeSlot()
-        // flash the LED (class restarts the one-shot animation)
-        this.writeBtn.el.classList.remove('xd-flash')
-        void (this.writeBtn.el as HTMLElement).offsetWidth
-        this.writeBtn.el.classList.add('xd-flash')
-      },
+      onPress: () => this.writePress(),
     })
 
     this.shiftBtn = new LedButton({

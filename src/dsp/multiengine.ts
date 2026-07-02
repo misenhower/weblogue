@@ -12,6 +12,8 @@
  * LFOs and phases.
  */
 
+import { noiseDecimHz, noiseHighHz, noiseLowHz, noisePeakBwHz } from '../shared/maps'
+
 export const MULTI_TYPE = { NOISE: 0, VPM: 1, USER: 2 } as const
 
 export const NOISE_TYPE = { HIGH: 0, LOW: 1, PEAK: 2, DECIM: 3 } as const
@@ -76,6 +78,31 @@ const VPM_FB_CAP = 4
 const INV_C4 = 1 / 261.625565
 /** Mod Attack trim +100% introduces a ~180 ms mod-index attack. */
 const VPM_ATK_REF = 0.06
+/**
+ * PEAK noise bandpass center = note freq * this fixed ratio. The hardware
+ * manual only documents the BANDWIDTH range (110..880 Hz); the center is
+ * UNCONFIRMED (spec §5: "model as keytracked"), so we keytrack it at ~4x
+ * the note.
+ */
+const NOISE_PEAK_CENTER_RATIO = 4
+
+/**
+ * VPM SHIFT+SHAPE stepped RATIO OFFSET (spec §5: "1:4, 1:2, 1:1, 2:1, ...").
+ * Knob zones (ss 0..1) -> modulator-ratio multiplier. The wide center zone
+ * keeps the detent (stored 512 -> ss ~0.5) exactly neutral:
+ *   [0.00, 0.15)  ->  x1/4
+ *   [0.15, 0.38)  ->  x1/2
+ *   [0.38, 0.62]  ->  x1
+ *   (0.62, 0.85]  ->  x2
+ *   (0.85, 1.00]  ->  x4
+ */
+function ssRatioStep(ss: number): number {
+  if (ss < 0.15) return 0.25
+  if (ss < 0.38) return 0.5
+  if (ss <= 0.62) return 1
+  if (ss <= 0.85) return 2
+  return 4
+}
 
 /** Two-sample polynomial band-limited step residual (classic PolyBLEP). */
 function polyblep(t: number, dt: number): number {
@@ -107,7 +134,11 @@ interface VpmVoice {
   /** slow drift LFO on the modulator ratio */
   driftRate: number
   driftAmt: number
-  /** what SHIFT+SHAPE controls: 0 = ratio scale, 1 = extra feedback */
+  /**
+   * SHIFT+SHAPE ratio-offset style, neutral at the center detent (ss = 0.5):
+   * 0 = continuous bipolar ratio tilt x1/(1+ssRange)..x(1+ssRange),
+   * 1 = stepped multiplier x1/4..x4 (ssRatioStep; ssRange unused).
+   */
   ssMode: number
   ssRange: number
   /** carrier tanh drive (0 = clean sine carrier) */
@@ -486,12 +517,15 @@ export class MultiEngine {
     const shape = this.shape
 
     if (sub === NOISE_TYPE.DECIM) {
-      // sample & hold decimated noise; hold rate tracks the note so it plays
-      // chromatically: rate = noteFreq * factor(shape), ~200 Hz .. sr/2 at A4
-      const fMin = 200 / 440
-      const fMax = (0.5 * this.sr) / 440
-      const factor = fMin * Math.pow(fMax / fMin, shape)
-      const rate = clamp(this.freq * factor, 1, 0.5 * this.sr)
+      // S&H decimated noise. SHAPE sets an ABSOLUTE rate 240 Hz..48 kHz
+      // (spec §5, clamped to sr); SHIFT+SHAPE is the keytrack amount 0..100%:
+      // rate = decimHz * (noteFreq/C4)^shift, so at 0 the rate is fixed and
+      // at 1 it tracks the keyboard chromatically (doubling per octave).
+      let rate = noiseDecimHz(shape)
+      if (rate > this.sr) rate = this.sr
+      const kt = this.shift
+      if (kt > 0) rate *= Math.pow(this.freq * INV_C4, kt)
+      rate = clamp(rate, 1, this.sr)
       this.decimPhase += rate / this.sr
       if (this.decimPhase >= 1) {
         this.decimPhase -= Math.floor(this.decimPhase)
@@ -504,15 +538,18 @@ export class MultiEngine {
     let fc: number
     let q: number
     if (sub === NOISE_TYPE.HIGH) {
-      fc = 200 * Math.pow(50, shape) // 200 Hz .. 10 kHz, exponential
+      fc = noiseHighHz(shape) // HPF cutoff 10 Hz .. 21 kHz (spec §5)
       q = 0.7071
     } else if (sub === NOISE_TYPE.LOW) {
-      fc = 100 * Math.pow(150, shape) // 100 Hz .. 15 kHz
+      fc = noiseLowHz(shape) // LPF cutoff 10 Hz .. 21 kHz (spec §5)
       q = 0.7071
     } else {
-      // PEAK: resonant bandpass whose center tracks the note, x1..x16
-      fc = clamp(this.freq * Math.pow(2, 4 * shape), 20, this.nyq)
-      q = 10
+      // PEAK: SHAPE sets the bandpass BANDWIDTH 110..880 Hz (spec §5); the
+      // center keytracks the note at a fixed ratio (UNCONFIRMED, see
+      // NOISE_PEAK_CENTER_RATIO). Q follows from center/bandwidth.
+      const bw = noisePeakBwHz(shape)
+      fc = clamp(this.freq * NOISE_PEAK_CENTER_RATIO, 20, this.nyq)
+      q = clamp(fc / bw, 0.5, 50)
     }
 
     // TPT (Zavalishin) state-variable filter
@@ -552,7 +589,9 @@ export class MultiEngine {
       // (trims applied here: feedback + noise; vpmFbEff is 0.25 at neutral,
       // matching the THROAT table entry)
       const t = this.shape
-      const sc = 1 + ss * 0.5
+      // formant ratio scale, bipolar around the center detent (neutral at
+      // ss = 0.5, matching the SHIFT+SHAPE = ratio-offset semantics)
+      const sc = Math.pow(1.5, 2 * (ss - 0.5))
       const mr2 = (3.5 + 2.0 * t) * sc
       const mr1 = (2.5 - 1.5 * t) * sc
       const i2 = 1.8 - 1.2 * t
@@ -605,9 +644,14 @@ export class MultiEngine {
         this.vpmEnv = sane(this.vpmEnv * this.vpmEnvCoef)
       }
       let mr = c.mr
-      let fb = this.vpmFbEff // FEEDBACK trim (== c.fb at neutral)
-      if (c.ssMode === 0) mr *= 1 + ss * c.ssRange
-      else fb += ss * c.ssRange
+      const fb = this.vpmFbEff // FEEDBACK trim (== c.fb at neutral)
+      // SHIFT+SHAPE = RATIO OFFSET (spec §5), neutral at the center detent.
+      if (c.ssMode === 0) {
+        // continuous bipolar tilt: x1/(1+range) at ss=0 .. x(1+range) at ss=1
+        mr *= Math.pow(1 + c.ssRange, 2 * (ss - 0.5))
+      } else {
+        mr *= ssRatioStep(ss) // stepped x1/4 .. x4 (zone table above)
+      }
       if (this.vpmDriftAmtEff > 0) {
         let dp = this.vpmDriftPhase + c.driftRate / sr
         if (dp >= 1) dp -= 1

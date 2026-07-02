@@ -57,7 +57,7 @@ export function egIntToPercent(raw: number): number {
 /** EG->pitch depth at 100% (cents). UNCONFIRMED on hardware; musical choice. */
 export const EG_MAX_PITCH_CENTS = 4800
 
-/** EG->cutoff depth expressed in octaves at 100%. */
+/** EG->cutoff depth expressed in octaves at 100%. UNCONFIRMED on hardware. */
 export const EG_MAX_CUTOFF_OCTAVES = 10
 
 // ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ export function lfoIntTo01(raw: number): number {
   return clamp((clamp(raw, 0, 1023) - 512) / 511, -1, 1)
 }
 
-/** LFO INT scaling per target at full depth. */
+/** LFO INT scaling per target at full depth. UNCONFIRMED on hardware; musical choices. */
 export const LFO_MAX_PITCH_CENTS = 1200
 export const LFO_MAX_CUTOFF_OCTAVES = 7
 export const LFO_MAX_SHAPE = 1

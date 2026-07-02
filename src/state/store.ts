@@ -63,6 +63,16 @@ export class Store {
   /** Realtime motion rec: last step each lane wrote to (point-fill tracking). */
   private motionLastStep: number[] = new Array<number>(NUM_MOTION_LANES).fill(-1)
 
+  /**
+   * Realtime note rec: notes currently held, tracked as parallel arrays.
+   * Step/time are the step the note currently occupies and the wall-clock
+   * time it entered that step (note-on time, then each tie-chain boundary).
+   */
+  private rtHeldNotes: number[] = []
+  private rtHeldVels: number[] = []
+  private rtHeldSteps: number[] = []
+  private rtHeldTimes: number[] = []
+
   private seqNotifyQueued = false
 
   constructor(factory: Program[]) {
@@ -134,6 +144,7 @@ export class Store {
   /** Common post-load path: one loadProgram to the sink, listeners get 'load'. */
   private afterLoad(): void {
     this.motionLastStep.fill(-1)
+    this.clearRtHeld()
     this.send({ t: 'loadProgram', program: this.prog })
     for (const fn of this.programLs) fn(this.prog, this.slotIndex)
     for (let id = 0; id < PARAM_COUNT; id++) {
@@ -151,13 +162,19 @@ export class Store {
     this.afterLoad()
   }
 
-  writeSlot(n: number = this.slotIndex): void {
-    if (!Number.isInteger(n) || n < 0 || n >= NUM_SLOTS) return
+  /**
+   * Commit the working program to slot n. Returns false when the write did
+   * not persist (localStorage quota): the in-memory bank/name index still
+   * updates (the program is live) but the program stays dirty.
+   */
+  writeSlot(n: number = this.slotIndex): boolean {
+    if (!Number.isInteger(n) || n < 0 || n >= NUM_SLOTS) return false
     this.bank[n] = cloneProgram(this.prog)
-    saveBankSlot(n, this.prog)
+    const ok = saveBankSlot(n, this.prog)
     this.slotIndex = n
-    this.isDirty = false
+    this.isDirty = !ok
     for (const fn of this.programLs) fn(this.prog, this.slotIndex)
+    return ok
   }
 
   loadProgramData(p: Program): void {
@@ -386,6 +403,9 @@ export class Store {
     // lane refills all points (matters when the loop wraps back to the same
     // step index — a new pass must overwrite, not continue the shift-in).
     this.motionLastStep.fill(-1)
+    if (this.rec === 'realtime' && this.isPlaying && this.playheadIndex >= 0) {
+      this.chainRtHeld(this.playheadIndex)
+    }
     for (const fn of this.playheadLs) fn(this.playheadIndex)
   }
 
@@ -405,10 +425,14 @@ export class Store {
   setRecMode(m: RecMode): void {
     if (m !== 'off' && m !== 'step' && m !== 'realtime') return
     if (this.rec === m) return
+    // Leaving realtime rec (rec stop / playback stop): finalize held notes
+    // with whatever gate time has elapsed so far.
+    if (this.rec === 'realtime') this.finalizeRtHeld()
     this.rec = m
     this.heldNotes.length = 0
     this.collectedNotes.length = 0
     this.collectedVels.length = 0
+    this.clearRtHeld()
     this.stepCursor = m === 'step' ? 0 : -1
     this.motionLastStep.fill(-1)
     for (const fn of this.recLs) fn()
@@ -485,19 +509,110 @@ export class Store {
         return // step full
       }
       st.on = true
+      // Track the hold so note-off (or a step boundary) sets the real gate.
+      const hi = this.rtHeldNotes.indexOf(n)
+      const t = Date.now()
+      if (hi >= 0) {
+        this.rtHeldVels[hi] = v
+        this.rtHeldSteps[hi] = i
+        this.rtHeldTimes[hi] = t
+      } else {
+        this.rtHeldNotes.push(n)
+        this.rtHeldVels.push(v)
+        this.rtHeldSteps.push(i)
+        this.rtHeldTimes.push(t)
+      }
       this.touchSeq()
     }
   }
 
   recNoteOff(note: number): void {
     if (!Number.isFinite(note)) return
-    if (this.rec !== 'step' || this.stepCursor < 0) return
     const n = clampInt(note, 0, 127)
-    const hi = this.heldNotes.indexOf(n)
-    if (hi >= 0) this.heldNotes.splice(hi, 1)
-    if (this.heldNotes.length === 0 && this.collectedNotes.length > 0) {
-      this.commitStepRec(false)
+    if (this.rec === 'step' && this.stepCursor >= 0) {
+      const hi = this.heldNotes.indexOf(n)
+      if (hi >= 0) this.heldNotes.splice(hi, 1)
+      if (this.heldNotes.length === 0 && this.collectedNotes.length > 0) {
+        this.commitStepRec(false)
+      }
+    } else if (this.rec === 'realtime') {
+      const k = this.rtHeldNotes.indexOf(n)
+      if (k >= 0) this.finalizeRtNote(k, Date.now())
     }
+  }
+
+  /** Step duration estimate from the current bpm/resolution (spec §11). */
+  private stepDurationMs(): number {
+    const s = this.prog.seq
+    const beats = STEP_RESOLUTIONS[s.stepResolution]?.beatsPerStep ?? 0.25
+    return (beats * 60000) / s.bpm
+  }
+
+  /**
+   * Realtime rec, step boundary: every note still held gets gate TIE in the
+   * step it occupied and is re-added to the new step (hardware tie-chaining,
+   * capped at NOTES_PER_STEP). Note-off then writes the remaining fraction.
+   */
+  private chainRtHeld(step: number): void {
+    const t = Date.now()
+    for (let k = this.rtHeldNotes.length - 1; k >= 0; k--) {
+      if (this.rtHeldSteps[k] === step) continue
+      const n = this.rtHeldNotes[k]
+      const prev = this.prog.seq.steps[this.rtHeldSteps[k]]
+      const pi = prev.notes.indexOf(n)
+      if (pi >= 0) prev.gates[pi] = GATE_TIE
+      const st = this.prog.seq.steps[step]
+      let idx = st.notes.indexOf(n)
+      if (idx < 0) {
+        if (st.notes.length >= NOTES_PER_STEP) {
+          // new step full: the chain ends at the boundary (TIE holds it there)
+          this.dropRtNote(k)
+          this.touchSeq()
+          continue
+        }
+        idx = st.notes.length
+        st.notes.push(n)
+        st.vels.push(this.rtHeldVels[k])
+        st.gates.push(this.prog.seq.defaultGate)
+        st.on = true
+      }
+      this.rtHeldSteps[k] = step
+      this.rtHeldTimes[k] = t
+      this.touchSeq()
+    }
+  }
+
+  /** Write the elapsed-fraction gate for held note k and stop tracking it. */
+  private finalizeRtNote(k: number, t: number): void {
+    const st = this.prog.seq.steps[this.rtHeldSteps[k]]
+    const idx = st.notes.indexOf(this.rtHeldNotes[k])
+    if (idx >= 0) {
+      const dur = this.stepDurationMs()
+      const g = dur > 0 ? Math.round((72 * (t - this.rtHeldTimes[k])) / dur) : 72
+      st.gates[idx] = g < 1 ? 1 : g > 72 ? 72 : g
+      this.touchSeq()
+    }
+    this.dropRtNote(k)
+  }
+
+  /** Notes still held when rec/playback stops: finalize with what elapsed. */
+  private finalizeRtHeld(): void {
+    const t = Date.now()
+    while (this.rtHeldNotes.length > 0) this.finalizeRtNote(this.rtHeldNotes.length - 1, t)
+  }
+
+  private dropRtNote(k: number): void {
+    this.rtHeldNotes.splice(k, 1)
+    this.rtHeldVels.splice(k, 1)
+    this.rtHeldSteps.splice(k, 1)
+    this.rtHeldTimes.splice(k, 1)
+  }
+
+  private clearRtHeld(): void {
+    this.rtHeldNotes.length = 0
+    this.rtHeldVels.length = 0
+    this.rtHeldSteps.length = 0
+    this.rtHeldTimes.length = 0
   }
 
   recRest(): void {

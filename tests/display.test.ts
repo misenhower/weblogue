@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { FACTORY_PRESETS } from '../src/state/presets'
-import { P, PARAMS, MOTION_PARAM_IDS, formatParam } from '../src/shared/params'
+import { P, PARAMS, MOTION_PARAM_IDS, MOTION_GATE_TIME, formatParam } from '../src/shared/params'
 import { NUM_MOTION_LANES } from '../src/shared/program'
 import { Display } from '../src/ui/display'
 
@@ -336,6 +336,54 @@ describe('menu editing', () => {
     expect(store.program.seq.bpm).toBe(before + 1.5)
     plus.click() // a later plain click edits again
     expect(store.program.seq.bpm).toBe(before + 2)
+  })
+
+  it('an aborted press (release off-button) does not swallow the next click', () => {
+    const { store, display } = make()
+    btn(display, 'menu').click()
+    clickNext(display, MENU_COUNT) // BPM page
+    const before = store.program.seq.bpm
+    const plus = btn(display, 'plus')
+
+    plus.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(store.program.seq.bpm).toBe(before + 0.5)
+    // pointer released off the button: no trailing click is generated
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }))
+    plus.click() // keyboard/synthetic click must still edit
+    expect(store.program.seq.bpm).toBe(before + 1)
+
+    // pointercancel mid-press must not swallow the next click either
+    plus.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(store.program.seq.bpm).toBe(before + 1.5)
+    plus.dispatchEvent(new Event('pointercancel', { bubbles: true }))
+    plus.click()
+    expect(store.program.seq.bpm).toBe(before + 2)
+  })
+
+  it('editing DEFAULT GATE during realtime rec records a GATE TIME motion lane', () => {
+    const { store, display } = make()
+    store.setPlaying(true)
+    store.setRecMode('realtime')
+    store.setPlayhead(2)
+    btn(display, 'menu').click()
+    clickNext(display, MENU_COUNT + SEQ_FIELD_COUNT - 1) // DEFAULT GATE page
+    const before = store.program.seq.defaultGate
+
+    btn(display, 'plus').click()
+    expect(store.program.seq.defaultGate).toBe(before + 1)
+    const lane = store.findMotionLane(MOTION_GATE_TIME)
+    expect(lane).toBeGreaterThanOrEqual(0)
+    const l = store.program.seq.motion[lane]
+    expect(l.on).toBe(true)
+    expect(l.smooth).toBe(true)
+    expect(l.data[2]).toEqual([before + 1, before + 1, before + 1, before + 1, before + 1])
+    btn(display, 'minus').click() // same step: traces the movement
+    expect(l.data[2]).toEqual([before + 1, before + 1, before + 1, before + 1, before])
+
+    store.setRecMode('off') // not recording: [-]/[+] edit the field only
+    btn(display, 'plus').click()
+    expect(store.program.seq.defaultGate).toBe(before + 1)
+    expect(l.data[2]).toEqual([before + 1, before + 1, before + 1, before + 1, before])
   })
 
   it('motion page ASSIGN cycles the lane paramId through the store', () => {

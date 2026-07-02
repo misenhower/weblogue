@@ -101,10 +101,11 @@ export const P = {
   VPM_KEY_TRACK: 91,
   MICRO_TUNING: 92,
   SCALE_KEY: 93,
+  MIDI_AT_ASSIGN: 94,
 } as const
 
 export type ParamId = (typeof P)[keyof typeof P]
-export const PARAM_COUNT = 94
+export const PARAM_COUNT = 95
 
 /** Virtual motion-sequence targets that are not program parameters. */
 export const MOTION_PITCH_BEND = 1000
@@ -320,6 +321,9 @@ const DEFS: ParamMeta[] = [
   }),
   menu(P.SCALE_KEY, 'scaleKey', 'SCALE KEY', 0, 24, 12, {
     fmt: (r) => (r - 12 > 0 ? '+' : '') + (r - 12) + ' Note',
+  }),
+  menu(P.MIDI_AT_ASSIGN, 'midiAtAssign', 'MIDI AFTERTOUCH', 0, JOY_ASSIGN_DESTS.length - 1, 12, {
+    labels: JOY_ASSIGN_DESTS,
   }),
 ]
 

@@ -3,10 +3,11 @@
  *
  * Plain TS DSP class: no DOM, no worklet globals. Sample rate is injected.
  * Anti-aliasing strategy:
- *   - SAW:  2-point polyBLEP on every discontinuity. SHAPE cross-mixes a second
+ *   - SAW:  2-point polyBLEP on every discontinuity. SHAPE subtracts a second
  *           BLEP'd saw whose edge spacing narrows toward half a period, so max
- *           shape is a bright pseudo-octave / comb saw (matches the hardware's
- *           audible SHAPE behaviour on SAW).
+ *           shape is exactly saw(t) - saw(t+0.5) = a square wave: the morph
+ *           attenuates EVEN harmonics toward a square-ish blend (spec §4,
+ *           matches the hardware's audible SHAPE behaviour on SAW).
  *   - TRI:  polyBLAMP corners (2-point, integrated-BLEP) so the triangle stays
  *           clean under linear FM. SHAPE drives a smooth sine wavefolder
  *           (fold gain 1..8) blended in continuously - the fold curve is C-inf
@@ -352,24 +353,28 @@ export class Vco {
     if (sync) rev = false // sync ticks use forward placement (documented approximation)
 
     if (w === VCO_WAVE.SAW) {
-      // SHAPE adds a second BLEP'd saw. Edge spacing narrows toward half a
-      // period as shape rises: subtle comb at low shape, strong comb sweep in
-      // the middle, pseudo-octave saw at max (off = 0.5 -> perfect octave).
+      // SHAPE subtracts a second BLEP'd saw (spec §4: morph toward a
+      // square-ish blend, attenuating EVEN harmonics). The edge offset
+      // narrows toward half a period as shape rises, so at max shape the
+      // pair is exactly saw(t) - saw(t+0.5) = a square (odd harmonics only).
       const g = shape
       const off = 0.5 + 0.45 * (1 - g)
-      const norm = 1 / (1 + 0.9 * g * (1 - g)) // exact peak normalization
+      // RMS compensation: var(saw - g*saw_off) = (1-g)^2/3 + 4*g*off*(1-off)
+      // (saw autocorrelation R(tau) = 1/3 - 2*tau*(1-tau)); normalize back
+      // to a plain saw's variance of 1/3 so the sweep keeps ~equal RMS.
+      const norm = 1 / Math.sqrt((1 - g) * (1 - g) + 12 * g * off * (1 - off))
       let core: number
       if (!rev) {
-        core = sawBl(t, adt, sync) + g * sawBl(frac(t + off), adt, false)
+        core = sawBl(t, adt, sync) - g * sawBl(frac(t + off), adt, false)
         if (sync) {
-          const naive0 = -1 + g * (2 * frac(off) - 1)
-          const naivePre = 2 * pre - 1 + g * (2 * frac(pre + off) - 1)
+          const naive0 = -1 - g * (2 * frac(off) - 1)
+          const naivePre = 2 * pre - 1 - g * (2 * frac(pre + off) - 1)
           core += (naive0 - naivePre) * blepAfter(syncTau)
         }
       } else {
         // Time-mirrored: saw(t) = -saw(1-t); second saw offset flips too.
         const u = 1 - t
-        core = -(sawBl(u, adt, false) + g * sawBl(frac(u + 1 - off), adt, false))
+        core = -(sawBl(u, adt, false) - g * sawBl(frac(u + 1 - off), adt, false))
       }
       return core * norm
     }

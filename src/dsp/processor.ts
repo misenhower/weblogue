@@ -3,7 +3,7 @@
  * AudioWorklet processor for the minilogue xd replica.
  *
  * Thin worklet shell around Engine: routes every ToEngine message in, posts
- * FromEngine telemetry out (step / scope / voices / level). No DOM imports —
+ * FromEngine telemetry out (step / scope / voices). No DOM imports —
  * only shared/* and dsp/*. process() is exception-guarded so the processor
  * can never die, handles any block size, and always returns true.
  */
@@ -13,7 +13,6 @@ import type { ToEngine } from '../shared/messages'
 
 const SCOPE_INTERVAL_S = 0.05
 const VOICES_INTERVAL_S = 0.03
-const LEVEL_INTERVAL_S = 0.1
 
 class XdProcessor extends AudioWorkletProcessor {
   private readonly engine = new Engine(sampleRate)
@@ -25,10 +24,8 @@ class XdProcessor extends AudioWorkletProcessor {
 
   private readonly scopeFrames = Math.max(1, Math.round(SCOPE_INTERVAL_S * sampleRate))
   private readonly voicesFrames = Math.max(1, Math.round(VOICES_INTERVAL_S * sampleRate))
-  private readonly levelFrames = Math.max(1, Math.round(LEVEL_INTERVAL_S * sampleRate))
   private scopeCount = 0
   private voicesCount = 0
-  private levelCount = 0
 
   private lastNotes: number[] = []
   private readonly noteScratch: number[] = []
@@ -49,13 +46,6 @@ class XdProcessor extends AudioWorkletProcessor {
   }
 
   private onMessage(data: unknown): void {
-    // Legacy bootstrap-stub compatibility ({type:'noteOn'|'noteOff'}).
-    const legacy = data as { t?: string; type?: string; note?: number }
-    if (legacy.t === undefined) {
-      if (legacy.type === 'noteOn' && typeof legacy.note === 'number') this.engine.noteOn(legacy.note, 100)
-      else if (legacy.type === 'noteOff' && typeof legacy.note === 'number') this.engine.noteOff(legacy.note)
-      return
-    }
     const m = data as ToEngine
     switch (m.t) {
       case 'noteOn':
@@ -87,6 +77,9 @@ class XdProcessor extends AudioWorkletProcessor {
         return
       case 'sustain':
         this.engine.sustain(m.on)
+        return
+      case 'pressure':
+        this.engine.setPressure(m.v)
         return
       case 'scope':
         this.scopeOn = m.on === true
@@ -132,13 +125,6 @@ class XdProcessor extends AudioWorkletProcessor {
       if (this.voicesCount >= this.voicesFrames) {
         this.voicesCount = 0
         this.postVoicesIfChanged()
-      }
-
-      this.levelCount += frames
-      if (this.levelCount >= this.levelFrames) {
-        this.levelCount = 0
-        const v = this.engine.takePeak()
-        this.port.postMessage({ t: 'level', v: v < 0 ? 0 : v > 1 ? 1 : v })
       }
     } catch {
       // Never let the processor die: emit silence for this block.

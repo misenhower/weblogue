@@ -8,8 +8,8 @@
  *   effective raw = (motion override ?? knob raw) + joystick-Y offset
  * Raw -> physical mapping happens ONCE per change here (push model); voices
  * only ever receive physical units. Motion overrides clear when the
- * sequencer transport stops; the joystick offset layer is non-destructive
- * and recomputed at block rate.
+ * sequencer transport stops; the joystick and aftertouch offset layers are
+ * non-destructive and recomputed at block rate.
  *
  * Voice modes (spec §3): POLY (+DUO zone), UNISON, CHORD, ARP. In ARP mode
  * live keys are fed to the sequencer's arpeggiator and its hook noteOns come
@@ -124,6 +124,14 @@ export class Engine {
   private joyDirty = false
   private joyDest = -1
   private joyOffset = 0
+  private joyGateOff = 0
+
+  // Channel aftertouch (MIDI_AT_ASSIGN destination, same offset machinery).
+  private pressure = 0
+  private pressureDirty = false
+  private atDest = -1
+  private atOffset = 0
+  private atGateOff = 0
 
   // Voices + allocator bookkeeping.
   private readonly voices: Voice[] = []
@@ -221,6 +229,7 @@ export class Engine {
     if (!m) return 0
     let v = this.motionHas[id] ? this.motionVal[id] : this.params[id]
     if (this.joyDest === id) v += this.joyOffset
+    if (this.atDest === id) v += this.atOffset
     return clamp(v, m.min, m.max)
   }
 
@@ -274,6 +283,14 @@ export class Engine {
     this.joyDirty = true
   }
 
+  /** Channel aftertouch, 0..1; offsets the MIDI_AT_ASSIGN destination
+   *  (block-rate, unipolar: +100% of the param's span at full pressure). */
+  setPressure(v: number): void {
+    if (!Number.isFinite(v)) return
+    this.pressure = clamp(v, 0, 1)
+    this.pressureDirty = true
+  }
+
   private refreshBend(): void {
     const v = this.motionBendOn ? this.motionBend : this.bendX
     const range = v >= 0 ? this.params[P.BEND_RANGE_PLUS] : this.params[P.BEND_RANGE_MINUS]
@@ -304,11 +321,41 @@ export class Engine {
         }
       }
     }
-    this.seq.setGateTimeOffset(gateOffset)
+    this.joyGateOff = gateOffset
+    this.seq.setGateTimeOffset(gateOffset + this.atGateOff)
     if (dest === this.joyDest && offset === this.joyOffset) return
     const prev = this.joyDest
     this.joyDest = dest
     this.joyOffset = offset
+    if (prev >= 0 && prev !== dest) this.applyParam(prev)
+    if (dest >= 0) this.applyParam(dest)
+  }
+
+  private applyPressure(): void {
+    this.pressureDirty = false
+    const v = this.pressure
+    let dest = -1
+    let offset = 0
+    let gateOffset = 0
+    if (v > 1e-3) {
+      const idx = Math.round(this.params[P.MIDI_AT_ASSIGN])
+      if (JOY_DEST_IDS[idx] === -1) {
+        // GATE TIME: offsets the sequencer's step gates (raw units 0..72).
+        gateOffset = v * 72
+      } else {
+        dest = this.joyDestParam(idx)
+        if (dest >= 0) {
+          const meta = PARAMS[dest]
+          offset = v * (meta.max - meta.min)
+        }
+      }
+    }
+    this.atGateOff = gateOffset
+    this.seq.setGateTimeOffset(this.joyGateOff + gateOffset)
+    if (dest === this.atDest && offset === this.atOffset) return
+    const prev = this.atDest
+    this.atDest = dest
+    this.atOffset = offset
     if (prev >= 0 && prev !== dest) this.applyParam(prev)
     if (dest >= 0) this.applyParam(dest)
   }
@@ -378,7 +425,8 @@ export class Engine {
         for (let i = 0; i < NV; i++) vs[i].setMultiType(t)
         // Sub/shape/shift are stored per type: re-push the active set.
         this.refreshMultiSelect()
-        this.joyDirty = true // MULTI SHAPE joystick dest may re-resolve
+        this.joyDirty = true // MULTI SHAPE joystick/aftertouch dest may re-resolve
+        this.pressureDirty = true
         break
       }
       case P.SELECT_NOISE:
@@ -590,6 +638,9 @@ export class Engine {
       case P.JOY_ASSIGN_MINUS:
       case P.JOY_RANGE_MINUS:
         this.joyDirty = true
+        break
+      case P.MIDI_AT_ASSIGN:
+        this.pressureDirty = true
         break
       case P.LFO_KEY_SYNC:
         for (let i = 0; i < NV; i++) vs[i].setLfoKeySync(e >= 0.5)
@@ -1157,6 +1208,12 @@ export class Engine {
     this.joyOffset = 0
     this.joyY = 0
     this.joyDirty = false
+    this.joyGateOff = 0
+    this.atDest = -1
+    this.atOffset = 0
+    this.pressure = 0
+    this.pressureDirty = false
+    this.atGateOff = 0
     this.seq.setGateTimeOffset(0)
     for (const meta of PARAMS) {
       const v = p.params[meta.id]
@@ -1191,6 +1248,7 @@ export class Engine {
     if (frames <= 0) return
 
     if (this.joyDirty) this.applyJoy()
+    if (this.pressureDirty) this.applyPressure()
 
     // Stolen-voice restarts: fire only once the ~1.5 ms kill ramp has fully
     // faded the old note (live steals arrive between blocks, before the ramp

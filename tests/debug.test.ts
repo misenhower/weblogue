@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 import { Engine, DBG_TAP_SIZE } from '../src/dsp/engine'
+import { P } from '../src/shared/params'
 import { DebugPanel } from '../src/ui/debugpanel'
 import type { FromEngine } from '../src/shared/messages'
 
@@ -49,6 +50,59 @@ describe('engine SERVICE MODE taps', () => {
     // Independent per-VCO drift: distinct seeds must not track each other.
     expect(info.drift1).not.toBe(info.drift2)
     e.noteOff(64)
+  })
+})
+
+describe('round-robin voice allocation (hardware cycles voices)', () => {
+  it('repeated presses of the same key cycle through all four voices', () => {
+    const e = new Engine(SR)
+    const used: number[] = []
+    for (let p = 0; p < 5; p++) {
+      e.noteOn(60, 100)
+      render(e, 0.05)
+      used.push(e.debugVoice)
+      e.noteOff(60)
+      render(e, 0.4) // let the release tail fully die -> voice goes idle
+    }
+    expect(used).toEqual([0, 1, 2, 3, 0])
+  })
+
+  it('a held key keeps its voice while a tapped key cycles the others', () => {
+    const e = new Engine(SR)
+    e.noteOn(48, 100) // held
+    render(e, 0.05)
+    const held = e.debugVoice
+    const tapped: number[] = []
+    for (let p = 0; p < 4; p++) {
+      e.noteOn(72, 100)
+      render(e, 0.05)
+      tapped.push(e.debugVoice)
+      e.noteOff(72)
+      render(e, 0.4)
+    }
+    expect(e.debugVoiceInfo(held).on).toBe(true) // held voice never disturbed
+    for (const t of tapped) expect(t).not.toBe(held)
+    expect(new Set(tapped).size).toBe(3) // cycles the three free voices
+    e.noteOff(48)
+  })
+
+  it('CHORD strikes rotate to fresh voices between presses', () => {
+    const e = new Engine(SR)
+    e.setParam(P.VOICE_MODE, 1) // CHORD
+    e.setParam(P.VM_DEPTH, 30) // 5th zone: 2 tones
+    const strike = (): number[] => {
+      e.noteOn(60, 100)
+      render(e, 0.05)
+      const on = [0, 1, 2, 3].filter((i) => e.debugVoiceInfo(i).on)
+      e.noteOff(60)
+      render(e, 0.4)
+      return on
+    }
+    const first = strike()
+    const second = strike()
+    expect(first.length).toBe(2)
+    expect(second.length).toBe(2)
+    expect(second).not.toEqual(first) // rotated to a different voice set
   })
 })
 

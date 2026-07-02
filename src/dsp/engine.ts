@@ -190,6 +190,12 @@ export class Engine {
   private readonly gainCoef: number
   private peak = 0
 
+  // --- round-robin allocation state (hardware cycles voices) -------------
+  private rotor = 0
+  private pairRotor = 0
+  private readonly chordMap = new Int8Array(NV).fill(-1)
+  private chordTones = 0
+
   // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
   private dbgOn = false
   private dbgVoice = 0 // most recently triggered voice index
@@ -964,11 +970,23 @@ export class Engine {
     } else {
       const chord = CHORDS[chordIndex(this.effectiveParam(P.VM_DEPTH))]
       const tones = Math.min(chord.notes.length, NV)
-      for (let t = 0; t < tones; t++) {
-        this.startVoice(t, note, note + chord.notes[t], vel, retrig, glide, 0, 1, false)
+      // Rotate the chord's voice set on each fresh strike (family behavior:
+      // voices cycle even in mono-style modes, letting tails ring); a legato
+      // transition re-pitches the SAME voices so glide/EGs stay continuous.
+      const reuse = !retrig && this.chordTones === tones && this.chordMap[0] >= 0
+      if (!reuse) {
+        for (let t = 0; t < tones; t++) this.chordMap[t] = (this.rotor + t) % NV
+        for (let t = tones; t < NV; t++) this.chordMap[t] = -1
+        this.rotor = (this.rotor + tones) % NV
+        this.chordTones = tones
       }
-      for (let t = tones; t < NV; t++) {
-        if (this.voices[t].active && !this.vReleased[t]) this.gateOffVoice(t)
+      for (let t = 0; t < tones; t++) {
+        this.startVoice(this.chordMap[t], note, note + chord.notes[t], vel, retrig, glide, 0, 1, false)
+      }
+      for (let i = 0; i < NV; i++) {
+        let used = false
+        for (let t = 0; t < tones; t++) if (this.chordMap[t] === i) used = true
+        if (!used && this.voices[i].active && !this.vReleased[i]) this.gateOffVoice(i)
       }
     }
   }
@@ -988,12 +1006,15 @@ export class Engine {
   private duoNoteOn(note: number, vel: number, legato: boolean, amount: number): void {
     const glide = this.glideFor(legato)
     const det = amount * DUO_DETUNE_CENTS
-    // Pairs (0,1) and (2,3): main + stacked voice.
+    // Pairs (0,1) and (2,3): main + stacked voice; rotate between the pairs
+    // like the hardware rotates voices.
     let pair = -1
-    for (let p = 0; p < 2; p++) {
+    for (let q = 0; q < 2; q++) {
+      const p = (this.pairRotor + q) % 2
       const a = p * 2
       if (!this.voices[a].active && !this.voices[a + 1].active && !this.pendFlag[a] && !this.pendFlag[a + 1]) {
         pair = p
+        this.pairRotor = (p + 1) % 2
         break
       }
     }
@@ -1035,8 +1056,15 @@ export class Engine {
 
   /** Idle voice, else oldest gate-released voice; -1 = must steal. */
   private allocVoice(): number {
-    for (let i = 0; i < NV; i++) {
-      if (!this.voices[i].active && !this.pendFlag[i]) return i
+    // Round-robin like the hardware: scan idle voices starting after the
+    // last allocation, so repeated presses cycle 1-2-3-4 and each previous
+    // press's release tail keeps ringing on its own voice.
+    for (let j = 0; j < NV; j++) {
+      const i = (this.rotor + j) % NV
+      if (!this.voices[i].active && !this.pendFlag[i]) {
+        this.rotor = (i + 1) % NV
+        return i
+      }
     }
     let best = -1
     let bestGen = Infinity
@@ -1046,6 +1074,7 @@ export class Engine {
         best = i
       }
     }
+    if (best >= 0) this.rotor = (best + 1) % NV
     return best
   }
 

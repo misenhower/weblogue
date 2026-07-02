@@ -193,20 +193,21 @@ export class DebugPanel {
     ctx.globalAlpha = 1
     ctx.lineWidth = 1.4
     ctx.beginPath()
-    // Trigger on a rising zero crossing inside the first third of the frame
-    // so periodic waveforms hold still; fall back to the frame start.
+    // Center-trigger: lock a rising zero crossing to the horizontal middle
+    // (searching the middle third of the frame), so periodic waveforms hold
+    // still with their trigger point centered; fall back to the frame center.
     const n = data.length
-    const searchSpan = Math.floor(n / 3)
-    let trig = 0
-    for (let x = 1; x < searchSpan; x++) {
+    const win = n > 768 ? 512 : n - Math.floor(n / 3)
+    const half = Math.floor(win / 2)
+    let trig = Math.floor(n / 2)
+    for (let x = half + 1; x <= n - (win - half); x++) {
       if (data[x - 1] <= 0 && data[x] > 0) {
         trig = x
         break
       }
     }
-    const win = n - searchSpan
     for (let x = 0; x < win; x++) {
-      let s = data[trig + x]
+      let s = data[trig - half + x]
       if (!Number.isFinite(s)) s = 0
       if (s > 1.4) s = 1.4
       else if (s < -1.4) s = -1.4

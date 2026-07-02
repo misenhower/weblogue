@@ -55,10 +55,11 @@ import { ReverbFx } from './fx/reverb'
 
 const NV = 4
 /**
- * Samples per SERVICE-MODE tap frame: ~16 ms at 48 kHz so at least one full
- * cycle fits down to C2, giving the panel's trigger something to lock onto.
+ * Samples per SERVICE-MODE tap frame: the panel shows a 512-sample window
+ * center-triggered within the frame, so the trigger search span is
+ * DBG_TAP_SIZE - 512 ≈ 16 ms at 48 kHz — a guaranteed lock down to ~C2.
  */
-export const DBG_TAP_SIZE = 768
+export const DBG_TAP_SIZE = 1280
 
 /** Voice modes (params.ts order). */
 const VM_ARP = 0

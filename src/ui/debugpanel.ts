@@ -58,9 +58,17 @@ export class DebugPanel {
   private readonly tapCells: HTMLElement[] = []
   private readonly modCanvases: HTMLCanvasElement[] = []
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
-  private readonly modHist = [new Float32Array(HISTORY), new Float32Array(HISTORY), new Float32Array(HISTORY)]
+  /** Per-voice modulator histories [voice][signal] — every voice records
+   *  continuously so switching the tap shows THAT voice's real past. */
+  private readonly modHist: Float32Array[][] = [0, 1, 2, 3].map(() => [
+    new Float32Array(HISTORY),
+    new Float32Array(HISTORY),
+    new Float32Array(HISTORY),
+  ])
   private histW = 0
   private histFill = 0
+  private shownVoice = 0
+  private readonly modLabels: HTMLElement[] = []
   private readonly lanes: Lane[] = []
   private loadFill!: HTMLElement
   private loadText!: HTMLElement
@@ -136,7 +144,8 @@ export class DebugPanel {
       cv.height = 34 * (window.devicePixelRatio || 1)
       const label = document.createElement('div')
       label.className = 'xd-svc-label'
-      label.textContent = MOD_SIGS[i].label
+      label.textContent = MOD_SIGS[i].label + ' · V1'
+      this.modLabels.push(label)
       cell.append(cv, label)
       modRow.appendChild(cell)
       let ctx: CanvasRenderingContext2D | null = null
@@ -218,17 +227,25 @@ export class DebugPanel {
       else this.drawScope(i, data)
     }
 
-    // MOD sparklines: append the tapped voice's modulators to the history.
-    const tv = m.voices[m.tapped]
-    if (tv) {
-      const w = this.histW
-      this.modHist[0][w] = tv.amp
-      this.modHist[1][w] = tv.modEg
-      this.modHist[2][w] = tv.lfo
-      this.histW = (w + 1) % HISTORY
-      if (this.histFill < HISTORY) this.histFill++
-      for (let s = 0; s < MOD_SIGS.length; s++) this.drawSparkline(s)
+    // MOD sparklines: every voice's modulators record continuously; the
+    // canvases display the tapped voice's own history.
+    const w = this.histW
+    for (let vi = 0; vi < this.modHist.length && vi < m.voices.length; vi++) {
+      const v = m.voices[vi]
+      this.modHist[vi][0][w] = v.amp
+      this.modHist[vi][1][w] = v.modEg
+      this.modHist[vi][2][w] = v.lfo
     }
+    this.histW = (w + 1) % HISTORY
+    if (this.histFill < HISTORY) this.histFill++
+    const shown = Math.max(0, Math.min(this.modHist.length - 1, m.tapped))
+    if (shown !== this.shownVoice) {
+      this.shownVoice = shown
+      for (let s = 0; s < MOD_SIGS.length; s++) {
+        this.modLabels[s].textContent = MOD_SIGS[s].label + ' · V' + (shown + 1)
+      }
+    }
+    for (let s = 0; s < MOD_SIGS.length; s++) this.drawSparkline(s)
 
     let activeCount = 0
     for (let i = 0; i < this.lanes.length && i < m.voices.length; i++) {
@@ -310,7 +327,7 @@ export class DebugPanel {
       ctx.stroke()
       ctx.globalAlpha = 1
     }
-    const hist = this.modHist[s]
+    const hist = this.modHist[this.shownVoice][s]
     const n = this.histFill
     if (n < 2) return
     ctx.strokeStyle = sig.color

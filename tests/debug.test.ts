@@ -193,6 +193,17 @@ describe('DebugPanel', () => {
     expect(p.el.querySelectorAll('.xd-svc-mod-cv').length).toBe(3)
   })
 
+  it('MOD row follows the tapped voice (per-voice histories + label)', () => {
+    const p = new DebugPanel()
+    const labels = () => [...p.el.querySelectorAll('.xd-svc-mod .xd-svc-label')].map((n) => n.textContent)
+    p.update(fakeMsg())
+    expect(labels()[0]).toBe('AMP EG · V2') // fakeMsg taps voice index 1
+    const m = fakeMsg()
+    m.tapped = 3
+    p.update(m)
+    expect(labels()).toEqual(['AMP EG · V4', 'MOD EG · V4', 'LFO · V4'])
+  })
+
   it('close button fires onClose; null 2d context never throws', () => {
     const p = new DebugPanel()
     let closed = false

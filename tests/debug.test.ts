@@ -247,6 +247,38 @@ describe('DebugPanel', () => {
     expect(localStorage.getItem('xd-svc-view')).toBe('diagram')
   })
 
+  it('dragging the header repositions the drawer and persists', () => {
+    localStorage.removeItem('xd-svc-pos')
+    const p = new DebugPanel()
+    document.body.appendChild(p.el)
+    const head = p.el.querySelector('.xd-svc-head') as HTMLElement
+    head.dispatchEvent(new PointerEvent('pointerdown', { clientX: 400, clientY: 300, bubbles: true }))
+    head.dispatchEvent(new PointerEvent('pointermove', { clientX: 340, clientY: 220, bubbles: true }))
+    head.dispatchEvent(new PointerEvent('pointerup', { clientX: 340, clientY: 220, bubbles: true }))
+    expect(p.el.style.left).not.toBe('')
+    expect(p.el.style.right).toBe('auto')
+    const saved = JSON.parse(localStorage.getItem('xd-svc-pos') ?? '{}')
+    expect(Number.isFinite(saved.x)).toBe(true)
+    expect(Number.isFinite(saved.y)).toBe(true)
+    // a fresh panel restores the saved position
+    const p2 = new DebugPanel()
+    expect(p2.el.style.left).not.toBe('')
+    p.el.remove()
+    localStorage.removeItem('xd-svc-pos')
+  })
+
+  it('pointerdown on the view/close buttons does not start a drag', () => {
+    localStorage.removeItem('xd-svc-pos')
+    const p = new DebugPanel()
+    const btn = p.el.querySelector('.xd-svc-seg-btn') as HTMLButtonElement
+    btn.dispatchEvent(new PointerEvent('pointerdown', { clientX: 10, clientY: 10, bubbles: true }))
+    const head = p.el.querySelector('.xd-svc-head') as HTMLElement
+    head.dispatchEvent(new PointerEvent('pointermove', { clientX: 200, clientY: 200, bubbles: true }))
+    head.dispatchEvent(new PointerEvent('pointerup', { clientX: 200, clientY: 200, bubbles: true }))
+    expect(p.el.style.left).toBe('')
+    localStorage.removeItem('xd-svc-pos')
+  })
+
   it('close button fires onClose; null 2d context never throws', () => {
     const p = new DebugPanel()
     let closed = false

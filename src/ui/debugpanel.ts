@@ -142,6 +142,7 @@ export class DebugPanel {
     right.className = 'xd-svc-head-right'
     right.append(seg, close)
     head.append(title, right)
+    this.makeDraggable(head)
 
     /* --- signal-flow block diagram -------------------------------------
      * Generators stack on the left and sum into MIX -> VCF; the FX chain
@@ -377,6 +378,68 @@ export class DebugPanel {
         this.diagramEl.appendChild(cell)
       }
     }
+  }
+
+  /**
+   * Drag the drawer by its header. The drawer is CSS-anchored bottom-right;
+   * the first drag switches it to explicit left/top positioning, clamped to
+   * the viewport and persisted across sessions.
+   */
+  private makeDraggable(handle: HTMLElement): void {
+    handle.classList.add('xd-svc-grab')
+    try {
+      const saved = localStorage.getItem('xd-svc-pos')
+      if (saved) {
+        const p = JSON.parse(saved)
+        if (Number.isFinite(p?.x) && Number.isFinite(p?.y)) this.moveTo(p.x, p.y)
+      }
+    } catch {
+      /* no storage / corrupt: keep the default anchor */
+    }
+    let startX = 0
+    let startY = 0
+    let baseX = 0
+    let baseY = 0
+    let dragging = false
+    handle.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.target instanceof HTMLButtonElement) return // seg/close buttons
+      dragging = true
+      startX = e.clientX
+      startY = e.clientY
+      const r = this.el.getBoundingClientRect()
+      baseX = r.left
+      baseY = r.top
+      if (handle.setPointerCapture) handle.setPointerCapture(e.pointerId)
+      e.preventDefault()
+    })
+    handle.addEventListener('pointermove', (e: PointerEvent) => {
+      if (!dragging) return
+      this.moveTo(baseX + e.clientX - startX, baseY + e.clientY - startY)
+    })
+    const end = (): void => {
+      if (!dragging) return
+      dragging = false
+      try {
+        const r = this.el.getBoundingClientRect()
+        localStorage.setItem('xd-svc-pos', JSON.stringify({ x: r.left, y: r.top }))
+      } catch {
+        /* no storage */
+      }
+    }
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+  }
+
+  private moveTo(x: number, y: number): void {
+    const w = this.el.offsetWidth || 820
+    const maxX = Math.max(0, (window.innerWidth || 1440) - Math.min(w, 200))
+    const maxY = Math.max(0, (window.innerHeight || 900) - 40)
+    const cx = Math.min(Math.max(x, -(w - 200)), maxX)
+    const cy = Math.min(Math.max(y, 0), maxY)
+    this.el.style.left = cx + 'px'
+    this.el.style.top = cy + 'px'
+    this.el.style.right = 'auto'
+    this.el.style.bottom = 'auto'
   }
 
   private badge(parent: HTMLElement, x: number, y: number, text: string, cls: string): HTMLElement {

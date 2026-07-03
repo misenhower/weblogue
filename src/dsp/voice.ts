@@ -202,6 +202,7 @@ export class Voice {
   tapM = 0
   tapMix = 0
   tapFilt = 0
+  tapVca = 0
   lastDrift1 = 0
   lastDrift2 = 0
   lastAmp = 0
@@ -509,6 +510,7 @@ export class Voice {
     let out = y * ampV * ampVelGain * this.voiceGain
     if (!Number.isFinite(out)) out = 0
     else if (out > -1e-18 && out < 1e-18) out = 0 // flush denormals
+    if (this.tapOn) this.tapVca = out
     return out
   }
 }

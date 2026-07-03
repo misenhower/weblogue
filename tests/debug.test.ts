@@ -19,7 +19,7 @@ function render(e: Engine, seconds: number): void {
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {
     const e = new Engine(SR)
-    const dst = [0, 1, 2, 3, 4, 5, 6].map(() => new Float32Array(DBG_TAP_SIZE))
+    const dst = [0, 1, 2, 3, 4, 5, 6, 7].map(() => new Float32Array(DBG_TAP_SIZE))
 
     e.noteOn(60, 100)
     render(e, 0.1)
@@ -34,8 +34,9 @@ describe('engine SERVICE MODE taps', () => {
     expect(rms(dst[2])).toBeGreaterThan(0.001) // MULTI tap (VPM runs pre-mixer)
     expect(rms(dst[3])).toBeGreaterThan(0.001) // mix tap
     expect(rms(dst[4])).toBeGreaterThan(0.0005) // post-filter tap
-    expect(rms(dst[5])).toBeGreaterThan(0.0005) // post-mod-fx (bypass = voice sum)
-    expect(rms(dst[6])).toBeGreaterThan(0.0005) // post-delay
+    expect(rms(dst[5])).toBeGreaterThan(0.0005) // post-VCA (note held, EG up)
+    expect(rms(dst[6])).toBeGreaterThan(0.0005) // post-mod-fx (bypass = voice sum)
+    expect(rms(dst[7])).toBeGreaterThan(0.0005) // post-delay
     for (const d of dst) for (const v of d) expect(Number.isFinite(v)).toBe(true)
     e.noteOff(60)
   })
@@ -129,7 +130,7 @@ describe('round-robin voice allocation (hardware cycles voices)', () => {
 
 describe('DebugPanel', () => {
   function fakeMsg(): Extract<FromEngine, { t: 'dbg' }> {
-    const taps = [0, 1, 2, 3, 4, 5, 6].map(() => {
+    const taps = [0, 1, 2, 3, 4, 5, 6, 7].map(() => {
       const a = new Float32Array(DBG_TAP_SIZE)
       for (let i = 0; i < a.length; i++) a[i] = Math.sin((i / a.length) * Math.PI * 6)
       return a
@@ -151,7 +152,7 @@ describe('DebugPanel', () => {
 
   it('builds 5 scopes, 4 lanes, and a health strip', () => {
     const p = new DebugPanel()
-    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(8)
+    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(9)
     expect(p.el.querySelectorAll('.xd-svc-lane').length).toBe(4)
     expect(p.el.querySelector('.xd-svc-load')).toBeTruthy()
   })
@@ -240,10 +241,10 @@ describe('DebugPanel', () => {
     expect(compact.style.display).toBe('')
     // 6 cells move into the compact row; the 2 FX taps stay in the hidden diagram.
     expect(compact.querySelectorAll('.xd-svc-tap').length).toBe(6)
-    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(2)
+    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(3)
     expect(() => p.update(fakeMsg())).not.toThrow()
     btns[1].click() // DIAGRAM
-    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(8)
+    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(9)
     expect(localStorage.getItem('xd-svc-view')).toBe('diagram')
   })
 

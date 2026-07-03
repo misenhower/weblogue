@@ -199,9 +199,10 @@ export class Engine {
   // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
   private dbgOn = false
   private dbgVoice = 0 // most recently triggered voice index
-  // Rings 0-4: tapped voice (vco1, vco2, multi, mix, filt).
-  // Rings 5-6: FX chain stages, mono-summed (post mod fx, post delay).
+  // Rings 0-5: tapped voice (vco1, vco2, multi, mix, filt, vca).
+  // Rings 6-7: FX chain stages, mono-summed (post mod fx, post delay).
   private readonly dbgRings = [
+    new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
@@ -1343,14 +1344,15 @@ export class Engine {
         this.dbgRings[2][w] = tv.tapM
         this.dbgRings[3][w] = tv.tapMix
         this.dbgRings[4][w] = tv.tapFilt
+        this.dbgRings[5][w] = tv.tapVca
         this.dbgW = (w + 1) % DBG_TAP_SIZE
       }
     }
 
     this.modfx.process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(5, outL, outR, frames, false)
+    if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, false)
     this.delay.process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, true)
+    if (this.dbgOn) this.writeFxTap(7, outL, outR, frames, true)
     this.reverb.process(outL, outR, frames)
 
     // Final transparent safety limiter + peak metering.
@@ -1399,10 +1401,10 @@ export class Engine {
     if (advance) this.dbgFxW = w
   }
 
-  /** Copy the seven tap rings (chronological order) into dst[0..6]. */
+  /** Copy the eight tap rings (chronological order) into dst[0..7]. */
   copyDebugTaps(dst: Float32Array[]): void {
     for (let t = 0; t < this.dbgRings.length && t < dst.length; t++) {
-      const w = t >= 5 ? this.dbgFxW : this.dbgW
+      const w = t >= 6 ? this.dbgFxW : this.dbgW
       const tail = DBG_TAP_SIZE - w
       const ring = this.dbgRings[t]
       const d = dst[t]

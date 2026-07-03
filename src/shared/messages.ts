@@ -40,7 +40,7 @@ export type FromEngine =
   | { t: 'level'; v: number } // output meter 0..1
   | {
       t: 'dbg' // SERVICE MODE frame (~12/s while enabled)
-      taps: Float32Array[] // [vco1, vco2, multi, mix, postFilter, postModFx, postDelay]
+      taps: Float32Array[] // [vco1, vco2, multi, mix, postFilter, postVca, postModFx, postDelay]
       postFx: Float32Array // post-FX mono, SCOPE_SIZE
       voices: DbgVoice[] // 4 lanes
       load: number // audio-thread load 0..1

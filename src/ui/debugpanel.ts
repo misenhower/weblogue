@@ -16,7 +16,7 @@ import { fftMag } from './fft'
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
-const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'MOD FX', 'DELAY', 'OUTPUT'] as const
+const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'VCA', 'MOD FX', 'DELAY', 'OUTPUT'] as const
 /** Cell positions in the 796x306 diagram (see the wire paths below). */
 const CELLS = [
   { x: 8, y: 4 },
@@ -24,9 +24,10 @@ const CELLS = [
   { x: 8, y: 148 },
   { x: 260, y: 76 },
   { x: 480, y: 76 },
-  { x: 140, y: 236 },
-  { x: 370, y: 236 },
-  { x: 600, y: 236 },
+  { x: 8, y: 236 },
+  { x: 248, y: 236 },
+  { x: 444, y: 236 },
+  { x: 626, y: 236 },
 ] as const
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const HISTORY = 128 // sparkline points (~4s at 30fps telemetry)
@@ -89,8 +90,8 @@ export class DebugPanel {
   private compactEl!: HTMLElement
   private compactSlots: HTMLElement[] = []
   private viewBtns!: { diagram: HTMLButtonElement; compact: HTMLButtonElement }
-  /** Cell indices shown in the compact view (FX taps are diagram-only). */
-  private static readonly COMPACT_IDX = [0, 1, 2, 3, 4, 7]
+  /** Cell indices shown in the compact view (VCA/FX taps are diagram-only). */
+  private static readonly COMPACT_IDX = [0, 1, 2, 3, 4, 8]
   private readonly tapCells: HTMLElement[] = []
   private readonly modCanvases: HTMLCanvasElement[] = []
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
@@ -167,9 +168,10 @@ export class DebugPanel {
     this.wireMultiPre = wire('M178 171 H219 V99', 'xd-w')
     this.wireMultiPost = wire('M178 171 H726 V212', 'xd-w')
     wire('M430 99 H480', 'xd-w')
-    wire('M650 99 H726 V212 H110 V259 H140', 'xd-w')
-    wire('M310 259 H370', 'xd-w')
-    wire('M540 259 H600', 'xd-w')
+    wire('M650 99 H726 V212 H93 V236', 'xd-w') // VCF down into the VCA
+    wire('M178 259 H248', 'xd-w') // VCA -> (voice sum) -> MOD FX
+    wire('M418 259 H444', 'xd-w')
+    wire('M614 259 H626', 'xd-w')
     // Mod routing (visibility/opacity follow the current program).
     this.wireEgCut = wire('M360 17 H560 V76', 'xd-w xd-w-eg')
     this.wireEgPitch = wire('M300 17 H219 V90', 'xd-w xd-w-eg')
@@ -212,6 +214,11 @@ export class DebugPanel {
     this.badgeSync = this.badge(diagram, 186, 36, 'SYNC', 'xd-svc-mini')
     this.badgeRing = this.badge(diagram, 186, 56, 'RING', 'xd-svc-mini')
     this.badgeXmod = this.badge(diagram, 186, 76, 'X-MOD', 'xd-svc-mini')
+    // The xd mono-sums all four voices between the VCAs and the FX chain.
+    // Centered on the VCA->MOD FX wire (gap midpoint x=213, wire y=259).
+    const sum = this.badge(diagram, 213, 259, 'Σ ×4', 'xd-svc-mini')
+    sum.style.transform = 'translate(-50%, -50%)'
+    sum.title = 'all four voices are mono-summed here, before the effects'
     this.badgeEg = this.badge(diagram, 296, 6, 'EG', 'xd-svc-badge xd-svc-badge--eg')
     this.badgeLfo = this.badge(diagram, 296, 186, 'LFO', 'xd-svc-badge xd-svc-badge--lfo')
 
@@ -492,6 +499,7 @@ export class DebugPanel {
       m.taps[4],
       m.taps[5],
       m.taps[6],
+      m.taps[7],
       m.postFx,
     ]
     for (let i = 0; i < scopes.length; i++) {

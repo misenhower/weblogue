@@ -186,7 +186,7 @@ class XdProcessor extends AudioWorkletProcessor {
       this.wallFrames = 0
     }
     const taps: Float32Array[] = []
-    for (let t = 0; t < 7; t++) taps.push(new Float32Array(DBG_TAP_SIZE))
+    for (let t = 0; t < 8; t++) taps.push(new Float32Array(DBG_TAP_SIZE))
     this.engine.copyDebugTaps(taps)
     const postFx = new Float32Array(SCOPE_SIZE)
     const ring = this.scopeRing

@@ -296,3 +296,92 @@ describe('ReverbFx: every subtype', () => {
     expect(energy(l, 0, 3)).toBe(0)
   })
 })
+
+describe('DelayFx independent feedback + variable hipass (OG-style controls)', () => {
+  /** Render an impulse through a delay for `sec`, returning the L channel. */
+  function render(setup: (d: DelayFx) => void, sec = 3): Float32Array {
+    const d = new DelayFx(SR)
+    d.setSubType(1) // MONO
+    d.setTime(0.5)
+    d.setDryWet(1) // fully wet: isolate the echo tail
+    setup(d)
+    const out = new Float32Array(Math.floor(sec * SR))
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    for (let done = 0; done < out.length; done += BLOCK) {
+      l.fill(0)
+      r.fill(0)
+      if (done === 0) {
+        l[0] = 1
+        r[0] = 1
+      }
+      d.process(l, r, BLOCK)
+      out.set(l.subarray(0, Math.min(BLOCK, out.length - done)), done)
+    }
+    return out
+  }
+
+  it('setFeedback sustains echoes even at low depth', () => {
+    // depth 0.2 alone -> loop gain 0.17, tail dies fast; override at 0.98
+    // keeps it ringing.
+    const weak = render((d) => d.setDepth(0.2))
+    const strong = render((d) => {
+      d.setDepth(0.2)
+      d.setFeedback(0.98)
+    })
+    expect(energy(strong, 2.0, 3.0)).toBeGreaterThan(energy(weak, 2.0, 3.0) * 10)
+  })
+
+  it('over-unity feedback self-oscillates but stays bounded (loop saturation)', () => {
+    const out = render((d) => {
+      d.setDepth(0.5)
+      d.setFeedback(1.05)
+    }, 4)
+    expect(hasNaN(out)).toBe(false)
+    let peak = 0
+    for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]))
+    expect(peak).toBeLessThan(4) // bounded, not runaway
+    // still alive at the end (self-oscillation, not decay)
+    expect(energy(out, 3.5, 4.0)).toBeGreaterThan(energy(out, 1.0, 1.5) * 0.25)
+  })
+
+  it('setFeedback(-1) restores depth-derived feedback', () => {
+    const a = render((d) => d.setDepth(0.2))
+    const b = render((d) => {
+      d.setDepth(0.2)
+      d.setFeedback(0.98)
+      d.setFeedback(-1)
+    })
+    expect(Math.abs(energy(b, 2.0, 3.0) - energy(a, 2.0, 3.0))).toBeLessThan(1e-6)
+  })
+
+  it('setHipassHz thins the loop on HIPASS types', () => {
+    // 100 Hz sine bursts through the HIPASS subtype: a high loop HPF cutoff
+    // must strip far more low end from the tail than a low cutoff.
+    function renderTone(hz: number): Float32Array {
+      const d = new DelayFx(SR)
+      d.setSubType(3) // HIPASS
+      d.setTime(0.4)
+      d.setDepth(0.8)
+      d.setDryWet(1)
+      d.setHipassHz(hz)
+      const out = new Float32Array(3 * SR)
+      const l = new Float32Array(BLOCK)
+      const r = new Float32Array(BLOCK)
+      for (let done = 0; done < out.length; done += BLOCK) {
+        for (let i = 0; i < BLOCK; i++) {
+          const t = done + i
+          const on = t < 0.2 * SR ? 1 : 0
+          l[i] = on * Math.sin((2 * Math.PI * 100 * t) / SR)
+          r[i] = l[i]
+        }
+        d.process(l, r, BLOCK)
+        out.set(l.subarray(0, Math.min(BLOCK, out.length - done)), done)
+      }
+      return out
+    }
+    const low = renderTone(60)
+    const high = renderTone(2000)
+    expect(energy(high, 1.0, 3.0)).toBeLessThan(energy(low, 1.0, 3.0) * 0.4)
+  })
+})

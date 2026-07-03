@@ -195,7 +195,10 @@ export class DelayFx {
   private lpCoef = 0
   private hpL = 0
   private hpR = 0
-  private readonly hpCoef: number
+  private hpCoef: number
+  private hpHz = 600
+  /** Loop gain override (OG-style dedicated FEEDBACK knob); -1 = derive from depth. */
+  private fbOverride = -1
 
   // tape wow/flutter
   private wowPh = 0
@@ -217,7 +220,7 @@ export class DelayFx {
     this.typeStep = 1 / (0.006 * sampleRate)
     this.xfStep = 1 / (0.03 * sampleRate)
     this.tapeSlew = 1 - Math.exp(-1 / (0.12 * sampleRate))
-    this.hpCoef = 1 - Math.exp((-TWO_PI * 600) / sampleRate)
+    this.hpCoef = 1 - Math.exp((-TWO_PI * this.hpHz) / sampleRate)
     this.wowInc = (TWO_PI * 0.5) / sampleRate
     this.flutInc = (TWO_PI * 6) / sampleRate
     this.applyConfig()
@@ -253,6 +256,24 @@ export class DelayFx {
   setDryWet(v: number): void {
     this.dryWet = clamp01(v)
     this.updateGainTargets()
+  }
+
+  /**
+   * Direct loop gain 0..1.06 (a dedicated FEEDBACK knob, decoupled from
+   * DEPTH; >1 self-oscillates, bounded by loop saturation). Pass a negative
+   * value to return to the xd-style depth-derived feedback.
+   */
+  setFeedback(g: number): void {
+    if (!Number.isFinite(g)) return
+    this.fbOverride = g < 0 ? -1 : g > 1.06 ? 1.06 : g
+    this.updateGainTargets()
+  }
+
+  /** Loop highpass cutoff in Hz (types with hipass: true). */
+  setHipassHz(hz: number): void {
+    if (!Number.isFinite(hz)) return
+    this.hpHz = hz < 10 ? 10 : hz > 8000 ? 8000 : hz
+    this.hpCoef = 1 - Math.exp((-TWO_PI * this.hpHz) / this.sr)
   }
 
   setBpm(bpm: number): void {
@@ -394,6 +415,9 @@ export class DelayFx {
       const inL = l[i]
       const inR = r[i]
       const fb = this.fbC
+      // Near/over-unity loops saturate instead of running away (tanh ~
+      // identity at low level, so engaging it below the threshold is silent).
+      const sat = tape || fb > 0.95
       let wetL: number
       let wetR: number
       if (topo === TOPO_MONO) {
@@ -402,7 +426,7 @@ export class DelayFx {
           this.hpL += this.hpCoef * (x - this.hpL)
           x -= this.hpL
         }
-        if (tape) x = Math.tanh(x)
+        if (sat) x = Math.tanh(x)
         if (x < 1e-20 && x > -1e-20) x = 0
         bufL[this.w] = x
         bufR[this.w] = x
@@ -418,7 +442,7 @@ export class DelayFx {
           this.hpR += this.hpCoef * (xR - this.hpR)
           xR -= this.hpR
         }
-        if (tape) {
+        if (sat) {
           xL = Math.tanh(xL)
           xR = Math.tanh(xR)
         }
@@ -437,7 +461,7 @@ export class DelayFx {
           this.hpR += this.hpCoef * (xR - this.hpR)
           xR -= this.hpR
         }
-        if (tape) {
+        if (sat) {
           xL = Math.tanh(xL)
           xR = Math.tanh(xR)
         }
@@ -499,7 +523,11 @@ export class DelayFx {
       : this.depth
     this.wetT = wetBal * lvl
     this.dryT = dryBal
-    this.fbT = this.conf.feedback ? Math.min(0.9, this.depth * 0.85) : 0
+    this.fbT = this.conf.feedback
+      ? this.fbOverride >= 0
+        ? this.fbOverride
+        : Math.min(0.9, this.depth * 0.85)
+      : 0
   }
 
   private updateTargets(): void {

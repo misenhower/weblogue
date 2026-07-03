@@ -148,7 +148,7 @@ function toggleDebug(on = !debugOpen): void {
   debugOpen = on
   if (on) {
     if (!debugPanel) {
-      debugPanel = new DebugPanel()
+      debugPanel = new DebugPanel({ store })
       debugPanel.onClose = () => toggleDebug(false)
     }
     if (ctx) debugPanel.sampleRate = ctx.sampleRate

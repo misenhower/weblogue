@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { Engine, DBG_TAP_SIZE } from '../src/dsp/engine'
 import { P } from '../src/shared/params'
+import { Store } from '../src/state/store'
+import { FACTORY_PRESETS } from '../src/state/presets'
 import { DebugPanel } from '../src/ui/debugpanel'
 import type { FromEngine } from '../src/shared/messages'
 
@@ -17,7 +19,7 @@ function render(e: Engine, seconds: number): void {
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {
     const e = new Engine(SR)
-    const dst = [0, 1, 2, 3, 4].map(() => new Float32Array(DBG_TAP_SIZE))
+    const dst = [0, 1, 2, 3, 4, 5, 6].map(() => new Float32Array(DBG_TAP_SIZE))
 
     e.noteOn(60, 100)
     render(e, 0.1)
@@ -32,6 +34,8 @@ describe('engine SERVICE MODE taps', () => {
     expect(rms(dst[2])).toBeGreaterThan(0.001) // MULTI tap (VPM runs pre-mixer)
     expect(rms(dst[3])).toBeGreaterThan(0.001) // mix tap
     expect(rms(dst[4])).toBeGreaterThan(0.0005) // post-filter tap
+    expect(rms(dst[5])).toBeGreaterThan(0.0005) // post-mod-fx (bypass = voice sum)
+    expect(rms(dst[6])).toBeGreaterThan(0.0005) // post-delay
     for (const d of dst) for (const v of d) expect(Number.isFinite(v)).toBe(true)
     e.noteOff(60)
   })
@@ -125,7 +129,7 @@ describe('round-robin voice allocation (hardware cycles voices)', () => {
 
 describe('DebugPanel', () => {
   function fakeMsg(): Extract<FromEngine, { t: 'dbg' }> {
-    const taps = [0, 1, 2, 3, 4].map(() => {
+    const taps = [0, 1, 2, 3, 4, 5, 6].map(() => {
       const a = new Float32Array(DBG_TAP_SIZE)
       for (let i = 0; i < a.length; i++) a[i] = Math.sin((i / a.length) * Math.PI * 6)
       return a
@@ -147,7 +151,7 @@ describe('DebugPanel', () => {
 
   it('builds 5 scopes, 4 lanes, and a health strip', () => {
     const p = new DebugPanel()
-    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(6)
+    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(8)
     expect(p.el.querySelectorAll('.xd-svc-lane').length).toBe(4)
     expect(p.el.querySelector('.xd-svc-load')).toBeTruthy()
   })
@@ -203,6 +207,44 @@ describe('DebugPanel', () => {
     m.tapped = 3
     p.update(m)
     expect(labels()).toEqual(['AMP EG · V4', 'MOD EG · V4', 'LFO · V4'])
+  })
+
+  it('routing wires and badges follow the store', () => {
+    const store = new Store(FACTORY_PRESETS)
+    store.initCurrent()
+    const p = new DebugPanel({ store })
+    const eg = p.el.querySelector('.xd-svc-badge--eg') as HTMLElement
+    store.setParam(P.EG_TARGET, 2, 'ui')
+    expect(eg.textContent).toBe('EG → PITCH')
+    store.setParam(P.EG_TARGET, 0, 'ui')
+    expect(eg.textContent).toBe('EG → CUTOFF')
+    const pre = p.el.querySelectorAll('.xd-svc-wires path')[2] as SVGPathElement
+    const post = p.el.querySelectorAll('.xd-svc-wires path')[3] as SVGPathElement
+    store.setParam(P.MULTI_ROUTING, 1, 'ui')
+    expect(pre.style.display).toBe('none')
+    expect(post.style.display).toBe('')
+    store.setParam(P.SYNC, 1, 'ui')
+    expect(p.el.querySelectorAll('.xd-svc-mini')[0].classList.contains('is-on')).toBe(true)
+  })
+
+  it('view toggle swaps between diagram and compact, sharing the scope cells', () => {
+    const p = new DebugPanel()
+    expect(p.currentView).toBe('diagram')
+    const diagram = p.el.querySelector('.xd-svc-diagram') as HTMLElement
+    const compact = p.el.querySelector('.xd-svc-compact') as HTMLElement
+    expect(compact.style.display).toBe('none')
+    const btns = [...p.el.querySelectorAll('.xd-svc-seg-btn')] as HTMLButtonElement[]
+    btns[0].click() // COMPACT
+    expect(p.currentView).toBe('compact')
+    expect(diagram.style.display).toBe('none')
+    expect(compact.style.display).toBe('')
+    // 6 cells move into the compact row; the 2 FX taps stay in the hidden diagram.
+    expect(compact.querySelectorAll('.xd-svc-tap').length).toBe(6)
+    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(2)
+    expect(() => p.update(fakeMsg())).not.toThrow()
+    btns[1].click() // DIAGRAM
+    expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(8)
+    expect(localStorage.getItem('xd-svc-view')).toBe('diagram')
   })
 
   it('close button fires onClose; null 2d context never throws', () => {

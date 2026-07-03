@@ -8,11 +8,26 @@
  * {t:'debug', on} on toggle), so it costs nothing when closed.
  */
 import type { FromEngine } from '../shared/messages'
+import type { Store } from '../state/store'
+import { P } from '../shared/params'
+import { egIntToPercent, lfoIntTo01 } from '../shared/maps'
 import { fftMag } from './fft'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
-const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'OUTPUT'] as const
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'MOD FX', 'DELAY', 'OUTPUT'] as const
+/** Cell positions in the 796x306 diagram (see the wire paths below). */
+const CELLS = [
+  { x: 8, y: 4 },
+  { x: 8, y: 76 },
+  { x: 8, y: 148 },
+  { x: 260, y: 76 },
+  { x: 480, y: 76 },
+  { x: 140, y: 236 },
+  { x: 370, y: 236 },
+  { x: 600, y: 236 },
+] as const
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const HISTORY = 128 // sparkline points (~4s at 30fps telemetry)
 const MOD_SIGS = [
@@ -54,7 +69,28 @@ export class DebugPanel {
 
   private readonly canvases: HTMLCanvasElement[] = []
   private readonly ctxs: (CanvasRenderingContext2D | null)[] = []
-  private readonly fftOn: boolean[] = [false, false, false, false, false, false]
+  private readonly fftOn: boolean[] = TAP_LABELS.map(() => false)
+  private readonly store?: Store
+  private wireMultiPre!: SVGPathElement
+  private wireMultiPost!: SVGPathElement
+  private wireEgCut!: SVGPathElement
+  private wireEgPitch!: SVGPathElement
+  private wireLfoCut!: SVGPathElement
+  private wireLfoOsc!: SVGPathElement
+  private badgeEg!: HTMLElement
+  private badgeLfo!: HTMLElement
+  private badgeSync!: HTMLElement
+  private badgeRing!: HTMLElement
+  private badgeXmod!: HTMLElement
+
+  /* two flow views sharing the same scope cells */
+  private view: 'diagram' | 'compact' = 'diagram'
+  private diagramEl!: HTMLElement
+  private compactEl!: HTMLElement
+  private compactSlots: HTMLElement[] = []
+  private viewBtns!: { diagram: HTMLButtonElement; compact: HTMLButtonElement }
+  /** Cell indices shown in the compact view (FX taps are diagram-only). */
+  private static readonly COMPACT_IDX = [0, 1, 2, 3, 4, 7]
   private readonly tapCells: HTMLElement[] = []
   private readonly modCanvases: HTMLCanvasElement[] = []
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
@@ -75,7 +111,8 @@ export class DebugPanel {
   private voicesText!: HTMLElement
   private fg = '#8fe0a0'
 
-  constructor() {
+  constructor(opts?: { store?: Store }) {
+    this.store = opts?.store
     this.el = document.createElement('div')
     this.el.className = 'xd-svc'
     this.el.innerHTML = ''
@@ -85,23 +122,68 @@ export class DebugPanel {
     const title = document.createElement('span')
     title.className = 'xd-svc-title'
     title.textContent = 'SERVICE MODE'
+    const seg = document.createElement('div')
+    seg.className = 'xd-svc-seg'
+    const mkView = (v: 'compact' | 'diagram', label: string): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.className = 'xd-svc-seg-btn'
+      b.textContent = label
+      b.addEventListener('click', () => this.setView(v))
+      seg.appendChild(b)
+      return b
+    }
+    this.viewBtns = { compact: mkView('compact', 'COMPACT'), diagram: mkView('diagram', 'DIAGRAM') }
     const close = document.createElement('button')
     close.className = 'xd-svc-close'
     close.textContent = '✕'
     close.setAttribute('aria-label', 'close service mode')
     close.addEventListener('click', () => this.onClose?.())
-    head.append(title, close)
+    const right = document.createElement('div')
+    right.className = 'xd-svc-head-right'
+    right.append(seg, close)
+    head.append(title, right)
 
-    /* --- block diagram row: scopes joined by arrows -------------------- */
-    const flow = document.createElement('div')
-    flow.className = 'xd-svc-flow'
+    /* --- signal-flow block diagram -------------------------------------
+     * Generators stack on the left and sum into MIX -> VCF; the FX chain
+     * runs along the bottom. Wires are SVG paths over fixed cell positions;
+     * mod-routing wires and the SYNC/RING/X-MOD badges follow the store. */
+    const diagram = document.createElement('div')
+    diagram.className = 'xd-svc-diagram'
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.setAttribute('viewBox', '0 0 796 306')
+    svg.setAttribute('class', 'xd-svc-wires')
+    diagram.appendChild(svg)
+    const wire = (d: string, cls: string): SVGPathElement => {
+      const p = document.createElementNS(SVG_NS, 'path')
+      p.setAttribute('d', d)
+      p.setAttribute('class', cls)
+      svg.appendChild(p)
+      return p
+    }
+    // Audio path.
+    wire('M178 27 H219 V99 H260', 'xd-w')
+    wire('M178 99 H260', 'xd-w')
+    this.wireMultiPre = wire('M178 171 H219 V99', 'xd-w')
+    this.wireMultiPost = wire('M178 171 H726 V212', 'xd-w')
+    wire('M430 99 H480', 'xd-w')
+    wire('M650 99 H726 V212 H110 V259 H140', 'xd-w')
+    wire('M310 259 H370', 'xd-w')
+    wire('M540 259 H600', 'xd-w')
+    // Mod routing (visibility/opacity follow the current program).
+    this.wireEgCut = wire('M360 17 H560 V76', 'xd-w xd-w-eg')
+    this.wireEgPitch = wire('M300 17 H219 V90', 'xd-w xd-w-eg')
+    this.wireLfoCut = wire('M360 197 H560 V140', 'xd-w xd-w-lfo')
+    this.wireLfoOsc = wire('M300 197 H219 V180', 'xd-w xd-w-lfo')
+
     for (let i = 0; i < TAP_LABELS.length; i++) {
       const cell = document.createElement('div')
-      cell.className = 'xd-svc-tap'
+      cell.className = 'xd-svc-tap xd-svc-cell'
+      cell.style.left = CELLS[i].x + 'px'
+      cell.style.top = CELLS[i].y + 'px'
       const cv = document.createElement('canvas')
       cv.className = 'xd-svc-scope'
-      cv.width = 132 * (window.devicePixelRatio || 1)
-      cv.height = 52 * (window.devicePixelRatio || 1)
+      cv.width = 170 * (window.devicePixelRatio || 1)
+      cv.height = 46 * (window.devicePixelRatio || 1)
       const label = document.createElement('div')
       label.className = 'xd-svc-label'
       label.textContent = TAP_LABELS[i]
@@ -114,14 +196,7 @@ export class DebugPanel {
         label.textContent = TAP_LABELS[idx] + (this.fftOn[idx] ? ' · FFT' : '')
       })
       this.tapCells.push(cell)
-      flow.appendChild(cell)
-      if (i < TAP_LABELS.length - 1) {
-        const arrow = document.createElement('div')
-        arrow.className = 'xd-svc-arrow'
-        // VCO1, VCO2 and MULTI all sum into MIX; mark those joints.
-        arrow.textContent = i < 2 ? '⊕' : '→'
-        flow.appendChild(arrow)
-      }
+      diagram.appendChild(cell)
       let ctx: CanvasRenderingContext2D | null = null
       try {
         ctx = cv.getContext('2d')
@@ -131,6 +206,49 @@ export class DebugPanel {
       this.canvases.push(cv)
       this.ctxs.push(ctx)
     }
+
+    // VCO1<->VCO2 relationship badges + EG/LFO routing badges.
+    this.badgeSync = this.badge(diagram, 186, 36, 'SYNC', 'xd-svc-mini')
+    this.badgeRing = this.badge(diagram, 186, 56, 'RING', 'xd-svc-mini')
+    this.badgeXmod = this.badge(diagram, 186, 76, 'X-MOD', 'xd-svc-mini')
+    this.badgeEg = this.badge(diagram, 296, 6, 'EG', 'xd-svc-badge xd-svc-badge--eg')
+    this.badgeLfo = this.badge(diagram, 296, 186, 'LFO', 'xd-svc-badge xd-svc-badge--lfo')
+
+    if (this.store) {
+      this.store.onParam(() => this.refreshRouting())
+      this.store.onProgram(() => this.refreshRouting())
+      this.refreshRouting()
+    } else {
+      this.badgeEg.style.display = 'none'
+      this.badgeLfo.style.display = 'none'
+    }
+    this.diagramEl = diagram
+
+    /* --- compact view (the original linear flow) ------------------ */
+    const compact = document.createElement('div')
+    compact.className = 'xd-svc-compact'
+    const compactArrows = ['⊕', '⊕', '→', '→', '→']
+    for (let k = 0; k < DebugPanel.COMPACT_IDX.length; k++) {
+      const slot = document.createElement('div')
+      slot.className = 'xd-svc-slot'
+      compact.appendChild(slot)
+      this.compactSlots.push(slot)
+      if (k < compactArrows.length) {
+        const arrow = document.createElement('div')
+        arrow.className = 'xd-svc-arrow'
+        arrow.textContent = compactArrows[k]
+        compact.appendChild(arrow)
+      }
+    }
+    this.compactEl = compact
+
+    let savedView: string | null = null
+    try {
+      savedView = localStorage.getItem('xd-svc-view')
+    } catch {
+      /* no storage: keep default */
+    }
+    this.setView(savedView === 'compact' || savedView === 'strip' ? 'compact' : 'diagram', true)
 
     /* --- MOD row: tapped voice's modulator sparklines ------------------- */
     const modRow = document.createElement('div')
@@ -214,12 +332,105 @@ export class DebugPanel {
     this.voicesText.textContent = 'VOICES 0/4'
     health.append(loadLabel, loadBar, this.loadText, this.voicesText)
 
-    this.el.append(head, flow, modRow, lanes, health)
+    this.el.append(head, diagram, compact, modRow, lanes, health)
+    this.applyView()
+  }
+
+  /** Switch between the block diagram and the compact view. */
+  setView(v: 'diagram' | 'compact', silent = false): void {
+    if (!silent && v === this.view) return
+    this.view = v
+    try {
+      localStorage.setItem('xd-svc-view', v)
+    } catch {
+      /* no storage */
+    }
+    this.applyView()
+  }
+
+  get currentView(): 'diagram' | 'compact' {
+    return this.view
+  }
+
+  private applyView(): void {
+    const compact = this.view === 'compact'
+    this.diagramEl.style.display = compact ? 'none' : ''
+    this.compactEl.style.display = compact ? '' : 'none'
+    this.viewBtns.compact.classList.toggle('is-active', compact)
+    this.viewBtns.diagram.classList.toggle('is-active', !compact)
+    if (compact) {
+      // Move the shared cells into the compact slots (FX taps stay hidden in
+      // the diagram); clear absolute positioning.
+      for (let k = 0; k < DebugPanel.COMPACT_IDX.length; k++) {
+        const cell = this.tapCells[DebugPanel.COMPACT_IDX[k]]
+        cell.classList.remove('xd-svc-cell')
+        cell.style.left = ''
+        cell.style.top = ''
+        this.compactSlots[k].appendChild(cell)
+      }
+    } else {
+      for (let i = 0; i < this.tapCells.length; i++) {
+        const cell = this.tapCells[i]
+        cell.classList.add('xd-svc-cell')
+        cell.style.left = CELLS[i].x + 'px'
+        cell.style.top = CELLS[i].y + 'px'
+        this.diagramEl.appendChild(cell)
+      }
+    }
+  }
+
+  private badge(parent: HTMLElement, x: number, y: number, text: string, cls: string): HTMLElement {
+    const b = document.createElement('div')
+    b.className = cls
+    b.textContent = text
+    b.style.left = x + 'px'
+    b.style.top = y + 'px'
+    parent.appendChild(b)
+    return b
+  }
+
+  /** Re-derive mod wires + relationship badges from the current program. */
+  private refreshRouting(): void {
+    const s = this.store
+    if (!s) return
+    const egT = s.getParam(P.EG_TARGET) // 0 CUTOFF, 1 PITCH 2, 2 PITCH
+    const egAmt = Math.abs(egIntToPercent(s.getParam(P.EG_INT))) / 100
+    const lfoT = s.getParam(P.LFO_TARGET) // 0 CUTOFF, 1 SHAPE, 2 PITCH
+    const lfoAmt = Math.abs(lfoIntTo01(s.getParam(P.LFO_INT)))
+    const oscSel = ['ALL', 'VCO 1+2', 'VCO 2', 'MULTI'][s.getParam(P.LFO_TARGET_OSC)] ?? 'ALL'
+    this.badgeEg.textContent = 'EG → ' + (['CUTOFF', 'PITCH 2', 'PITCH'][egT] ?? '')
+    this.badgeLfo.textContent =
+      'LFO → ' + (['CUTOFF', 'SHAPE', 'PITCH'][lfoT] ?? '') + (lfoT !== 0 ? ' · ' + oscSel : '')
+    const show = (el: SVGPathElement, on: boolean, amt: number): void => {
+      el.style.display = on && amt > 0.02 ? '' : 'none'
+      el.style.opacity = String(Math.min(1, 0.15 + amt * 0.85))
+    }
+    show(this.wireEgCut, egT === 0, egAmt)
+    show(this.wireEgPitch, egT !== 0, egAmt)
+    show(this.wireLfoCut, lfoT === 0, lfoAmt)
+    show(this.wireLfoOsc, lfoT !== 0, lfoAmt)
+    this.badgeEg.style.opacity = egAmt > 0.02 ? '1' : '0.35'
+    this.badgeLfo.style.opacity = lfoAmt > 0.02 ? '1' : '0.35'
+    const post = s.getParam(P.MULTI_ROUTING) >= 0.5
+    this.wireMultiPre.style.display = post ? 'none' : ''
+    this.wireMultiPost.style.display = post ? '' : 'none'
+    this.badgeSync.classList.toggle('is-on', s.getParam(P.SYNC) >= 0.5)
+    this.badgeRing.classList.toggle('is-on', s.getParam(P.RING) >= 0.5)
+    this.badgeXmod.classList.toggle('is-on', s.getParam(P.CROSS_MOD) > 8)
   }
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
-    const scopes: (Float32Array | undefined)[] = [m.taps[0], m.taps[1], m.taps[2], m.taps[3], m.taps[4], m.postFx]
+    const scopes: (Float32Array | undefined)[] = [
+      m.taps[0],
+      m.taps[1],
+      m.taps[2],
+      m.taps[3],
+      m.taps[4],
+      m.taps[5],
+      m.taps[6],
+      m.postFx,
+    ]
     for (let i = 0; i < scopes.length; i++) {
       const data = scopes[i]
       if (!data) continue

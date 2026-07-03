@@ -38,16 +38,119 @@
 .xd-svc-close:hover {
   color: var(--xd-legend, #d8d8dc);
 }
+.xd-svc-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xd-svc-seg {
+  display: flex;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.xd-svc-seg-btn {
+  background: none;
+  border: none;
+  color: var(--xd-legend-dim, #909097);
+  font: 700 8px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.12em;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.xd-svc-seg-btn + .xd-svc-seg-btn {
+  border-left: 1px solid #3a3a40;
+}
+.xd-svc-seg-btn.is-active {
+  background: #2a2a30;
+  color: #8fe0a0;
+}
 
-/* block-diagram flow */
-.xd-svc-flow {
+/* compact view */
+.xd-svc-compact {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 10px;
 }
-.xd-svc-tap {
+.xd-svc-slot {
   flex: 1;
+  min-width: 0;
+}
+.xd-svc-slot .xd-svc-tap {
+  width: auto;
+}
+.xd-svc-arrow {
+  color: #4d4d55;
+  font-size: 12px;
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+}
+
+/* signal-flow block diagram */
+.xd-svc-diagram {
+  position: relative;
+  height: 306px;
+  margin-bottom: 10px;
+}
+.xd-svc-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.xd-svc-wires .xd-w {
+  fill: none;
+  stroke: #4d4d55;
+  stroke-width: 2;
+}
+.xd-svc-wires .xd-w-eg {
+  stroke: #e0c98f;
+}
+.xd-svc-wires .xd-w-lfo {
+  stroke: #8fb8e0;
+}
+.xd-svc-cell {
+  position: absolute;
+  width: 170px;
+}
+.xd-svc-cell .xd-svc-scope {
+  height: 46px;
+}
+.xd-svc-badge {
+  position: absolute;
+  font: 700 8px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.12em;
+  background: #141417;
+  border: 1px solid #26262b;
+  border-radius: 3px;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+.xd-svc-badge--eg {
+  color: #e0c98f;
+  border-color: #3f3a2a;
+}
+.xd-svc-badge--lfo {
+  color: #8fb8e0;
+  border-color: #2a333f;
+}
+.xd-svc-mini {
+  position: absolute;
+  font: 700 7px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.1em;
+  color: #4d4d55;
+  background: #141417;
+  border: 1px solid #222226;
+  border-radius: 2px;
+  padding: 2px 4px;
+}
+.xd-svc-mini.is-on {
+  color: #8fe0a0;
+  border-color: #3f5a45;
+}
+.xd-svc-tap {
   min-width: 0;
 }
 .xd-svc-scope {
@@ -64,12 +167,6 @@
   color: var(--xd-legend-dim, #909097);
   text-align: center;
   margin-top: 3px;
-}
-.xd-svc-arrow {
-  color: #4d4d55;
-  font-size: 12px;
-  flex: 0 0 auto;
-  padding-bottom: 12px;
 }
 
 .xd-svc-scope {

@@ -185,13 +185,8 @@ class XdProcessor extends AudioWorkletProcessor {
       this.busyMs = 0
       this.wallFrames = 0
     }
-    const taps = [
-      new Float32Array(DBG_TAP_SIZE),
-      new Float32Array(DBG_TAP_SIZE),
-      new Float32Array(DBG_TAP_SIZE),
-      new Float32Array(DBG_TAP_SIZE),
-      new Float32Array(DBG_TAP_SIZE),
-    ]
+    const taps: Float32Array[] = []
+    for (let t = 0; t < 7; t++) taps.push(new Float32Array(DBG_TAP_SIZE))
     this.engine.copyDebugTaps(taps)
     const postFx = new Float32Array(SCOPE_SIZE)
     const ring = this.scopeRing
@@ -201,7 +196,7 @@ class XdProcessor extends AudioWorkletProcessor {
     const voices = [0, 1, 2, 3].map((i) => this.engine.debugVoiceInfo(i))
     this.port.postMessage(
       { t: 'dbg', taps, postFx, voices, load: this.load, tapped: this.engine.debugVoice },
-      [taps[0].buffer, taps[1].buffer, taps[2].buffer, taps[3].buffer, taps[4].buffer, postFx.buffer],
+      [...taps.map((a) => a.buffer), postFx.buffer],
     )
   }
 

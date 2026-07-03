@@ -199,7 +199,11 @@ export class Engine {
   // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
   private dbgOn = false
   private dbgVoice = 0 // most recently triggered voice index
+  // Rings 0-4: tapped voice (vco1, vco2, multi, mix, filt).
+  // Rings 5-6: FX chain stages, mono-summed (post mod fx, post delay).
   private readonly dbgRings = [
+    new Float32Array(DBG_TAP_SIZE),
+    new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
@@ -207,6 +211,7 @@ export class Engine {
     new Float32Array(DBG_TAP_SIZE),
   ]
   private dbgW = 0
+  private dbgFxW = 0
 
   constructor(sampleRate: number) {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -1343,7 +1348,9 @@ export class Engine {
     }
 
     this.modfx.process(outL, outR, frames)
+    if (this.dbgOn) this.writeFxTap(5, outL, outR, frames, false)
     this.delay.process(outL, outR, frames)
+    if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, true)
     this.reverb.process(outL, outR, frames)
 
     // Final transparent safety limiter + peak metering.
@@ -1381,11 +1388,22 @@ export class Engine {
     return this.dbgVoice
   }
 
-  /** Copy the five tap rings (chronological order) into dst[0..4]. */
+  /** FX-stage tap: mono average written after an FX stage processes. */
+  private writeFxTap(ring: number, l: Float32Array, r: Float32Array, n: number, advance: boolean): void {
+    const buf = this.dbgRings[ring]
+    let w = this.dbgFxW
+    for (let s = 0; s < n; s++) {
+      buf[w] = (l[s] + r[s]) * 0.5
+      w = (w + 1) % DBG_TAP_SIZE
+    }
+    if (advance) this.dbgFxW = w
+  }
+
+  /** Copy the seven tap rings (chronological order) into dst[0..6]. */
   copyDebugTaps(dst: Float32Array[]): void {
-    const w = this.dbgW
-    const tail = DBG_TAP_SIZE - w
-    for (let t = 0; t < 5 && t < dst.length; t++) {
+    for (let t = 0; t < this.dbgRings.length && t < dst.length; t++) {
+      const w = t >= 5 ? this.dbgFxW : this.dbgW
+      const tail = DBG_TAP_SIZE - w
       const ring = this.dbgRings[t]
       const d = dst[t]
       d.set(ring.subarray(w), 0)

@@ -158,3 +158,27 @@ pressure → assignable dest.
 
 SYNC/RING CC polarity conflict (trust 0=ON receive/SysEx); CHORD leading "Mono" (manual) vs none (MIDIimp);
 LFO BPM list ends 1/36 (MIDIimp) not 1/64 (manual); Program Level 12..132 vs NRPN 0..120 (same dB span).
+
+## 16. Post-research findings (added during development, 2026-07-02)
+
+Hardware behaviors confirmed after the original compilation, all now implemented in the replica:
+
+- **Round-robin voice allocation.** The 'logue family cycles voices on every strike — even in mono-style
+  modes each key press takes a fresh voice, letting the previous press's release tail ring out. Repeating
+  one key in POLY walks voices 1→2→3→4; a held key keeps its voice while other keys cycle the rest.
+  (Community documentation of minilogue envelope behavior, Gearspace.) Replica: allocation rotor in POLY,
+  pair rotor in DUO, rotating voice sets per fresh CHORD strike (legato transitions re-pitch the same
+  voices for glide/EG continuity).
+- **VCO1 and VCO2 drift independently.** They are separate analog circuits; identically-set oscillators
+  audibly beat, differently on every key press (measured reports of VCO2 running slightly fast; Korg
+  support language: VCO-type oscillators "are never exactly in tune with each other by their very
+  nature"). The MULTI engine is digital and does not drift at all (Korg Forums A/B comparisons).
+  Replica: two seeded Drift generators per voice (VCO1/VCO2), none on the multi.
+- **Oscillators free-run; modulation generators are digital.** The analog VCOs never stop (the VCA merely
+  mutes them), so drift keeps evolving during silence; the EGs and LFO are digitally generated (SoS), so
+  LFO rate is stable — no analog wobble — and the LFO free-runs while a voice is idle, meaning a
+  non-key-synced note starts at the LFO's true current phase. Replica: idle voices tick drift + LFO.
+- **Portamento's default mode is Auto** (glide only when played legato). Detached playing produces no
+  glide — easily mistaken for broken portamento; switch PORTAMENTO MODE to On for always-glide.
+- **1-shot LFO stops after a half-cycle** (manual §LFO, confirmed and implemented: phase freezes at 0.5;
+  a square settles at its low level, tri/saw at zero).

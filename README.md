@@ -20,6 +20,10 @@ Click **POWER ON** (browsers require a user gesture to start audio), then play:
 - **Computer keyboard**: `a w s e d f t g y h u j k o l p ;` play notes, `z` / `x` shift octave.
 - **MIDI**: plug in a controller — notes, pitch bend, sustain, and the minilogue xd's own CC map
   (including Korg's 10-bit CC#63 LSB scheme) are supported.
+- **SERVICE MODE**: press `` ` `` (backtick) for a diagnostic drawer the hardware never had — live
+  oscilloscopes at every signal-path stage (click any for a spectrum view), a 4-voice overlay mode,
+  per-voice drift meters and tuning readouts, and modulator visualizers. See
+  [docs/service-mode.md](docs/service-mode.md).
 
 ## What's modeled
 
@@ -62,7 +66,10 @@ npm run preview    # serve the production build on http://localhost:4173
 Architecture: `src/shared/` holds the parameter registry, hardware mapping curves, program format, and
 the UI↔engine message protocol; `src/dsp/` is the engine (plain TS classes, worklet-glued in
 `processor.ts`); `src/ui/` is the framework-free panel; `src/state/` is the program store; `src/midi/`
-is Web MIDI input.
+is Web MIDI input. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
+documentation, including post-research findings), [docs/implementation-notes.md](docs/implementation-notes.md)
+(design decisions, undocumented-hardware interpretations, engine mechanics), and
+[docs/service-mode.md](docs/service-mode.md).
 
 ## Disclaimer
 

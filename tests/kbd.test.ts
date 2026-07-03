@@ -2,15 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Keyboard, attachComputerKeyboard } from '../src/ui/keyboard';
 import { Joystick } from '../src/ui/joystick';
-
-/** Build a pointer-ish event that works in happy-dom (falls back to MouseEvent). */
-function pev(type: string, init: Record<string, unknown> = {}): Event {
-  const full = { bubbles: true, cancelable: true, pointerId: 1, ...init };
-  if (typeof PointerEvent === 'function') {
-    return new PointerEvent(type, full as PointerEventInit);
-  }
-  return new MouseEvent(type, full as MouseEventInit);
-}
+import { pev } from './helpers/dom';
 
 function key(kbd: Keyboard, note: number): HTMLElement {
   const el = kbd.el.querySelector<HTMLElement>(`.xd-key[data-note="${note}"]`);

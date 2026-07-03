@@ -7,34 +7,7 @@ import { Engine } from '../src/synths/xd/engine'
 import { initProgram } from '../src/synths/xd/program'
 import { P, PARAMS, PARAM_COUNT } from '../src/synths/xd/params'
 import { FACTORY_PRESETS } from '../src/synths/xd/presets'
-
-const SR = 48000
-const BLOCK = 128
-
-/** Render `seconds` of audio; cb runs before each block. Returns mono (L). */
-function render(e: Engine, seconds: number, cb?: (blockIndex: number, done: number) => void): Float32Array {
-  const total = Math.round(seconds * SR)
-  const out = new Float32Array(total)
-  const l = new Float32Array(BLOCK)
-  const r = new Float32Array(BLOCK)
-  let done = 0
-  let b = 0
-  while (done < total) {
-    const n = Math.min(BLOCK, total - done)
-    if (cb) cb(b++, done)
-    e.process(l, r, n)
-    out.set(l.subarray(0, n), done)
-    done += n
-  }
-  return out
-}
-
-function rms(buf: Float32Array, from = 0, to = buf.length): number {
-  let sum = 0
-  const n = Math.max(1, to - from)
-  for (let i = from; i < to; i++) sum += buf[i] * buf[i]
-  return Math.sqrt(sum / n)
-}
+import { renderEngine as render, rms, SR } from './helpers/audio'
 
 function assertFiniteBounded(buf: Float32Array): void {
   for (let i = 0; i < buf.length; i++) {

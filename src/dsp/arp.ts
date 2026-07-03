@@ -29,7 +29,7 @@ export interface ArpConfig {
   swing: number
 }
 
-export const NUM_ARP_TYPES = 13
+const NUM_ARP_TYPES = 13
 
 const MAX_KEYS = 32 // arp key buffer
 const PAT_CAP = 128 // RISE FALL 2 worst case: 4*MAX_KEYS - 2 = 126

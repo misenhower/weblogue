@@ -12,7 +12,7 @@
  * UNCONFIRMED voicings (calibration targets): fixed wet level 0.85, output
  * HPF sharing the loop cutoff, no ghost tail feeding while bypassed.
  */
-import { DelayFx } from '../../dsp/fx/delay'
+import { DelayFx, DELAY_SUBTYPE } from '../../dsp/fx/delay'
 
 const ROUTE_BYPASS = 0
 const ROUTE_PRE = 1
@@ -34,7 +34,7 @@ export class OgDelayFx {
   constructor(sampleRate: number) {
     this.sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
     this.core = new DelayFx(this.sr)
-    this.core.setSubType(3) // HIPASS: loop highpass, analog-ish 9 kHz loop LP
+    this.core.setSubType(DELAY_SUBTYPE.HIPASS) // loop highpass, analog-ish 9 kHz loop LP
     this.core.setDryWet(0.5) // dry and wet both at full
     this.core.setDepth(0.85) // fixed wet level (no depth knob on the OG)
     this.core.setFeedback(0)

@@ -7,15 +7,7 @@ import { XD_DEF } from '../src/synths/xd/def'
 import { DebugPanel } from '../src/ui/debugpanel'
 import { XD_DEBUG_DEF } from '../src/synths/xd/debug-def'
 import type { FromEngine } from '../src/shared/messages'
-
-const SR = 48000
-
-function render(e: Engine, seconds: number): void {
-  const l = new Float32Array(128)
-  const r = new Float32Array(128)
-  const blocks = Math.ceil((seconds * SR) / 128)
-  for (let i = 0; i < blocks; i++) e.process(l, r, 128)
-}
+import { renderEngine as render, rms, SR } from './helpers/audio'
 
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {
@@ -30,7 +22,6 @@ describe('engine SERVICE MODE taps', () => {
     e.setDebug(true)
     render(e, 0.1)
     e.copyDebugTaps(dst)
-    const rms = (a: Float32Array) => Math.sqrt(a.reduce((s, v) => s + v * v, 0) / a.length)
     expect(rms(dst[0])).toBeGreaterThan(0.001) // VCO1 tap sees the saw
     expect(rms(dst[2])).toBeGreaterThan(0.001) // MULTI tap (VPM runs pre-mixer)
     expect(rms(dst[3])).toBeGreaterThan(0.001) // mix tap
@@ -53,7 +44,6 @@ describe('engine SERVICE MODE taps', () => {
     render(e, 0.1)
     const v = Array.from({ length: 24 }, () => new Float32Array(DBG_TAP_SIZE))
     e.copyDebugVoiceTaps(v)
-    const rms = (a: Float32Array) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length)
     expect(rms(v[0])).toBeGreaterThan(0.001) // v0 vco1
     expect(rms(v[6])).toBeGreaterThan(0.001) // v1 vco1
     expect(rms(v[12])).toBeLessThan(1e-6) // v2 idle -> silent ring

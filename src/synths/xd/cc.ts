@@ -112,7 +112,7 @@ export function decodeCc(
   cc: number,
   value: number,
   pendingLsb: number | null
-): { kind: 'param'; id: number; v: number } | { kind: 'lsb'; v: number } | { kind: 'sustain'; on: boolean } | null {
+): DecodedCc | null {
   if (!Number.isFinite(cc) || !Number.isFinite(value)) return null
   const c = cc | 0
   if (c < 0 || c > 127) return null

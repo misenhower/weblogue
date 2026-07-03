@@ -23,7 +23,6 @@
  * PITCH BEND assignment is handled app-side as real bend messages.
  */
 import { P, PARAMS, PARAM_COUNT, MOTION_META, sliderDestParam, SLIDER_DEST_PITCH_BEND, SLIDER_DEST_GATE_TIME } from './params'
-import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../../shared/paramdef'
 import { clamp, dbToGain } from '../../shared/maps'
 import {
   pitchToCents,
@@ -59,6 +58,8 @@ import type { Program, SeqData } from '../../shared/program'
 import { VoiceBank, NoteStack } from '../../dsp/voicebank'
 import { StepSeq } from '../../dsp/stepseq'
 import { Arp } from '../../dsp/arp'
+import { ServiceTaps } from '../../dsp/servicetaps'
+import { MotionOverlay } from '../../dsp/motionoverlay'
 import { Voice } from './voice'
 import { OgDelayFx } from './delayfx'
 
@@ -107,11 +108,11 @@ export class Engine {
   /** Raw knob/menu values, indexed by param id. */
   private readonly params = new Float64Array(PARAM_COUNT)
 
-  // Motion-sequence override layer (raw units; cleared when transport stops).
-  private readonly motionVal = new Float64Array(PARAM_COUNT)
-  private readonly motionHas = new Uint8Array(PARAM_COUNT)
-  private motionBendOn = false
-  private motionBend = 0
+  // Motion-sequence override layer (dsp/motionoverlay.ts).
+  private readonly motion = new MotionOverlay(PARAMS, {
+    applyParam: (id) => this.applyParam(id),
+    refreshBend: () => this.refreshBend(),
+  })
 
   // Slider (assignable single axis; PITCH BEND assignment arrives as bend).
   private bendX = 0
@@ -127,8 +128,6 @@ export class Engine {
   private readonly stack = new NoteStack()
   private curMonoNote = -1
   private sustainOn = false
-  /** Sounding note per voice (base note + POLY-invert octave), engine-side. */
-  private readonly vSound = new Int32Array(NV).fill(-1)
   private readonly pendCb = (
     i: number, key: number, note: number, vel: number,
     glide: boolean, det: number, gain: number, stacked: boolean,
@@ -166,16 +165,10 @@ export class Engine {
   private gainT = 1
   private gainSm = 1
   private readonly gainCoef: number
-  private peak = 0
 
-  // --- SERVICE MODE taps (same 12-ring layout as the xd shell) -----------
-  private dbgOn = false
+  // --- SERVICE MODE taps (dsp/servicetaps.ts; same layout as the xd) -----
   private dbgVoice = 0
-  private readonly dbgRings = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
-  private dbgAll = false
-  private readonly dbgVRings = Array.from({ length: NV * 6 }, () => new Float32Array(DBG_TAP_SIZE))
-  private dbgW = 0
-  private dbgFxW = 0
+  private readonly taps = new ServiceTaps(NV, DBG_TAP_SIZE)
 
   constructor(sampleRate: number) {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -225,37 +218,14 @@ export class Engine {
   effectiveParam(id: number): number {
     const m = PARAMS[id]
     if (!m) return 0
-    let v = this.motionHas[id] ? this.motionVal[id] : this.params[id]
+    let v = this.motion.effective(id, this.params[id])
     if (this.sliderDest === id) v += this.sliderOffset
     return clamp(v, m.min, m.max)
   }
 
+  /** Motion-lane value into the non-destructive override layer. */
   applyMotion(paramId: number, v: number): void {
-    if (!Number.isFinite(v)) return
-    if (paramId === MOTION_PITCH_BEND) {
-      this.motionBendOn = true
-      this.motionBend = clamp(v, -1, 1)
-      this.refreshBend()
-      return
-    }
-    if (paramId === MOTION_GATE_TIME) return // consumed by the sequencer
-    if (!PARAMS[paramId]) return
-    this.motionHas[paramId] = 1
-    this.motionVal[paramId] = v
-    this.applyParam(paramId)
-  }
-
-  private clearMotionOverrides(): void {
-    if (this.motionBendOn) {
-      this.motionBendOn = false
-      this.refreshBend()
-    }
-    for (let id = 0; id < PARAM_COUNT; id++) {
-      if (this.motionHas[id]) {
-        this.motionHas[id] = 0
-        this.applyParam(id)
-      }
-    }
+    this.motion.applyMotion(paramId, v)
   }
 
   /* ------------------------------------------------------------- slider -- */
@@ -278,7 +248,7 @@ export class Engine {
   setPressure(_v: number): void {}
 
   private refreshBend(): void {
-    const v = this.motionBendOn ? this.motionBend : this.bendX
+    const v = this.motion.bendOn ? this.motion.bend : this.bendX
     const range = v >= 0 ? this.params[P.BEND_RANGE_PLUS] : this.params[P.BEND_RANGE_MINUS]
     const mult = Math.pow(2, (v * range) / 12)
     for (let i = 0; i < NV; i++) this.voices[i].setBendMult(mult)
@@ -869,9 +839,10 @@ export class Engine {
     for (let i = 0; i < NV; i++) {
       const key = this.bank.keyOf(i)
       if (key < 0 || !this.voices[i].active || this.bank.isReleased(i)) continue
-      const sound = this.stack.contains(key) ? this.invertedNote(key) : this.vSound[i]
-      if (sound !== this.vSound[i]) {
-        this.vSound[i] = sound
+      const cur = this.bank.noteOf(i)
+      const sound = this.stack.contains(key) ? this.invertedNote(key) : cur
+      if (sound !== cur) {
+        this.bank.setNote(i, sound)
         this.voices[i].setPitch(sound, this.noteHz(sound), false)
       }
     }
@@ -902,7 +873,6 @@ export class Engine {
     v.noteOn(soundNote, hz, vel, retrig, glide)
     if (syncP >= 0) v.setLfoPhase(syncP)
     this.bank.started(i, key, soundNote, stacked)
-    this.vSound[i] = soundNote
     this.lastStartHz = hz
   }
 
@@ -915,50 +885,18 @@ export class Engine {
 
   setPlaying(on: boolean): void {
     this.stepSeq.setPlaying(on === true)
-    if (!on) this.clearMotionOverrides()
+    if (!on) this.motion.clearOverrides()
   }
 
   setSeqData(seq: SeqData): void {
     this.stepSeq.setSeq(seq)
     this.updateTiming(seq.bpm, seq.swing)
-    this.releaseStaleMotion(seq)
-  }
-
-  private releaseStaleMotion(seq: SeqData): void {
-    const lanes = seq.motion ?? []
-    for (let id = 0; id < PARAM_COUNT; id++) {
-      if (!this.motionHas[id]) continue
-      let live = false
-      for (const l of lanes) {
-        if (l && l.on === true && Math.round(l.paramId) === id) {
-          live = true
-          break
-        }
-      }
-      if (!live) {
-        this.motionHas[id] = 0
-        this.applyParam(id)
-      }
-    }
-    if (this.motionBendOn) {
-      let live = false
-      for (const l of lanes) {
-        if (l && l.on === true && Math.round(l.paramId) === MOTION_PITCH_BEND) {
-          live = true
-          break
-        }
-      }
-      if (!live) {
-        this.motionBendOn = false
-        this.refreshBend()
-      }
-    }
+    this.motion.releaseStale(seq.motion ?? [])
   }
 
   loadProgram(p: Program): void {
     this.allNotesOff()
-    this.motionHas.fill(0)
-    this.motionBendOn = false
+    this.motion.reset()
     this.sliderDest = -1
     this.sliderOffset = 0
     this.slider = 0
@@ -1023,114 +961,55 @@ export class Engine {
       if (!Number.isFinite(sum)) sum = 0
       outL[s] = sum
       outR[s] = sum
-      if (this.dbgOn) {
-        const tv = vs[this.dbgVoice]
-        const tOn = tv.active
-        const w = this.dbgW
-        this.dbgRings[0][w] = tOn ? tv.tapV1 : 0
-        this.dbgRings[1][w] = tOn ? tv.tapV2 : 0
-        this.dbgRings[2][w] = tOn ? tv.tapM : 0
-        this.dbgRings[3][w] = tOn ? tv.tapMix : 0
-        this.dbgRings[4][w] = tOn ? tv.tapFilt : 0
-        this.dbgRings[5][w] = tOn ? tv.tapVca : 0
-        if (this.dbgAll) {
-          const vr = this.dbgVRings
-          for (let v = 0; v < NV; v++) {
-            const b = v * 6
-            const vv = vs[v]
-            const on = vv.active
-            vr[b][w] = on ? vv.tapV1 : 0
-            vr[b + 1][w] = on ? vv.tapV2 : 0
-            vr[b + 2][w] = on ? vv.tapM : 0
-            vr[b + 3][w] = on ? vv.tapMix : 0
-            vr[b + 4][w] = on ? vv.tapFilt : 0
-            vr[b + 5][w] = on ? vv.tapVca : 0
-          }
-        }
-        this.dbgW = (w + 1) % DBG_TAP_SIZE
-      }
+      if (this.taps.on) this.taps.writeVoiceSample(vs[this.dbgVoice], vs)
     }
 
     // FX: pre-delay tap, the HPF+DELAY block, post-delay tap.
-    if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, false)
+    if (this.taps.on) this.taps.writeFxTap(6, outL, outR, frames, false)
     for (let f = 0; f < this.fxChain.length; f++) this.fxChain[f].process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(8, outL, outR, frames, false)
+    if (this.taps.on) this.taps.writeFxTap(8, outL, outR, frames, false)
 
-    // Final transparent safety limiter + peak metering.
-    let peak = this.peak
+    // Final transparent safety limiter.
     for (let s = 0; s < frames; s++) {
       let l = outL[s]
       let r = outR[s]
       if (!Number.isFinite(l)) l = 0
       if (!Number.isFinite(r)) r = 0
-      l = softLimit(l)
-      r = softLimit(r)
-      outL[s] = l
-      outR[s] = r
-      const a = l > -l ? l : -l
-      const b = r > -r ? r : -r
-      const m = a > b ? a : b
-      if (m > peak) peak = m
+      outL[s] = softLimit(l)
+      outR[s] = softLimit(r)
     }
-    this.peak = peak
-    if (this.dbgOn) this.writeFxTap(10, outL, outR, frames, true)
+    if (this.taps.on) this.taps.writeFxTap(10, outL, outR, frames, true)
   }
 
   /* -------------------------------------------------------- telemetry ---- */
 
   setDebug(on: boolean): void {
-    this.dbgOn = on
+    this.taps.on = on
     for (let i = 0; i < NV; i++) this.voices[i].tapOn = on
   }
 
   get debugOn(): boolean {
-    return this.dbgOn
+    return this.taps.on
   }
 
   setDebugAll(all: boolean): void {
-    this.dbgAll = all
+    this.taps.all = all
   }
 
   get debugAll(): boolean {
-    return this.dbgAll
+    return this.taps.all
   }
 
   copyDebugVoiceTaps(dst: Float32Array[]): void {
-    const w = this.dbgW
-    const tail = DBG_TAP_SIZE - w
-    for (let t = 0; t < this.dbgVRings.length && t < dst.length; t++) {
-      const ring = this.dbgVRings[t]
-      const d = dst[t]
-      d.set(ring.subarray(w), 0)
-      d.set(ring.subarray(0, w), tail)
-    }
+    this.taps.copyDebugVoiceTaps(dst)
   }
 
   get debugVoice(): number {
     return this.dbgVoice
   }
 
-  private writeFxTap(base: number, l: Float32Array, r: Float32Array, n: number, advance: boolean): void {
-    const bufL = this.dbgRings[base]
-    const bufR = this.dbgRings[base + 1]
-    let w = this.dbgFxW
-    for (let s = 0; s < n; s++) {
-      bufL[w] = l[s]
-      bufR[w] = r[s]
-      w = (w + 1) % DBG_TAP_SIZE
-    }
-    if (advance) this.dbgFxW = w
-  }
-
   copyDebugTaps(dst: Float32Array[]): void {
-    for (let t = 0; t < this.dbgRings.length && t < dst.length; t++) {
-      const w = t >= 6 ? this.dbgFxW : this.dbgW
-      const tail = DBG_TAP_SIZE - w
-      const ring = this.dbgRings[t]
-      const d = dst[t]
-      d.set(ring.subarray(w), 0)
-      d.set(ring.subarray(0, w), tail)
-    }
+    this.taps.copyDebugTaps(dst)
   }
 
   debugVoiceInfo(i: number): {
@@ -1154,12 +1033,6 @@ export class Engine {
       lfo: v.lastLfo,
       hz: v.lastHz,
     }
-  }
-
-  takePeak(): number {
-    const p = this.peak
-    this.peak = 0
-    return p
   }
 
   activeVoiceCount(): number {

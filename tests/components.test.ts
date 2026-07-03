@@ -8,22 +8,7 @@ import {
   EncoderWheel,
   Led,
 } from '../src/ui/components'
-
-/* happy-dom may or may not expose PointerEvent — fall back to MouseEvent. */
-function pev(
-  type: string,
-  opts: { clientY?: number; clientX?: number; shiftKey?: boolean; deltaY?: number } = {},
-): Event {
-  const Ctor: typeof MouseEvent =
-    (globalThis as Record<string, unknown>)['PointerEvent'] as typeof MouseEvent | undefined ??
-    MouseEvent
-  return new Ctor(type, {
-    bubbles: true,
-    cancelable: true,
-    ...opts,
-    ...( { pointerId: 1 } as MouseEventInit),
-  })
-}
+import { pev } from './helpers/dom'
 
 function mount(el: HTMLElement): void {
   document.body.appendChild(el)
@@ -238,6 +223,28 @@ describe('LedButton', () => {
     expect(b.getValue()).toBe(0)
   })
 
+  it('Space maps to the same press/release path as pointer events', () => {
+    const press = vi.fn()
+    const release = vi.fn()
+    const b = new LedButton({ label: 'SHIFT', onPress: press, onRelease: release })
+    mount(b.el)
+    const key = b.el.querySelector('button.xd-ledbtn-key') as HTMLButtonElement
+
+    key.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+    expect(press).toHaveBeenCalledTimes(1)
+    expect(b.getValue()).toBe(1)
+
+    // key-repeat while held must not re-fire press
+    key.dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', repeat: true, bubbles: true, cancelable: true }),
+    )
+    expect(press).toHaveBeenCalledTimes(1)
+
+    key.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true, cancelable: true }))
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(b.getValue()).toBe(0)
+  })
+
   it('setLed sets brightness and setValue(_, silent) skips onInput', () => {
     const spy = vi.fn()
     const b = new LedButton({ label: 'REC', led: 'red', latching: true, onInput: spy })
@@ -271,6 +278,16 @@ describe('StepButton', () => {
     s.setState('dim')
     expect(s.el.classList.contains('xd-step--dim')).toBe(true)
     expect(s.el.classList.contains('xd-step--rec')).toBe(false)
+  })
+
+  it('aria-pressed reflects the lit state', () => {
+    const s = new StepButton({ index: 0 })
+    mount(s.el)
+    expect(s.el.getAttribute('aria-pressed')).toBe('false')
+    s.setState('on')
+    expect(s.el.getAttribute('aria-pressed')).toBe('true')
+    s.setState('off')
+    expect(s.el.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('press/release callbacks carry the step index', () => {

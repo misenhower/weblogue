@@ -16,6 +16,7 @@ const RENDER_PCT = 30;
 /** Fraction of the well half-extent at which the axis reaches full deflection. */
 const USABLE = 0.78;
 const EPS = 1e-4;
+const KEY_STEP = 0.05; // arrow-key nudge, matching slider.ts
 
 function clamp1(v: number): number {
   if (!Number.isFinite(v)) return 0;
@@ -38,6 +39,7 @@ export class Joystick {
   private y = 0;
   private activeId: number | null = null;
   private windowBound = false;
+  private heldKeys = new Set<string>();
 
   // Spring-back state
   private springX = false;
@@ -54,6 +56,9 @@ export class Joystick {
 
     this.el = document.createElement('div');
     this.el.className = 'xd-joy';
+    this.el.tabIndex = 0;
+    this.el.setAttribute('role', 'application');
+    this.el.setAttribute('aria-label', 'Pitch bend / modulation joystick');
     this.well = document.createElement('div');
     this.well.className = 'xd-joy-well';
     const cross = document.createElement('div');
@@ -68,6 +73,9 @@ export class Joystick {
     this.well.addEventListener('pointermove', this.handleMove);
     this.well.addEventListener('pointerup', this.handleUp);
     this.well.addEventListener('pointercancel', this.handleUp);
+    this.el.addEventListener('keydown', this.handleKeyDown);
+    this.el.addEventListener('keyup', this.handleKeyUp);
+    this.el.addEventListener('blur', this.handleBlur);
 
     this.render();
   }
@@ -144,6 +152,55 @@ export class Joystick {
     this.activeId = null;
     this.unbindWindow();
     this.startSpring();
+  };
+
+  // Keyboard: arrows nudge in KEY_STEP increments (repeats accumulate, like
+  // slider.ts); releasing the last held arrow springs back like pointer-up.
+  private handleKeyDown = (e: KeyboardEvent): void => {
+    let dx = 0;
+    let dy = 0;
+    switch (e.key) {
+      case 'ArrowRight':
+        dx = 1;
+        break;
+      case 'ArrowLeft':
+        dx = -1;
+        break;
+      case 'ArrowUp':
+        dy = 1;
+        break;
+      case 'ArrowDown':
+        dy = -1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    this.heldKeys.add(e.key);
+    this.cancelSpring();
+    // kill float noise from repeated 0.05 steps (e.g. 0.15000000000000002)
+    const nx = Math.round(clamp1(this.x + dx * KEY_STEP) * 1e9) / 1e9;
+    const ny = Math.round(clamp1(this.y + dy * KEY_STEP) * 1e9) / 1e9;
+    if (nx !== this.x) {
+      this.x = nx;
+      this.emitXCb(nx);
+    }
+    if (ny !== this.y) {
+      this.y = ny;
+      this.emitYCb(ny);
+    }
+    this.render();
+  };
+
+  private handleKeyUp = (e: KeyboardEvent): void => {
+    if (!this.heldKeys.delete(e.key)) return;
+    if (this.heldKeys.size === 0 && this.activeId === null) this.startSpring();
+  };
+
+  private handleBlur = (): void => {
+    if (this.heldKeys.size === 0) return;
+    this.heldKeys.clear();
+    if (this.activeId === null) this.startSpring();
   };
 
   private bindWindow(): void {

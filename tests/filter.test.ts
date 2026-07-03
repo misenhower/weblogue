@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SvfFilter } from '../src/dsp/filter'
 import { XD_FILTER_CFG } from '../src/synths/xd/curves'
+import { rms } from './helpers/audio'
 
 const FS = 48000
 
@@ -15,12 +16,6 @@ function makeNoise(seed = 0x9e3779b9): () => number {
     s >>>= 0
     return (s / 0xffffffff) * 2 - 1
   }
-}
-
-function rms(buf: Float32Array, from = 0, to = buf.length): number {
-  let acc = 0
-  for (let i = from; i < to; i++) acc += buf[i] * buf[i]
-  return Math.sqrt(acc / (to - from))
 }
 
 function countSignChanges(buf: Float32Array, from: number, to: number): number {

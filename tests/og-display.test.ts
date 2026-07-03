@@ -7,31 +7,14 @@
  * MICROTUNING or the joystick assigns).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { StoreDef } from '../src/synths/def'
 import { Store } from '../src/state/store'
-import { PARAMS, PARAM_COUNT, clampParam } from '../src/synths/og/params'
-import {
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-} from '../src/synths/og/program'
+import { PARAMS } from '../src/synths/og/params'
+import { OG_DEF } from '../src/synths/og/def'
 import { OG_DISPLAY_DEF } from '../src/synths/og/display-def'
 import { Display } from '../src/ui/display'
+import { makeStoreDef } from './helpers/audio'
 
-const OG_TEST_DEF: StoreDef = {
-  id: 'og',
-  params: PARAMS,
-  paramCount: PARAM_COUNT,
-  clampParam,
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-  factoryPresets: [],
-  bankKey: 'og-test-display',
-  numSlots: 500,
-}
+const OG_TEST_DEF = makeStoreDef(OG_DEF, { bankKey: 'og-test-display' })
 
 const MENU_COUNT = PARAMS.filter((p) => p.kind === 'menu').length
 

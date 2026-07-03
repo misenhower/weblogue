@@ -12,58 +12,21 @@ import { MOTION_PITCH_BEND } from '../src/shared/paramdef'
 import { NOTES_PER_STEP, MOTION_POINTS, GATE_TIE, STEP_RESOLUTIONS, type Program } from '../src/shared/program'
 import { initProgram } from '../src/synths/xd/program'
 import type { ToEngine } from '../src/shared/messages'
+import { installLocalStorageMock, type LocalStorageMock } from './helpers/dom'
 
 // ---------------------------------------------------------------- test shims
 
-class LocalStorageMock {
-  private map = new Map<string, string>()
-  /** Every key passed to getItem, in order (for lazy-load assertions). */
-  gets: string[] = []
-  getItem(key: string): string | null {
-    this.gets.push(key)
-    const v = this.map.get(key)
-    return v === undefined ? null : v
-  }
-  setItem(key: string, value: string): void {
-    this.map.set(key, String(value))
-  }
-  removeItem(key: string): void {
-    this.map.delete(key)
-  }
-  clear(): void {
-    this.map.clear()
-  }
-  get length(): number {
-    return this.map.size
-  }
-  key(i: number): string | null {
-    return Array.from(this.map.keys())[i] ?? null
-  }
-}
-
 let mock: LocalStorageMock
-const hadLocalStorage = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
-const originalLocalStorage = hadLocalStorage ? (globalThis as { localStorage?: unknown }).localStorage : undefined
+let restoreLS: () => void
 
 beforeEach(() => {
-  mock = new LocalStorageMock()
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: mock,
-    configurable: true,
-    writable: true,
-  })
+  const ls = installLocalStorageMock()
+  mock = ls.mock
+  restoreLS = ls.restore
 })
 
 afterEach(() => {
-  if (hadLocalStorage) {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: originalLocalStorage,
-      configurable: true,
-      writable: true,
-    })
-  } else {
-    delete (globalThis as { localStorage?: unknown }).localStorage
-  }
+  restoreLS()
 })
 
 function makeFactory(): Program[] {

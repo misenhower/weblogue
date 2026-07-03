@@ -38,8 +38,9 @@ import {
   EncoderWheel,
   Led,
   type StepState,
-  type SetValueOpts,
 } from '../../ui/components'
+import { div, row, section } from '../../ui/dom'
+import { ParamBinder } from '../../ui/parambinder'
 import { Keyboard } from '../../ui/keyboard'
 import { Joystick } from '../../ui/joystick'
 import { showMenu, type MenuItem } from '../../ui/menu'
@@ -51,35 +52,6 @@ export interface PanelOpts {
   onBend(v: number): void
   onJoyY(v: number): void
   onMaster(v: number): void // master volume 0..1 (not a program param)
-}
-
-/* ------------------------------------------------------------------ */
-/* small DOM helpers                                                   */
-/* ------------------------------------------------------------------ */
-
-function div(className: string, text?: string): HTMLDivElement {
-  const d = document.createElement('div')
-  d.className = className
-  if (text !== undefined) d.textContent = text
-  return d
-}
-
-function row(cls: string, ...children: HTMLElement[]): HTMLDivElement {
-  const r = div(cls)
-  r.append(...children)
-  return r
-}
-
-/** Silkscreen section box with a title set into the top border. */
-function section(title: string, cls: string, ...children: HTMLElement[]): HTMLElement {
-  const s = div(`xd-section ${cls}`)
-  s.append(div('xd-section-title', title))
-  s.append(...children)
-  return s
-}
-
-interface Bindable {
-  setValue(v: number, opts?: SetValueOpts): void
 }
 
 /* per-multi-type param tables */
@@ -127,8 +99,8 @@ export class Panel {
   private store: Store
   private opts: PanelOpts
 
-  /** static param id -> bound controls */
-  private bindings = new Map<number, Bindable[]>()
+  /** param-bound knobs/switches (shared binding plumbing, ui/parambinder) */
+  private binder: ParamBinder
 
   /* dynamic controls (rebound at runtime) */
   private multiShapeKnob!: Knob
@@ -170,6 +142,14 @@ export class Panel {
   constructor(opts: PanelOpts) {
     this.opts = opts
     this.store = opts.store
+
+    this.binder = new ParamBinder({
+      store: this.store,
+      params: PARAMS,
+      formatParam,
+      isStepHeld: () => this.heldSteps.size > 0,
+      writeHeldStepMotion: (id, v) => this.writeHeldStepMotion(id, v),
+    })
 
     this.keyboard = new Keyboard({
       onNoteOn: (n, v) => this.handleNoteOn(n, v),
@@ -253,74 +233,27 @@ export class Panel {
   /* binding plumbing                                                  */
   /* ================================================================ */
 
-  private bind(id: number, c: Bindable): void {
-    let arr = this.bindings.get(id)
-    if (!arr) {
-      arr = []
-      this.bindings.set(id, arr)
-    }
-    arr.push(c)
-  }
-
   /**
-   * Every param-bound knob funnels here: while step buttons are held the
-   * move writes motion data to those steps (spec §11 step edit) instead of
-   * changing the live parameter.
+   * binder.knobInput diversion (spec §11 step edit): a knob move while step
+   * buttons are held writes motion data to those steps instead of changing
+   * the live parameter.
    */
-  private knobInput(id: number, v: number): void {
-    if (this.heldSteps.size > 0 && PARAMS[id]?.motion === true) {
-      this.pendingToggle.clear() // an edit happened: held steps no longer toggle
-      for (const i of this.heldSteps) {
-        const lane = this.store.findMotionLane(id, true)
-        if (lane >= 0) {
-          this.store.writeMotionStep(lane, i, [v, v, v, v, v])
-          // A written lane must play back: enable it (mirrors recKnob).
-          this.store.setMotionLane(lane, { on: true, smooth: PARAMS[id].motionSmooth === true })
-        }
+  private writeHeldStepMotion(id: number, v: number): void {
+    this.pendingToggle.clear() // an edit happened: held steps no longer toggle
+    for (const i of this.heldSteps) {
+      const lane = this.store.findMotionLane(id, true)
+      if (lane >= 0) {
+        this.store.writeMotionStep(lane, i, [v, v, v, v, v])
+        // A written lane must play back: enable it (mirrors recKnob).
+        this.store.setMotionLane(lane, { on: true, smooth: PARAMS[id].motionSmooth === true })
       }
-      return
     }
-    this.store.setParam(id, v, 'ui')
-  }
-
-  private paramKnob(
-    id: number,
-    size: 'xl' | 'l' | 'm',
-    extra?: { label?: string; bipolar?: boolean; format?: (v: number) => string },
-  ): Knob {
-    const m = PARAMS[id]
-    const k = new Knob({
-      label: extra?.label ?? m.label,
-      size,
-      min: m.min,
-      max: m.max,
-      value: this.store.getParam(id),
-      defaultValue: m.def,
-      bipolar: extra?.bipolar,
-      format: extra?.format ?? ((v) => formatParam(id, v)),
-      onInput: (v) => this.knobInput(id, v),
-    })
-    this.bind(id, k)
-    return k
-  }
-
-  private paramSwitch(id: number, extra?: { label?: string; positions?: string[] }): SelectorSwitch {
-    const m = PARAMS[id]
-    const s = new SelectorSwitch({
-      label: extra?.label ?? m.label,
-      positions: extra?.positions ?? (m.labels ? [...m.labels] : []),
-      value: this.store.getParam(id),
-      onInput: (v) => this.store.setParam(id, v, 'ui'),
-    })
-    this.bind(id, s)
-    return s
   }
 
   private onParamChange(id: number, v: number, source: string): void {
     if (source !== 'ui') {
       // resync statically bound controls (panel-originated edits already show)
-      const arr = this.bindings.get(id)
-      if (arr) for (const c of arr) c.setValue(v, { silent: true })
+      this.binder.resync(id, v)
       // dynamic controls
       if (id === this.multiShapeId()) this.multiShapeKnob.setValue(v, { silent: true })
       if (id === this.fxTimeId()) this.fxTimeKnob.setValue(v, { silent: true })
@@ -341,10 +274,7 @@ export class Panel {
   }
 
   private resyncAll(): void {
-    for (const [id, arr] of this.bindings) {
-      const v = this.store.getParam(id)
-      for (const c of arr) c.setValue(v, { silent: true })
-    }
+    this.binder.resyncAll()
     this.rebindMultiShape()
     this.rebindFxKnobs()
     this.updateMultiDisplay()
@@ -655,45 +585,39 @@ export class Panel {
 
   /* ------------------------------------------------- readout menus -- */
 
-  /** Multi readout: every oscillator across all three engines, grouped. */
-  private openMultiMenu(): void {
-    const type = Math.round(this.store.getParam(P.MULTI_TYPE))
-    const groups = PARAMS[P.MULTI_TYPE].labels ?? []
+  /**
+   * Grouped menu over a type param and its per-type sub params (multi engine
+   * oscillators, MOD FX types): one header row per type, values encoded as
+   * t*100+i so a pick sets the type and its sub together.
+   */
+  private groupedParamMenu(anchor: HTMLElement, typeId: number, subIds: readonly number[]): void {
+    const type = Math.round(this.store.getParam(typeId))
+    const groups = PARAMS[typeId].labels ?? []
     const items: MenuItem[] = []
-    for (let t = 0; t < MULTI_SELECTS.length; t++) {
+    for (let t = 0; t < subIds.length; t++) {
       items.push({ label: String(groups[t] ?? t) })
-      const labels = PARAMS[MULTI_SELECTS[t]].labels ?? []
-      const cur = Math.round(this.store.getParam(MULTI_SELECTS[t]))
+      const labels = PARAMS[subIds[t]].labels ?? []
+      const cur = Math.round(this.store.getParam(subIds[t]))
       for (let i = 0; i < labels.length; i++) {
         items.push({ label: labels[i], value: t * 100 + i, selected: t === type && i === cur })
       }
     }
-    showMenu(this.multiDisplay, items, (v) => {
+    showMenu(anchor, items, (v) => {
       const t = Math.floor((v as number) / 100)
-      this.store.setParam(P.MULTI_TYPE, t, 'ui')
-      this.store.setParam(MULTI_SELECTS[t], (v as number) % 100, 'ui')
+      this.store.setParam(typeId, t, 'ui')
+      this.store.setParam(subIds[t], (v as number) % 100, 'ui')
     })
+  }
+
+  /** Multi readout: every oscillator across all three engines, grouped. */
+  private openMultiMenu(): void {
+    this.groupedParamMenu(this.multiDisplay, P.MULTI_TYPE, MULTI_SELECTS)
   }
 
   /** FX readout: the addressed section's types (MOD grouped by type). */
   private openFxMenu(anchor: HTMLElement): void {
     if (this.fxSection === 2) {
-      const type = Math.round(this.store.getParam(P.MODFX_TYPE))
-      const typeLabels = PARAMS[P.MODFX_TYPE].labels ?? []
-      const items: MenuItem[] = []
-      for (let t = 0; t < MODFX_SUBS.length; t++) {
-        items.push({ label: String(typeLabels[t] ?? t) })
-        const labels = PARAMS[MODFX_SUBS[t]].labels ?? []
-        const cur = Math.round(this.store.getParam(MODFX_SUBS[t]))
-        for (let i = 0; i < labels.length; i++) {
-          items.push({ label: labels[i], value: t * 100 + i, selected: t === type && i === cur })
-        }
-      }
-      showMenu(anchor, items, (v) => {
-        const t = Math.floor((v as number) / 100)
-        this.store.setParam(P.MODFX_TYPE, t, 'ui')
-        this.store.setParam(MODFX_SUBS[t], (v as number) % 100, 'ui')
-      })
+      this.groupedParamMenu(anchor, P.MODFX_TYPE, MODFX_SUBS)
       return
     }
     const subId = this.fxSection === 0 ? P.DELAY_SUB : P.REVERB_SUB
@@ -749,8 +673,8 @@ export class Panel {
       onInput: (v) => this.store.setSeqField('bpm', v),
     })
 
-    const octave = this.paramSwitch(P.OCTAVE, { label: 'OCTAVE' })
-    const porta = this.paramKnob(P.PORTAMENTO, 'm', { label: 'PORTAMENTO' })
+    const octave = this.binder.paramSwitch(P.OCTAVE, { label: 'OCTAVE' })
+    const porta = this.binder.paramKnob(P.PORTAMENTO, 'm', { label: 'PORTAMENTO' })
 
     return section(
       'MASTER',
@@ -761,16 +685,16 @@ export class Panel {
   }
 
   private buildVoiceMode(): HTMLElement {
-    const mode = this.paramSwitch(P.VOICE_MODE, { label: 'VOICE MODE' })
+    const mode = this.binder.paramSwitch(P.VOICE_MODE, { label: 'VOICE MODE' })
     const latch = new LedButton({
       label: 'LATCH',
       latching: true,
       onInput: (v) => this.store.setParam(P.ARP_LATCH, v, 'ui'),
     })
     this.latchBtn = latch
-    this.bind(P.ARP_LATCH, latch)
+    this.binder.bind(P.ARP_LATCH, latch)
 
-    const depth = this.paramKnob(P.VM_DEPTH, 'l', {
+    const depth = this.binder.paramKnob(P.VM_DEPTH, 'l', {
       label: 'DEPTH',
       format: (v) => this.formatVmDepth(v),
     })
@@ -799,10 +723,10 @@ export class Panel {
   }
 
   private buildVco1(): HTMLElement {
-    const wave = this.paramSwitch(P.VCO1_WAVE, { label: 'WAVE' })
-    const oct = this.paramSwitch(P.VCO1_OCTAVE, { label: 'OCTAVE' })
-    const pitch = this.paramKnob(P.VCO1_PITCH, 'm', { label: 'PITCH', bipolar: true })
-    const shape = this.paramKnob(P.VCO1_SHAPE, 'm', { label: 'SHAPE' })
+    const wave = this.binder.paramSwitch(P.VCO1_WAVE, { label: 'WAVE' })
+    const oct = this.binder.paramSwitch(P.VCO1_OCTAVE, { label: 'OCTAVE' })
+    const pitch = this.binder.paramKnob(P.VCO1_PITCH, 'm', { label: 'PITCH', bipolar: true })
+    const shape = this.binder.paramKnob(P.VCO1_SHAPE, 'm', { label: 'SHAPE' })
     return section(
       'VCO 1',
       'xd-sec-vco1',
@@ -812,13 +736,13 @@ export class Panel {
   }
 
   private buildVco2(): HTMLElement {
-    const wave = this.paramSwitch(P.VCO2_WAVE, { label: 'WAVE' })
-    const oct = this.paramSwitch(P.VCO2_OCTAVE, { label: 'OCTAVE' })
-    const sync = this.paramSwitch(P.SYNC, { label: 'SYNC' })
-    const ring = this.paramSwitch(P.RING, { label: 'RING' })
-    const pitch = this.paramKnob(P.VCO2_PITCH, 'm', { label: 'PITCH', bipolar: true })
-    const shape = this.paramKnob(P.VCO2_SHAPE, 'm', { label: 'SHAPE' })
-    const cross = this.paramKnob(P.CROSS_MOD, 'm', { label: 'CROSS MOD DEPTH' })
+    const wave = this.binder.paramSwitch(P.VCO2_WAVE, { label: 'WAVE' })
+    const oct = this.binder.paramSwitch(P.VCO2_OCTAVE, { label: 'OCTAVE' })
+    const sync = this.binder.paramSwitch(P.SYNC, { label: 'SYNC' })
+    const ring = this.binder.paramSwitch(P.RING, { label: 'RING' })
+    const pitch = this.binder.paramKnob(P.VCO2_PITCH, 'm', { label: 'PITCH', bipolar: true })
+    const shape = this.binder.paramKnob(P.VCO2_SHAPE, 'm', { label: 'SHAPE' })
+    const cross = this.binder.paramKnob(P.CROSS_MOD, 'm', { label: 'CROSS MOD DEPTH' })
     return section(
       'VCO 2',
       'xd-sec-vco2',
@@ -828,8 +752,8 @@ export class Panel {
   }
 
   private buildMulti(): HTMLElement {
-    const type = this.paramSwitch(P.MULTI_TYPE, { label: 'ENGINE' })
-    const oct = this.paramSwitch(P.MULTI_OCTAVE, { label: 'OCTAVE' })
+    const type = this.binder.paramSwitch(P.MULTI_TYPE, { label: 'ENGINE' })
+    const oct = this.binder.paramSwitch(P.MULTI_OCTAVE, { label: 'OCTAVE' })
 
     this.multiDisplay = div('xd-multi-display')
     this.multiDisplay.classList.add('xd-clickable-readout')
@@ -847,7 +771,7 @@ export class Panel {
       value: this.store.getParam(this.multiShapeId()),
       defaultValue: 0,
       format: (v) => formatParam(this.multiShapeId(), v),
-      onInput: (v) => this.knobInput(this.multiShapeId(), v),
+      onInput: (v) => this.binder.knobInput(this.multiShapeId(), v),
     })
 
     return section(
@@ -859,9 +783,9 @@ export class Panel {
   }
 
   private buildMixer(): HTMLElement {
-    const v1 = this.paramKnob(P.VCO1_LEVEL, 'm', { label: 'VCO 1' })
-    const v2 = this.paramKnob(P.VCO2_LEVEL, 'm', { label: 'VCO 2' })
-    const mu = this.paramKnob(P.MULTI_LEVEL, 'm', { label: 'MULTI' })
+    const v1 = this.binder.paramKnob(P.VCO1_LEVEL, 'm', { label: 'VCO 1' })
+    const v2 = this.binder.paramKnob(P.VCO2_LEVEL, 'm', { label: 'VCO 2' })
+    const mu = this.binder.paramKnob(P.MULTI_LEVEL, 'm', { label: 'MULTI' })
     return section(
       'MIXER',
       'xd-sec-mixer',
@@ -870,10 +794,10 @@ export class Panel {
   }
 
   private buildFilter(): HTMLElement {
-    const cutoff = this.paramKnob(P.CUTOFF, 'xl', { label: 'CUTOFF' })
-    const reso = this.paramKnob(P.RESONANCE, 'l', { label: 'RESONANCE' })
-    const drive = this.paramSwitch(P.DRIVE, { label: 'DRIVE' })
-    const keytrack = this.paramSwitch(P.KEYTRACK, { label: 'KEYTRACK' })
+    const cutoff = this.binder.paramKnob(P.CUTOFF, 'xl', { label: 'CUTOFF' })
+    const reso = this.binder.paramKnob(P.RESONANCE, 'l', { label: 'RESONANCE' })
+    const drive = this.binder.paramSwitch(P.DRIVE, { label: 'DRIVE' })
+    const keytrack = this.binder.paramSwitch(P.KEYTRACK, { label: 'KEYTRACK' })
     const right = div('xd-filter-right')
     right.append(row('xd-ctl-row', reso.el), row('xd-ctl-row', drive.el, keytrack.el))
     return section('FILTER', 'xd-sec-filter', row('xd-ctl-row xd-filter-row', cutoff.el, right))
@@ -927,33 +851,33 @@ export class Panel {
   }
 
   private buildAmpEg(): HTMLElement {
-    const a = this.paramKnob(P.AMP_ATTACK, 'm', { label: 'ATTACK' })
-    const d = this.paramKnob(P.AMP_DECAY, 'm', { label: 'DECAY' })
-    const s = this.paramKnob(P.AMP_SUSTAIN, 'm', { label: 'SUSTAIN' })
-    const r = this.paramKnob(P.AMP_RELEASE, 'm', { label: 'RELEASE' })
+    const a = this.binder.paramKnob(P.AMP_ATTACK, 'm', { label: 'ATTACK' })
+    const d = this.binder.paramKnob(P.AMP_DECAY, 'm', { label: 'DECAY' })
+    const s = this.binder.paramKnob(P.AMP_SUSTAIN, 'm', { label: 'SUSTAIN' })
+    const r = this.binder.paramKnob(P.AMP_RELEASE, 'm', { label: 'RELEASE' })
     return section('AMP EG', 'xd-sec-amp', row('xd-ctl-row', a.el, d.el, s.el, r.el))
   }
 
   private buildEg(): HTMLElement {
-    const a = this.paramKnob(P.EG_ATTACK, 'm', { label: 'ATTACK' })
-    const d = this.paramKnob(P.EG_DECAY, 'm', { label: 'DECAY' })
-    const int = this.paramKnob(P.EG_INT, 'm', { label: 'EG INT', bipolar: true })
-    const target = this.paramSwitch(P.EG_TARGET, { label: 'TARGET' })
+    const a = this.binder.paramKnob(P.EG_ATTACK, 'm', { label: 'ATTACK' })
+    const d = this.binder.paramKnob(P.EG_DECAY, 'm', { label: 'DECAY' })
+    const int = this.binder.paramKnob(P.EG_INT, 'm', { label: 'EG INT', bipolar: true })
+    const target = this.binder.paramSwitch(P.EG_TARGET, { label: 'TARGET' })
     return section('EG', 'xd-sec-eg', row('xd-ctl-row', a.el, d.el, int.el, target.el))
   }
 
   private buildLfo(): HTMLElement {
-    const wave = this.paramSwitch(P.LFO_WAVE, { label: 'WAVE' })
-    const mode = this.paramSwitch(P.LFO_MODE, { label: 'MODE' })
-    const rate = this.paramKnob(P.LFO_RATE, 'm', {
+    const wave = this.binder.paramSwitch(P.LFO_WAVE, { label: 'WAVE' })
+    const mode = this.binder.paramSwitch(P.LFO_MODE, { label: 'MODE' })
+    const rate = this.binder.paramKnob(P.LFO_RATE, 'm', {
       label: 'RATE',
       format: (v) =>
         this.store.getParam(P.LFO_MODE) === 2
           ? curves.LFO_BPM_DIVISIONS[curves.lfoBpmDivIndex(v)].label
           : fmtHz(curves.lfoRateToHz(v)),
     })
-    const int = this.paramKnob(P.LFO_INT, 'm', { label: 'INT', bipolar: true })
-    const target = this.paramSwitch(P.LFO_TARGET, { label: 'TARGET' })
+    const int = this.binder.paramKnob(P.LFO_INT, 'm', { label: 'INT', bipolar: true })
+    const target = this.binder.paramSwitch(P.LFO_TARGET, { label: 'TARGET' })
     return section(
       'LFO',
       'xd-sec-lfo',
@@ -997,7 +921,7 @@ export class Panel {
       value: this.store.getParam(this.fxTimeId()),
       defaultValue: 512,
       format: (v) => formatParam(this.fxTimeId(), v),
-      onInput: (v) => this.knobInput(this.fxTimeId(), v),
+      onInput: (v) => this.binder.knobInput(this.fxTimeId(), v),
     })
     this.fxDepthKnob = new Knob({
       label: 'DEPTH',
@@ -1007,7 +931,7 @@ export class Panel {
       value: this.store.getParam(this.fxDepthId()),
       defaultValue: 512,
       format: (v) => formatParam(this.fxDepthId(), v),
-      onInput: (v) => this.knobInput(this.fxDepthId(), v),
+      onInput: (v) => this.binder.knobInput(this.fxDepthId(), v),
     })
 
     return section(

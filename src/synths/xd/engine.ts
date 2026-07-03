@@ -17,7 +17,6 @@
  * the poly allocator.
  */
 import { P, PARAMS, PARAM_COUNT, MOTION_META } from './params'
-import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../../shared/paramdef'
 import { clamp, dbToGain } from '../../shared/maps'
 import {
   pitchToCents,
@@ -46,6 +45,8 @@ import type { Program, SeqData } from '../../shared/program'
 import { VoiceBank, NoteStack } from '../../dsp/voicebank'
 import { StepSeq } from '../../dsp/stepseq'
 import { Arp } from '../../dsp/arp'
+import { ServiceTaps } from '../../dsp/servicetaps'
+import { MotionOverlay } from '../../dsp/motionoverlay'
 import { Voice } from './voice'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
@@ -115,11 +116,11 @@ export class Engine {
   /** Raw knob/menu values, indexed by param id. */
   private readonly params = new Float64Array(PARAM_COUNT)
 
-  // Motion-sequence override layer (raw units; cleared when transport stops).
-  private readonly motionVal = new Float64Array(PARAM_COUNT)
-  private readonly motionHas = new Uint8Array(PARAM_COUNT)
-  private motionBendOn = false
-  private motionBend = 0
+  // Motion-sequence override layer (dsp/motionoverlay.ts).
+  private readonly motion = new MotionOverlay(PARAMS, {
+    applyParam: (id) => this.applyParam(id),
+    refreshBend: () => this.refreshBend(),
+  })
 
   // Joystick.
   private bendX = 0
@@ -170,24 +171,15 @@ export class Engine {
   private gainT = 1
   private gainSm = 1
   private readonly gainCoef: number
-  private peak = 0
 
   // --- CHORD-mode voice set (rotated via the bank's rotor) ----------------
   private readonly chordMap = new Int8Array(NV).fill(-1)
   private chordTones = 0
 
-  // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
-  private dbgOn = false
+  // --- SERVICE MODE (debug panel) taps (dsp/servicetaps.ts): FX pairs are
+  // mod L/R, delay L/R, out L/R — genuinely stereo from the mod fx onward.
   private dbgVoice = 0 // most recently triggered voice index
-  // Rings 0-5: tapped voice, mono (vco1, vco2, multi, mix, filt, vca).
-  // Rings 6-11: FX chain stages, stereo pairs (mod L/R, delay L/R, out L/R —
-  // the signal is genuinely stereo from the mod effects onward).
-  private readonly dbgRings = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
-  // 4-voice mode: per-voice rings, voice-major [v*6 + (vco1..vca)].
-  private dbgAll = false
-  private readonly dbgVRings = Array.from({ length: NV * 6 }, () => new Float32Array(DBG_TAP_SIZE))
-  private dbgW = 0
-  private dbgFxW = 0
+  private readonly taps = new ServiceTaps(NV, DBG_TAP_SIZE)
 
   constructor(sampleRate: number) {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -242,44 +234,15 @@ export class Engine {
   effectiveParam(id: number): number {
     const m = PARAMS[id]
     if (!m) return 0
-    let v = this.motionHas[id] ? this.motionVal[id] : this.params[id]
+    let v = this.motion.effective(id, this.params[id])
     if (this.joyDest === id) v += this.joyOffset
     if (this.atDest === id) v += this.atOffset
     return clamp(v, m.min, m.max)
   }
 
-  /**
-   * Motion-lane value: like setParam but into the non-destructive override
-   * layer. MOTION_PITCH_BEND (-1..1) drives the bend multiplier.
-   * MOTION_GATE_TIME never arrives here (the sequencer consumes gate-time
-   * lanes itself as per-step gate overrides); the guard is kept for safety.
-   */
+  /** Motion-lane value into the non-destructive override layer. */
   applyMotion(paramId: number, v: number): void {
-    if (!Number.isFinite(v)) return
-    if (paramId === MOTION_PITCH_BEND) {
-      this.motionBendOn = true
-      this.motionBend = clamp(v, -1, 1)
-      this.refreshBend()
-      return
-    }
-    if (paramId === MOTION_GATE_TIME) return // consumed by the sequencer
-    if (!PARAMS[paramId]) return
-    this.motionHas[paramId] = 1
-    this.motionVal[paramId] = v
-    this.applyParam(paramId)
-  }
-
-  private clearMotionOverrides(): void {
-    if (this.motionBendOn) {
-      this.motionBendOn = false
-      this.refreshBend()
-    }
-    for (let id = 0; id < PARAM_COUNT; id++) {
-      if (this.motionHas[id]) {
-        this.motionHas[id] = 0
-        this.applyParam(id)
-      }
-    }
+    this.motion.applyMotion(paramId, v)
   }
 
   /* ----------------------------------------------------------- joystick -- */
@@ -307,7 +270,7 @@ export class Engine {
   }
 
   private refreshBend(): void {
-    const v = this.motionBendOn ? this.motionBend : this.bendX
+    const v = this.motion.bendOn ? this.motion.bend : this.bendX
     const range = v >= 0 ? this.params[P.BEND_RANGE_PLUS] : this.params[P.BEND_RANGE_MINUS]
     const mult = Math.pow(2, (v * range) / 12) // range 0 = Off
     for (let i = 0; i < NV; i++) this.voices[i].setBendMult(mult)
@@ -1012,55 +975,18 @@ export class Engine {
 
   setPlaying(on: boolean): void {
     this.stepSeq.setPlaying(on === true)
-    if (!on) this.clearMotionOverrides()
+    if (!on) this.motion.clearOverrides()
   }
 
   setSeqData(seq: SeqData): void {
     this.stepSeq.setSeq(seq)
     this.updateTiming(seq.bpm, seq.swing)
-    this.releaseStaleMotion(seq)
-  }
-
-  /**
-   * Lane edits mid-play: drop motion overrides whose lane was disabled,
-   * cleared or re-assigned so the panel knob regains control immediately
-   * (otherwise the stale override would pin the param until STOP).
-   */
-  private releaseStaleMotion(seq: SeqData): void {
-    const lanes = seq.motion ?? []
-    for (let id = 0; id < PARAM_COUNT; id++) {
-      if (!this.motionHas[id]) continue
-      let live = false
-      for (const l of lanes) {
-        if (l && l.on === true && Math.round(l.paramId) === id) {
-          live = true
-          break
-        }
-      }
-      if (!live) {
-        this.motionHas[id] = 0
-        this.applyParam(id)
-      }
-    }
-    if (this.motionBendOn) {
-      let live = false
-      for (const l of lanes) {
-        if (l && l.on === true && Math.round(l.paramId) === MOTION_PITCH_BEND) {
-          live = true
-          break
-        }
-      }
-      if (!live) {
-        this.motionBendOn = false
-        this.refreshBend()
-      }
-    }
+    this.motion.releaseStale(seq.motion ?? [])
   }
 
   loadProgram(p: Program): void {
     this.allNotesOff()
-    this.motionHas.fill(0)
-    this.motionBendOn = false
+    this.motion.reset()
     this.joyDest = -1
     this.joyOffset = 0
     this.joyY = 0
@@ -1135,123 +1061,60 @@ export class Engine {
       if (!Number.isFinite(sum)) sum = 0
       outL[s] = sum
       outR[s] = sum
-      if (this.dbgOn) {
-        // Idle voices write zeros: their tick() is skipped, so the tap fields
-        // would otherwise freeze at the last computed sample and draw as a
-        // flat line at an arbitrary height.
-        const tv = vs[this.dbgVoice]
-        const tOn = tv.active
-        const w = this.dbgW
-        this.dbgRings[0][w] = tOn ? tv.tapV1 : 0
-        this.dbgRings[1][w] = tOn ? tv.tapV2 : 0
-        this.dbgRings[2][w] = tOn ? tv.tapM : 0
-        this.dbgRings[3][w] = tOn ? tv.tapMix : 0
-        this.dbgRings[4][w] = tOn ? tv.tapFilt : 0
-        this.dbgRings[5][w] = tOn ? tv.tapVca : 0
-        if (this.dbgAll) {
-          const vr = this.dbgVRings
-          for (let v = 0; v < NV; v++) {
-            const b = v * 6
-            const vv = vs[v]
-            const on = vv.active
-            vr[b][w] = on ? vv.tapV1 : 0
-            vr[b + 1][w] = on ? vv.tapV2 : 0
-            vr[b + 2][w] = on ? vv.tapM : 0
-            vr[b + 3][w] = on ? vv.tapMix : 0
-            vr[b + 4][w] = on ? vv.tapFilt : 0
-            vr[b + 5][w] = on ? vv.tapVca : 0
-          }
-        }
-        this.dbgW = (w + 1) % DBG_TAP_SIZE
-      }
+      if (this.taps.on) this.taps.writeVoiceSample(vs[this.dbgVoice], vs)
     }
 
     // Serial FX chain; SERVICE MODE taps the signal between stages.
     for (let f = 0; f < this.fxChain.length; f++) {
       this.fxChain[f].process(outL, outR, frames)
-      if (this.dbgOn && f + 1 < this.fxChain.length) this.writeFxTap(6 + 2 * f, outL, outR, frames, false)
+      if (this.taps.on && f + 1 < this.fxChain.length) this.taps.writeFxTap(6 + 2 * f, outL, outR, frames, false)
     }
 
-    // Final transparent safety limiter + peak metering.
-    let peak = this.peak
+    // Final transparent safety limiter.
     for (let s = 0; s < frames; s++) {
       let l = outL[s]
       let r = outR[s]
       if (!Number.isFinite(l)) l = 0
       if (!Number.isFinite(r)) r = 0
-      l = softLimit(l)
-      r = softLimit(r)
-      outL[s] = l
-      outR[s] = r
-      const a = l > -l ? l : -l
-      const b = r > -r ? r : -r
-      const m = a > b ? a : b
-      if (m > peak) peak = m
+      outL[s] = softLimit(l)
+      outR[s] = softLimit(r)
     }
-    this.peak = peak
-    if (this.dbgOn) this.writeFxTap(10, outL, outR, frames, true) // final output
+    if (this.taps.on) this.taps.writeFxTap(10, outL, outR, frames, true) // final output
   }
 
   /* -------------------------------------------------------- telemetry ---- */
 
   /** Enable/disable SERVICE MODE taps (all voices record their stages). */
   setDebug(on: boolean): void {
-    this.dbgOn = on
+    this.taps.on = on
     for (let i = 0; i < NV; i++) this.voices[i].tapOn = on
   }
 
   get debugOn(): boolean {
-    return this.dbgOn
+    return this.taps.on
   }
 
   /** 4-voice tap mode (SERVICE MODE '4V'): record every voice's stages. */
   setDebugAll(all: boolean): void {
-    this.dbgAll = all
+    this.taps.all = all
   }
 
   get debugAll(): boolean {
-    return this.dbgAll
+    return this.taps.all
   }
 
   /** Copy the 24 per-voice tap rings (voice-major) into dst[0..23]. */
   copyDebugVoiceTaps(dst: Float32Array[]): void {
-    const w = this.dbgW
-    const tail = DBG_TAP_SIZE - w
-    for (let t = 0; t < this.dbgVRings.length && t < dst.length; t++) {
-      const ring = this.dbgVRings[t]
-      const d = dst[t]
-      d.set(ring.subarray(w), 0)
-      d.set(ring.subarray(0, w), tail)
-    }
+    this.taps.copyDebugVoiceTaps(dst)
   }
 
   get debugVoice(): number {
     return this.dbgVoice
   }
 
-  /** FX-stage tap: stereo pair written after an FX stage processes. */
-  private writeFxTap(base: number, l: Float32Array, r: Float32Array, n: number, advance: boolean): void {
-    const bufL = this.dbgRings[base]
-    const bufR = this.dbgRings[base + 1]
-    let w = this.dbgFxW
-    for (let s = 0; s < n; s++) {
-      bufL[w] = l[s]
-      bufR[w] = r[s]
-      w = (w + 1) % DBG_TAP_SIZE
-    }
-    if (advance) this.dbgFxW = w
-  }
-
   /** Copy the twelve tap rings (chronological order) into dst[0..11]. */
   copyDebugTaps(dst: Float32Array[]): void {
-    for (let t = 0; t < this.dbgRings.length && t < dst.length; t++) {
-      const w = t >= 6 ? this.dbgFxW : this.dbgW
-      const tail = DBG_TAP_SIZE - w
-      const ring = this.dbgRings[t]
-      const d = dst[t]
-      d.set(ring.subarray(w), 0)
-      d.set(ring.subarray(0, w), tail)
-    }
+    this.taps.copyDebugTaps(dst)
   }
 
   /** Per-voice state for the debug panel's voice lanes. */
@@ -1276,13 +1139,6 @@ export class Engine {
       lfo: v.lastLfo,
       hz: v.lastHz,
     }
-  }
-
-  /** Post-FX peak since the last call (meter); resets on read. */
-  takePeak(): number {
-    const p = this.peak
-    this.peak = 0
-    return p
   }
 
   activeVoiceCount(): number {

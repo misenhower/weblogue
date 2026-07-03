@@ -134,12 +134,4 @@ describe('Engine.setPressure', () => {
     runBlock(e)
     expect(e.effectiveParam(P.CUTOFF)).toBe(e.getParam(P.CUTOFF))
   })
-
-  it('takePeak still meters output and resets on read', () => {
-    const e = new Engine(SR)
-    e.noteOn(60, 127)
-    for (let i = 0; i < 40; i++) runBlock(e)
-    expect(e.takePeak()).toBeGreaterThan(0)
-    expect(e.takePeak()).toBe(0) // reset, no blocks in between
-  })
 })

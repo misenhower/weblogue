@@ -3,6 +3,7 @@
  * URL; the registry composes those). See src/synths/def.ts.
  */
 import type { SynthDef } from '../def'
+import { OG_PROCESSOR_NAME } from './ids'
 import { PARAMS, PARAM_COUNT, clampParam } from './params'
 import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from './program'
 import { FACTORY_PRESETS } from './presets'
@@ -11,7 +12,7 @@ import { NUM_SLOTS } from '../../state/persist'
 export const OG_DEF: SynthDef = {
   id: 'og',
   title: 'minilogue',
-  processorName: 'og-processor', // must match OG_PROCESSOR_NAME (./processor.ts)
+  processorName: OG_PROCESSOR_NAME,
   params: PARAMS,
   paramCount: PARAM_COUNT,
   clampParam,

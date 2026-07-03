@@ -7,94 +7,26 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
-import type { StoreDef } from '../src/synths/def'
-import { P, PARAMS, PARAM_COUNT, clampParam } from '../src/synths/og/params'
-import {
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-} from '../src/synths/og/program'
+import { P } from '../src/synths/og/params'
+import { OG_DEF } from '../src/synths/og/def'
 import { Panel, type PanelOpts } from '../src/synths/og/panel'
+import { makeStoreDef } from './helpers/audio'
+import { installLocalStorageMock, pev } from './helpers/dom'
 
-const OG_TEST_DEF: StoreDef = {
-  id: 'og',
-  params: PARAMS,
-  paramCount: PARAM_COUNT,
-  clampParam,
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-  factoryPresets: [],
-  bankKey: 'og-test-bank',
-  numSlots: 500,
-}
+const OG_TEST_DEF = makeStoreDef(OG_DEF, { bankKey: 'og-test-bank' })
 
 /* ---------------------------------------------------------------- shims */
 
-class LocalStorageMock {
-  private map = new Map<string, string>()
-  getItem(key: string): string | null {
-    const v = this.map.get(key)
-    return v === undefined ? null : v
-  }
-  setItem(key: string, value: string): void {
-    this.map.set(key, String(value))
-  }
-  removeItem(key: string): void {
-    this.map.delete(key)
-  }
-  clear(): void {
-    this.map.clear()
-  }
-  get length(): number {
-    return this.map.size
-  }
-  key(i: number): string | null {
-    return Array.from(this.map.keys())[i] ?? null
-  }
-}
-
-const hadLS = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage')
-const origLS = hadLS ? (globalThis as { localStorage?: unknown }).localStorage : undefined
+let restoreLS: () => void
 
 beforeEach(() => {
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: new LocalStorageMock(),
-    configurable: true,
-    writable: true,
-  })
+  restoreLS = installLocalStorageMock().restore
   document.body.innerHTML = ''
 })
 
 afterEach(() => {
-  if (hadLS) {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: origLS,
-      configurable: true,
-      writable: true,
-    })
-  } else {
-    delete (globalThis as { localStorage?: unknown }).localStorage
-  }
+  restoreLS()
 })
-
-/* happy-dom may not expose PointerEvent — fall back to MouseEvent. */
-function pev(
-  type: string,
-  opts: { clientY?: number; clientX?: number; shiftKey?: boolean } = {},
-): Event {
-  const Ctor: typeof MouseEvent =
-    ((globalThis as Record<string, unknown>)['PointerEvent'] as typeof MouseEvent | undefined) ??
-    MouseEvent
-  return new Ctor(type, {
-    bubbles: true,
-    cancelable: true,
-    ...opts,
-    ...({ pointerId: 1 } as MouseEventInit),
-  })
-}
 
 function make(): { store: Store; panel: Panel; opts: PanelOpts } {
   const store = new Store(OG_TEST_DEF)

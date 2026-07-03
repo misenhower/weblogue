@@ -7,33 +7,16 @@
  * follow the OG program, and that a full synthetic dbg frame renders.
  */
 import { describe, expect, it } from 'vitest'
-import type { StoreDef } from '../src/synths/def'
 import { Store } from '../src/state/store'
-import { PARAMS, PARAM_COUNT, clampParam, P } from '../src/synths/og/params'
-import {
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-} from '../src/synths/og/program'
+import { P } from '../src/synths/og/params'
+import { OG_DEF } from '../src/synths/og/def'
 import { DBG_TAP_SIZE } from '../src/synths/og/engine'
 import { OG_DEBUG_DEF } from '../src/synths/og/debug-def'
 import { DebugPanel } from '../src/ui/debugpanel'
 import type { FromEngine } from '../src/shared/messages'
+import { makeStoreDef } from './helpers/audio'
 
-const OG_TEST_DEF: StoreDef = {
-  id: 'og',
-  params: PARAMS,
-  paramCount: PARAM_COUNT,
-  clampParam,
-  initProgram,
-  cloneProgram,
-  serializeProgram,
-  deserializeProgram,
-  factoryPresets: [],
-  bankKey: 'og-test-debug',
-  numSlots: 500,
-}
+const OG_TEST_DEF = makeStoreDef(OG_DEF, { bankKey: 'og-test-debug' })
 
 /** Synthetic OG telemetry frame: 12 tap rings + 4 voice records. */
 function fakeMsg(): Extract<FromEngine, { t: 'dbg' }> {

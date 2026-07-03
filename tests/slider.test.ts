@@ -1,15 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Slider } from '../src/ui/slider';
-
-/** Build a pointer-ish event that works in happy-dom (falls back to MouseEvent). */
-function pev(type: string, init: Record<string, unknown> = {}): Event {
-  const full = { bubbles: true, cancelable: true, pointerId: 1, ...init };
-  if (typeof PointerEvent === 'function') {
-    return new PointerEvent(type, full as PointerEventInit);
-  }
-  return new MouseEvent(type, full as MouseEventInit);
-}
+import { pev } from './helpers/dom';
 
 function kev(key: string): KeyboardEvent {
   return new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });

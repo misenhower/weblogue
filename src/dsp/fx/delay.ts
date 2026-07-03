@@ -55,6 +55,22 @@ export const DELAY_SUBTYPES: readonly string[] = [
   'DOUBLING',
 ]
 
+/** Named subtype indices (DELAY_SUBTYPES order). */
+export const DELAY_SUBTYPE = {
+  STEREO: 0,
+  MONO: 1,
+  PING_PONG: 2,
+  HIPASS: 3,
+  TAPE: 4,
+  ONE_TAP: 5,
+  ST_BPM: 6,
+  MONO_BPM: 7,
+  PING_BPM: 8,
+  HIPASS_BPM: 9,
+  TAPE_BPM: 10,
+  DOUBLING: 11,
+} as const
+
 /** BPM divisions as fractions of a whole note (240/bpm seconds). */
 const BPM_DIVISIONS: readonly number[] = [
   1 / 64, // 1/64

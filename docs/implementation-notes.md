@@ -35,14 +35,21 @@ into a synth-agnostic core and a per-synth definition. Rules and residue a maint
   NoteStack); the OG engine builds its 8 voice modes on those primitives plus its own echo queue
   (DELAY mode) and duck envelopes (SIDE CHAIN). Its UNCONFIRMED voicings (filter resLoss, delay
   wet level, arp rate, mono sub curve, invert semantics, EG-MOD rate depth) are marked in
-  synths/og/curves.ts + engine.ts as calibration targets. Known OG gaps: no SERVICE MODE drawer
-  (ui/debugpanel.ts still reads xd param ids; the OG engine records compatible taps for later),
-  and the OLED menu set is the minimal correct og-spec §11 list.
-- **Known residue in generic dirs, acceptable for now:** xd-isms in `src/ui/menu.ts` and
-  `src/ui/debugpanel.ts` (display.ts is now def-injected), the CC1/CC2 joyY handlers and the
-  xd-shaped `DbgVoice`/tap layout in `src/shared/messages.ts` (`PROCESSOR_NAME` there is the xd's;
-  the og carries its own), and the family voice/motion dimensions (`NUM_STEPS`, `NOTES_PER_STEP`,
-  …) in `src/shared/program.ts`.
+  synths/og/curves.ts + engine.ts as calibration targets. The OG SERVICE MODE drawer shipped:
+  `ui/debugpanel.ts` takes an injected `DebugDef` (synths/<id>/debug-def.ts) so stage labels,
+  routing badges and modulator lanes are per-synth data (the OG's FX scopes render mono). The
+  OLED menu set is the minimal correct og-spec §11 list.
+- **Shared seams (extracted once both synths existed):** `dsp/procshell.ts` (the AudioWorklet
+  message shell — a synth's processor.ts is one `registerSynthProcessor` call around its Engine),
+  `synths/app-common.ts` (main-thread app shell: Store/Display/SERVICE MODE/MIDI plumbing behind
+  a `SynthAppConfig`), `ui/parambinder.ts` (panel param-id -> control bindings + silent resync),
+  and `makeProgramCodec` in `shared/program.ts` (defensive program init/serialization bound to a
+  param table; each synths/<id>/program.ts is a ~15-line binding).
+- **Known residue in generic dirs, acceptable for now:** the CC1/CC2 joyY handlers in
+  `src/midi/midi.ts` (the xd's joystick Y+/Y-; the og stubs them out), the xd-shaped
+  `DbgVoice` telemetry frame in `src/shared/messages.ts`, the family voice/motion dimensions
+  (`NUM_STEPS`, `NOTES_PER_STEP`, …) in `src/shared/program.ts`, and the `xd-` CSS-class and
+  localStorage prefix, which both synths share as a de-facto framework namespace.
 
 ## Interpretations where the hardware is undocumented
 
@@ -91,9 +98,11 @@ These are deliberate choices, not oversights. Marked UNCONFIRMED in code where a
 
 ## Verification infrastructure
 
-- 561 vitest tests as of 2026-07-02; DSP tests render audio and assert spectra/timing, not just shapes.
-- Browser debug hook `window.__xdDebug`: `rms()` (post-master analyser), `contextState()`, `powerOn()`,
-  `noteOn/noteOff(note)`, `store`. Used by all automated in-browser checks.
+- The full vitest suite (`npm test`) is the behavioral contract — several hundred tests across both
+  synths; DSP tests render audio and assert spectra/timing, not just shapes.
+- Browser debug hook `window.__synthDebug` (with `window.__xdDebug` kept as a legacy alias):
+  `rms()` (post-master analyser), `contextState()`, `powerOn()`, `noteOn/noteOff(note)`,
+  `synthId`, `store`. Used by all automated in-browser checks.
 - Scope trigger math: tap frames are 1280 samples with a fixed 512-sample centered view, so the
   center-trigger search span (~16 ms) guarantees a lock down to ~C2.
 - Gotcha for automated verification: a hidden tab pauses `requestAnimationFrame`, so canvas-repaint

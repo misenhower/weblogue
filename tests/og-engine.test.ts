@@ -2,36 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { Engine } from '../src/synths/og/engine'
 import { initProgram } from '../src/synths/og/program'
 import { P } from '../src/synths/og/params'
-
-const SR = 48000
-const BLOCK = 128
+import { renderEngine as render, rms, SR } from './helpers/audio'
 
 function makeEngine(): Engine {
   const e = new Engine(SR)
   e.loadProgram(initProgram())
   return e
-}
-
-/** Render `seconds` through the engine, returning the L channel. */
-function render(e: Engine, seconds: number, out?: Float32Array): Float32Array {
-  const n = Math.floor(seconds * SR)
-  const buf = out ?? new Float32Array(n)
-  const l = new Float32Array(BLOCK)
-  const r = new Float32Array(BLOCK)
-  for (let done = 0; done < n; done += BLOCK) {
-    const c = Math.min(BLOCK, n - done)
-    l.fill(0)
-    r.fill(0)
-    e.process(l, r, c)
-    buf.set(l.subarray(0, c), done)
-  }
-  return buf
-}
-
-function rms(buf: Float32Array, from = 0, to = buf.length): number {
-  let acc = 0
-  for (let i = from; i < to; i++) acc += buf[i] * buf[i]
-  return Math.sqrt(acc / Math.max(1, to - from))
 }
 
 function soundingNotes(e: Engine): number[] {

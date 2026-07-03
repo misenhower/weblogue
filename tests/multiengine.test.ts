@@ -7,6 +7,7 @@ import {
   VPM_TYPE,
   type VpmTrims,
 } from '../src/dsp/multiengine'
+import { goertzel } from './helpers/audio'
 
 const SR = 48000
 
@@ -117,21 +118,6 @@ function holdChanges(buf: Float32Array, skip = 100): number {
     if (buf[i] !== buf[i - 1]) n++
   }
   return n
-}
-
-/** Goertzel mean-square power of the component at freqHz (exact-bin use). */
-function goertzelMs(buf: Float32Array, freqHz: number, from = 0): number {
-  const n = buf.length - from
-  const w = (2 * Math.PI * freqHz) / SR
-  const coeff = 2 * Math.cos(w)
-  let s1 = 0
-  let s2 = 0
-  for (let i = from; i < buf.length; i++) {
-    const s0 = buf[i] + coeff * s1 - s2
-    s2 = s1
-    s1 = s0
-  }
-  return (2 * (s1 * s1 + s2 * s2 - coeff * s1 * s2)) / (n * n)
 }
 
 function expectHealthy(buf: Float32Array, label: string): void {
@@ -265,7 +251,7 @@ describe('VPM oscillator', () => {
     let tot = 0
     for (let i = 0; i < buf.length; i++) tot += buf[i] * buf[i]
     tot /= buf.length
-    const fund = goertzelMs(buf, 220)
+    const fund = goertzel(buf, 220)
     expect(tot).toBeGreaterThan(0.1) // it actually sounds
     expect(fund / tot).toBeGreaterThan(0.999) // off-fundamental < 0.1%
   })

@@ -526,6 +526,8 @@ export class LedButton {
     this.key.addEventListener('pointercancel', this.onUp)
     this.key.addEventListener('pointerleave', this.onUp)
     this.key.addEventListener('click', this.onClick)
+    this.key.addEventListener('keydown', this.onKeyDown)
+    this.key.addEventListener('keyup', this.onKeyUp)
   }
 
   getValue(): number {
@@ -552,6 +554,11 @@ export class LedButton {
 
   private onDown = (e: PointerEvent): void => {
     if (e.button !== undefined && e.button !== 0) return
+    this.press()
+  }
+
+  /** Shared press path: pointerdown / Space / Enter keydown. */
+  private press(): void {
     this.held = true
     this.onPress?.()
     if (!this.latching) this.setValue(1)
@@ -566,6 +573,19 @@ export class LedButton {
 
   private onClick = (): void => {
     if (this.latching) this.setValue(this.value ? 0 : 1)
+  }
+
+  // Space/Enter mirror the pointer path. No preventDefault: the browser's
+  // synthesized click still lands in onClick, so a keyboard press runs the
+  // same down -> up -> click(latch toggle) sequence as a pointer press.
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat || this.held) return
+    this.press()
+  }
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (e.key !== ' ' && e.key !== 'Enter') return
+    this.onUp()
   }
 }
 
@@ -601,6 +621,7 @@ export class StepButton {
     b.type = 'button'
     b.className = 'xd-step xd-step--off'
     b.setAttribute('aria-label', `Step ${opts.index + 1}`)
+    b.setAttribute('aria-pressed', 'false')
 
     const led = document.createElement('span')
     led.className = 'xd-step-led'
@@ -614,6 +635,8 @@ export class StepButton {
     b.addEventListener('pointerup', this.onUp)
     b.addEventListener('pointercancel', this.onUp)
     b.addEventListener('pointerleave', this.onUp)
+    b.addEventListener('keydown', this.onKeyDown)
+    b.addEventListener('keyup', this.onKeyUp)
   }
 
   getValue(): number {
@@ -627,12 +650,18 @@ export class StepButton {
 
   setState(s: StepState): void {
     for (const st of STEP_STATES) this.el.classList.toggle(`xd-step--${st}`, st === s)
+    this.el.setAttribute('aria-pressed', s === 'off' ? 'false' : 'true')
   }
 
   /* --- internals --------------------------------------------------- */
 
   private onDown = (e: PointerEvent): void => {
     if (e.button !== undefined && e.button !== 0) return
+    this.press()
+  }
+
+  /** Shared press path: pointerdown / Space / Enter keydown. */
+  private press(): void {
     this.held = true
     this.value = 1
     this.el.classList.add('is-held')
@@ -645,6 +674,18 @@ export class StepButton {
     this.value = 0
     this.el.classList.remove('is-held')
     this.onRelease?.(this.index)
+  }
+
+  // Space/Enter mirror the pointer press/release path (no click handler here,
+  // so the browser's synthesized click is harmless).
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat || this.held) return
+    this.press()
+  }
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (e.key !== ' ' && e.key !== 'Enter') return
+    this.onUp()
   }
 }
 

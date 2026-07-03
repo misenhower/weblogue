@@ -37,7 +37,6 @@ export type FromEngine =
   | { t: 'scope'; data: Float32Array } // post-FX mono frames for the OLED
   | { t: 'step'; i: number } // playhead step index, -1 = stopped
   | { t: 'voices'; notes: number[] } // sounding MIDI notes (key/LED feedback)
-  | { t: 'level'; v: number } // output meter 0..1
   | {
       t: 'dbg' // SERVICE MODE frame (~30/s while enabled)
       // 0-5 mono voice taps: vco1, vco2, multi, mix, postFilter, postVca;
@@ -50,6 +49,4 @@ export type FromEngine =
       tapped: number // voice index feeding the taps
     }
 
-/** AudioWorkletProcessor registration name. */
-export const PROCESSOR_NAME = 'xd-processor'
 export const SCOPE_SIZE = 256

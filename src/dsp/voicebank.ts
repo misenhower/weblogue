@@ -77,16 +77,17 @@ export class VoiceBank<V extends BankVoice> {
     return this.vNote[i]
   }
 
+  /** Update voice i's sounding note (e.g. POLY-invert re-voicing). */
+  setNote(i: number, note: number): void {
+    this.vNote[i] = note
+  }
+
   isReleased(i: number): boolean {
     return this.vReleased[i] === 1
   }
 
   isStacked(i: number): boolean {
     return this.vStacked[i] === 1
-  }
-
-  isPending(i: number): boolean {
-    return this.pendFlag[i] === 1
   }
 
   /** Idle voice via hardware-style round-robin, else oldest gate-released

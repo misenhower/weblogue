@@ -13,6 +13,7 @@ import { Panel } from './panel'
 import { Display } from '../../ui/display'
 import { XD_DISPLAY_DEF } from './display-def'
 import { DebugPanel } from '../../ui/debugpanel'
+import { XD_DEBUG_DEF } from './debug-def'
 import { attachComputerKeyboard } from '../../ui/keyboard'
 import { MidiInput } from '../../midi/midi'
 import { decodeCc } from './cc'
@@ -61,7 +62,7 @@ export function buildXdApp(opts: SynthAppOpts): SynthApp {
     debugOpen = on
     if (on) {
       if (!debugPanel) {
-        debugPanel = new DebugPanel({ store })
+        debugPanel = new DebugPanel({ store, def: XD_DEBUG_DEF })
         debugPanel.onClose = () => toggleDebug(false)
         debugPanel.onVoicesMode = (all) => {
           if (debugOpen) send({ t: 'debug', on: true, all })

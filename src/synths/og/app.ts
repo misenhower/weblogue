@@ -1,13 +1,12 @@
 /*
- * Original minilogue main-thread app: store + panel + display + computer
- * keyboard + MIDI wiring, built by the generic bootstrap through the
- * registry (mirrors synths/xd/app.ts).
+ * Original minilogue main-thread app: store + panel + display + SERVICE MODE
+ * + computer keyboard + MIDI wiring, built by the generic bootstrap through
+ * the registry (mirrors synths/xd/app.ts).
  *
- * Known gap vs the xd app: no SERVICE MODE drawer yet — the OG engine
- * records the same debug taps, but ui/debugpanel.ts is still xd-flavored
- * (xd param ids in its modulator readouts); wiring it here would misread
- * the OG program. Documented residue, revisit with the debug-panel
- * genericization.
+ * SERVICE MODE: the drawer is the generic ui/debugpanel.ts over OG_DEBUG_DEF
+ * (synths/og/debug-def.ts) — the OG engine records the same 12-ring dbg
+ * layout as the xd, with NOISE in the third voice tap and the delay as the
+ * only FX stage.
  */
 import processorUrl from './processor.ts?worker&url'
 import type { SynthApp, SynthAppOpts, SynthEntry } from '../def'
@@ -17,6 +16,8 @@ import { OG_DEF } from './def'
 import { Panel } from './panel'
 import { Display } from '../../ui/display'
 import { OG_DISPLAY_DEF } from './display-def'
+import { DebugPanel } from '../../ui/debugpanel'
+import { OG_DEBUG_DEF } from './debug-def'
 import { attachComputerKeyboard } from '../../ui/keyboard'
 import { MidiInput } from '../../midi/midi'
 import { decodeCc } from './cc'
@@ -48,6 +49,45 @@ export function buildOgApp(opts: SynthAppOpts): SynthApp {
   // Computer keyboard -> keybed; z/x octave keys write back to the param.
   attachComputerKeyboard(panel.keyboard)
   panel.keyboard.onOctaveShift = (o) => store.setParam(P.OCTAVE, o + 2)
+
+  // --- SERVICE MODE (debug drawer): ` key or the corner chip -------------
+  let debugPanel: DebugPanel | null = null
+  let debugOpen = false
+
+  const svcChip = document.createElement('button')
+  svcChip.className = 'xd-svc-chip'
+  svcChip.textContent = 'SERVICE'
+  svcChip.addEventListener('click', () => toggleDebug())
+  root.appendChild(svcChip)
+
+  function toggleDebug(on = !debugOpen): void {
+    if (on === debugOpen) return
+    debugOpen = on
+    if (on) {
+      if (!debugPanel) {
+        debugPanel = new DebugPanel({ store, def: OG_DEBUG_DEF })
+        debugPanel.onClose = () => toggleDebug(false)
+        debugPanel.onVoicesMode = (all) => {
+          if (debugOpen) send({ t: 'debug', on: true, all })
+        }
+      }
+      if (sampleRate > 0) debugPanel.sampleRate = sampleRate
+      root.appendChild(debugPanel.el)
+      svcChip.style.display = 'none'
+    } else if (debugPanel) {
+      debugPanel.el.remove()
+      svcChip.style.display = ''
+    }
+    send({ t: 'debug', on, all: debugPanel?.voicesAll ?? false })
+  }
+  let sampleRate = 0
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== '`' || e.repeat) return
+    const t = document.activeElement
+    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
+    toggleDebug()
+  })
 
   // --- MIDI ---------------------------------------------------------------
   function midiActivity(): void {
@@ -105,12 +145,14 @@ export function buildOgApp(opts: SynthAppOpts): SynthApp {
           panel.setVoices(m.notes)
           break
         case 'dbg':
-          break // no SERVICE MODE drawer yet (see header)
+          debugPanel?.update(m)
+          break
       }
     },
     initMidi,
-    setSampleRate(): void {
-      // Nothing to feed yet (SERVICE MODE drawer absent).
+    setSampleRate(sr: number): void {
+      sampleRate = sr
+      if (debugPanel) debugPanel.sampleRate = sr
     },
     fit(): void {
       // Responsive scale (panel logical width 1500; see synths/og/panel.ts).

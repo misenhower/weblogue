@@ -5,6 +5,7 @@ import { P } from '../src/synths/xd/params'
 import { Store } from '../src/state/store'
 import { XD_DEF } from '../src/synths/xd/def'
 import { DebugPanel } from '../src/ui/debugpanel'
+import { XD_DEBUG_DEF } from '../src/synths/xd/debug-def'
 import type { FromEngine } from '../src/shared/messages'
 
 const SR = 48000
@@ -199,14 +200,14 @@ describe('DebugPanel', () => {
   }
 
   it('builds 5 scopes, 4 lanes, and a health strip', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(9)
     expect(p.el.querySelectorAll('.xd-svc-lane').length).toBe(4)
     expect(p.el.querySelector('.xd-svc-load')).toBeTruthy()
   })
 
   it('update() reflects voices, drift, load, and tapped lane', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     p.update(fakeMsg())
     const notes = [...p.el.querySelectorAll('.xd-svc-note')].map((n) => n.textContent)
     expect(notes[0]).toBe('C4')
@@ -222,7 +223,7 @@ describe('DebugPanel', () => {
   })
 
   it('lane shows the tuning readout (Hz + cents vs equal temperament)', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     p.update(fakeMsg())
     const freqs = [...p.el.querySelectorAll('.xd-svc-freq')].map((n) => n.textContent)
     expect(freqs[0]).toBe('262.1Hz +3¢') // 262.1 vs C4 = 261.63 -> +3.1 cents
@@ -230,7 +231,7 @@ describe('DebugPanel', () => {
   })
 
   it('clicking a scope toggles spectrum mode and update still renders', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     const cell = p.el.querySelector('.xd-svc-tap') as HTMLElement
     const cv = cell.querySelector('.xd-svc-scope') as HTMLCanvasElement
     cv.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -242,13 +243,13 @@ describe('DebugPanel', () => {
   })
 
   it('MOD sparklines accumulate history without throwing', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     for (let i = 0; i < 140; i++) p.update(fakeMsg()) // > HISTORY wraps the ring
     expect(p.el.querySelectorAll('.xd-svc-mod-cv').length).toBe(3)
   })
 
   it('MOD row follows the tapped voice (per-voice histories + label)', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     const labels = () => [...p.el.querySelectorAll('.xd-svc-mod .xd-svc-label')].map((n) => n.textContent)
     p.update(fakeMsg())
     expect(labels()[0]).toBe('AMP EG · V2') // fakeMsg taps voice index 1
@@ -261,7 +262,7 @@ describe('DebugPanel', () => {
   it('routing wires and badges follow the store', () => {
     const store = new Store(XD_DEF)
     store.initCurrent()
-    const p = new DebugPanel({ store })
+    const p = new DebugPanel({ store, def: XD_DEBUG_DEF })
     const eg = p.el.querySelector('.xd-svc-badge--eg') as HTMLElement
     store.setParam(P.EG_TARGET, 2, 'ui')
     expect(eg.textContent).toBe('EG → PITCH')
@@ -277,7 +278,7 @@ describe('DebugPanel', () => {
   })
 
   it('view toggle swaps between diagram and compact, sharing the scope cells', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     expect(p.currentView).toBe('diagram')
     const diagram = p.el.querySelector('.xd-svc-diagram') as HTMLElement
     const compact = p.el.querySelector('.xd-svc-compact') as HTMLElement
@@ -299,7 +300,7 @@ describe('DebugPanel', () => {
 
   it('1V/4V toggle fires onVoicesMode and persists', () => {
     localStorage.removeItem('xd-svc-voices')
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     expect(p.voicesAll).toBe(false)
     let last: boolean | null = null
     p.onVoicesMode = (all) => (last = all)
@@ -332,7 +333,7 @@ describe('DebugPanel', () => {
 
   it('dragging the header repositions the drawer and persists', () => {
     localStorage.removeItem('xd-svc-pos')
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     document.body.appendChild(p.el)
     const head = p.el.querySelector('.xd-svc-head') as HTMLElement
     head.dispatchEvent(new PointerEvent('pointerdown', { clientX: 400, clientY: 300, bubbles: true }))
@@ -344,7 +345,7 @@ describe('DebugPanel', () => {
     expect(Number.isFinite(saved.x)).toBe(true)
     expect(Number.isFinite(saved.y)).toBe(true)
     // a fresh panel restores the saved position
-    const p2 = new DebugPanel()
+    const p2 = new DebugPanel({ def: XD_DEBUG_DEF })
     expect(p2.el.style.left).not.toBe('')
     p.el.remove()
     localStorage.removeItem('xd-svc-pos')
@@ -352,7 +353,7 @@ describe('DebugPanel', () => {
 
   it('pointerdown on the view/close buttons does not start a drag', () => {
     localStorage.removeItem('xd-svc-pos')
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     const btn = p.el.querySelector('.xd-svc-seg-btn') as HTMLButtonElement
     btn.dispatchEvent(new PointerEvent('pointerdown', { clientX: 10, clientY: 10, bubbles: true }))
     const head = p.el.querySelector('.xd-svc-head') as HTMLElement
@@ -363,7 +364,7 @@ describe('DebugPanel', () => {
   })
 
   it('close button fires onClose; null 2d context never throws', () => {
-    const p = new DebugPanel()
+    const p = new DebugPanel({ def: XD_DEBUG_DEF })
     let closed = false
     p.onClose = () => (closed = true)
     ;(p.el.querySelector('.xd-svc-close') as HTMLButtonElement).click()

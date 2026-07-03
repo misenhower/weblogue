@@ -2,57 +2,111 @@
  * SERVICE MODE — diagnostic drawer (v1).
  *
  * Renders the engine's debug telemetry: the signal path as a mini block
- * diagram with live scopes at five taps (VCO1 / VCO2 / MIX / VCF / post-FX),
- * four voice-activity lanes with drift meters, and an audio-thread health
- * strip. Telemetry only streams while the drawer is open (the app sends
- * {t:'debug', on} on toggle), so it costs nothing when closed.
+ * diagram with live scopes at every tap, four voice-activity lanes with
+ * drift meters, and an audio-thread health strip. Telemetry only streams
+ * while the drawer is open (the app sends {t:'debug', on} on toggle), so it
+ * costs nothing when closed.
+ *
+ * Everything synth-specific — tap labels/positions, the block-diagram wires,
+ * the routing badges and the store params/curves that drive them, and the
+ * modulator lane labels — comes from an injected DebugDef (see
+ * src/synths/<id>/debug-def.ts), mirroring the display's DisplayDef pattern.
  */
 import type { FromEngine } from '../shared/messages'
 import type { Store } from '../state/store'
-import { P } from '../synths/xd/params'
-import { egIntToPercent, lfoIntTo01 } from '../synths/xd/curves'
 import { fftMag } from './fft'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
+/**
+ * One scope cell: tap label, the telemetry tap indices that feed it (r set =
+ * stereo overlay), and its absolute position in the 796x306 diagram.
+ */
+export interface DebugStage {
+  label: string
+  l: number
+  r?: number
+  x: number
+  y: number
+}
+
+/**
+ * One diagram wire (SVG path data in the 796x306 viewBox). Plain entries are
+ * the static audio path; `on` makes visibility follow the store (routing
+ * toggles), and `amt` additionally drives opacity with a >0.02 display
+ * cutoff (mod-intensity wires). Array order is the DOM order.
+ */
+export interface DebugWire {
+  d: string
+  /** Extra class beside the base 'xd-w' (e.g. 'xd-w-eg' / 'xd-w-lfo'). */
+  cls?: string
+  on?(store: Store): boolean
+  amt?(store: Store): number // 0..1
+}
+
+/** Small toggle badge (SYNC / RING / X-MOD style): lit while on(store). */
+export interface DebugToggleBadge {
+  x: number
+  y: number
+  label: string
+  on(store: Store): boolean
+}
+
+/**
+ * Modulation-source badge ('EG → …' readouts): text follows the store,
+ * dimmed while amt(store) <= 0.02. Hidden entirely without a store.
+ */
+export interface DebugModBadge {
+  x: number
+  y: number
+  /** Color class, e.g. 'xd-svc-badge--eg'. */
+  cls: string
+  /** Static fallback text (store-less construction). */
+  label: string
+  text(store: Store): string
+  amt(store: Store): number
+}
+
+/**
+ * Modulator sparkline lane. The source order is fixed — lane 0 draws
+ * DbgVoice.amp, lane 1 .modEg, lane 2 .lfo — the def only names/colors them.
+ */
+export interface DebugModSig {
+  label: string
+  color: string
+  bipolar: boolean
+}
+
+/**
+ * Synth-specific SERVICE MODE surface, injected by the synth app (see
+ * src/synths/<id>/debug-def.ts). Everything else the drawer renders — voice
+ * lanes, drift meters, sparkline mechanics, health strip — is synth-agnostic.
+ */
+export interface DebugDef {
+  /** Scope cells, telemetry-tap order (see shared/messages.ts dbg frame). */
+  stages: readonly DebugStage[]
+  /** Block-diagram wires; see DebugWire for static vs store-driven entries. */
+  wires: readonly DebugWire[]
+  /** Oscillator-relationship badges (SYNC/RING/X-MOD column). */
+  toggleBadges: readonly DebugToggleBadge[]
+  /** Voice-sum marker on the VCA -> FX wire. */
+  sumBadge: { x: number; y: number; label: string; title: string }
+  /** Modulation routing readouts (EG →/LFO → badges). */
+  modBadges: readonly DebugModBadge[]
+  /** Compact strip: stage indices shown + the separator glyphs between them. */
+  compact: { indices: readonly number[]; arrows: readonly string[] }
+  /** Sparkline lanes, fixed source order: DbgVoice.amp, .modEg, .lfo. */
+  modSigs: readonly [DebugModSig, DebugModSig, DebugModSig]
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg'
-const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'VCA', 'MOD FX', 'DELAY', 'OUTPUT'] as const
-/** Which telemetry tap(s) feed each scope cell; r set = stereo overlay. */
-const CELL_TAPS: ReadonlyArray<{ l: number; r?: number }> = [
-  { l: 0 },
-  { l: 1 },
-  { l: 2 },
-  { l: 3 },
-  { l: 4 },
-  { l: 5 },
-  { l: 6, r: 7 },
-  { l: 8, r: 9 },
-  { l: 10, r: 11 },
-]
 const R_COLOR = '#8fb8e0'
 /** Per-voice trace colors (4-channel-scope mode); V1 matches the mono green. */
 const VOICE_COLORS = ['#8fe0a0', '#8fb8e0', '#e0c98f', '#e08fa0'] as const
 /** Silent-trace cutoff: skip drawing voices with no signal to reduce clutter. */
 const SILENT_PEAK = 0.001
-/** Cell positions in the 796x306 diagram (see the wire paths below). */
-const CELLS = [
-  { x: 8, y: 4 },
-  { x: 8, y: 76 },
-  { x: 8, y: 148 },
-  { x: 260, y: 76 },
-  { x: 480, y: 76 },
-  { x: 8, y: 236 },
-  { x: 248, y: 236 },
-  { x: 444, y: 236 },
-  { x: 626, y: 236 },
-] as const
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const HISTORY = 128 // sparkline points (~4s at 30fps telemetry)
-const MOD_SIGS = [
-  { label: 'AMP EG', color: '#8fe0a0', bipolar: false },
-  { label: 'MOD EG', color: '#e0c98f', bipolar: false },
-  { label: 'LFO', color: '#8fb8e0', bipolar: true },
-] as const
 
 function hexToRgba(hex: string, a: number): string {
   const r = parseInt(hex.slice(1, 3), 16)
@@ -120,21 +174,22 @@ export class DebugPanel {
   /** Set by the app once the AudioContext exists (spectrum frequency axis). */
   sampleRate = 48000
 
+  private readonly def: DebugDef
   private readonly canvases: HTMLCanvasElement[] = []
   private readonly ctxs: (CanvasRenderingContext2D | null)[] = []
-  private readonly fftOn: boolean[] = TAP_LABELS.map(() => false)
+  private readonly fftOn: boolean[]
   private readonly store?: Store
-  private wireMultiPre!: SVGPathElement
-  private wireMultiPost!: SVGPathElement
-  private wireEgCut!: SVGPathElement
-  private wireEgPitch!: SVGPathElement
-  private wireLfoCut!: SVGPathElement
-  private wireLfoOsc!: SVGPathElement
-  private badgeEg!: HTMLElement
-  private badgeLfo!: HTMLElement
-  private badgeSync!: HTMLElement
-  private badgeRing!: HTMLElement
-  private badgeXmod!: HTMLElement
+  private readonly routedWires: Array<{
+    el: SVGPathElement
+    on(store: Store): boolean
+    amt?(store: Store): number
+  }> = []
+  private readonly toggleBadgeEls: Array<{ el: HTMLElement; on(store: Store): boolean }> = []
+  private readonly modBadgeEls: Array<{
+    el: HTMLElement
+    text(store: Store): string
+    amt(store: Store): number
+  }> = []
 
   /** 4-voice overlay mode; the app re-arms telemetry when this changes. */
   onVoicesMode?: (all: boolean) => void
@@ -147,8 +202,6 @@ export class DebugPanel {
   private compactEl!: HTMLElement
   private compactSlots: HTMLElement[] = []
   private viewBtns!: { diagram: HTMLButtonElement; compact: HTMLButtonElement }
-  /** Cell indices shown in the compact view (VCA/FX taps are diagram-only). */
-  private static readonly COMPACT_IDX = [0, 1, 2, 3, 4, 8]
   private readonly tapCells: HTMLElement[] = []
   private readonly modCanvases: HTMLCanvasElement[] = []
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
@@ -172,8 +225,11 @@ export class DebugPanel {
   private voicesText!: HTMLElement
   private fg = '#8fe0a0'
 
-  constructor(opts?: { store?: Store }) {
-    this.store = opts?.store
+  constructor(opts: { store?: Store; def: DebugDef }) {
+    this.store = opts.store
+    this.def = opts.def
+    const def = this.def
+    this.fftOn = def.stages.map(() => false)
     this.el = document.createElement('div')
     this.el.className = 'xd-svc'
     this.el.innerHTML = ''
@@ -225,57 +281,42 @@ export class DebugPanel {
     this.voiceBtns.all.classList.toggle('is-active', this.voicesMode === 'all')
 
     /* --- signal-flow block diagram -------------------------------------
-     * Generators stack on the left and sum into MIX -> VCF; the FX chain
-     * runs along the bottom. Wires are SVG paths over fixed cell positions;
-     * mod-routing wires and the SYNC/RING/X-MOD badges follow the store. */
+     * Wires are SVG paths over fixed cell positions; the def declares the
+     * audio path plus store-driven routing wires and badges. */
     const diagram = document.createElement('div')
     diagram.className = 'xd-svc-diagram'
     const svg = document.createElementNS(SVG_NS, 'svg')
     svg.setAttribute('viewBox', '0 0 796 306')
     svg.setAttribute('class', 'xd-svc-wires')
     diagram.appendChild(svg)
-    const wire = (d: string, cls: string): SVGPathElement => {
+    for (const w of def.wires) {
       const p = document.createElementNS(SVG_NS, 'path')
-      p.setAttribute('d', d)
-      p.setAttribute('class', cls)
+      p.setAttribute('d', w.d)
+      p.setAttribute('class', 'xd-w' + (w.cls ? ' ' + w.cls : ''))
       svg.appendChild(p)
-      return p
+      if (w.on) this.routedWires.push({ el: p, on: w.on, amt: w.amt })
     }
-    // Audio path.
-    wire('M178 27 H219 V99 H260', 'xd-w')
-    wire('M178 99 H260', 'xd-w')
-    this.wireMultiPre = wire('M178 171 H219 V99', 'xd-w')
-    this.wireMultiPost = wire('M178 171 H726 V212', 'xd-w')
-    wire('M430 99 H480', 'xd-w')
-    wire('M650 99 H726 V212 H93 V236', 'xd-w') // VCF down into the VCA
-    wire('M178 259 H248', 'xd-w') // VCA -> (voice sum) -> MOD FX
-    wire('M418 259 H444', 'xd-w')
-    wire('M614 259 H626', 'xd-w')
-    // Mod routing (visibility/opacity follow the current program).
-    this.wireEgCut = wire('M360 17 H560 V76', 'xd-w xd-w-eg')
-    this.wireEgPitch = wire('M300 17 H219 V90', 'xd-w xd-w-eg')
-    this.wireLfoCut = wire('M360 197 H560 V140', 'xd-w xd-w-lfo')
-    this.wireLfoOsc = wire('M300 197 H219 V180', 'xd-w xd-w-lfo')
 
-    for (let i = 0; i < TAP_LABELS.length; i++) {
+    for (let i = 0; i < def.stages.length; i++) {
+      const stage = def.stages[i]
       const cell = document.createElement('div')
       cell.className = 'xd-svc-tap xd-svc-cell'
-      cell.style.left = CELLS[i].x + 'px'
-      cell.style.top = CELLS[i].y + 'px'
+      cell.style.left = stage.x + 'px'
+      cell.style.top = stage.y + 'px'
       const cv = document.createElement('canvas')
       cv.className = 'xd-svc-scope'
       cv.width = 170 * (window.devicePixelRatio || 1)
       cv.height = 46 * (window.devicePixelRatio || 1)
       const label = document.createElement('div')
       label.className = 'xd-svc-label'
-      label.textContent = TAP_LABELS[i]
+      label.textContent = stage.label
       cell.append(cv, label)
       cell.title = 'click: waveform / spectrum'
       const idx = i
       cv.addEventListener('click', () => {
         this.fftOn[idx] = !this.fftOn[idx]
         cell.classList.toggle('is-fft', this.fftOn[idx])
-        label.textContent = TAP_LABELS[idx] + (this.fftOn[idx] ? ' · FFT' : '')
+        label.textContent = stage.label + (this.fftOn[idx] ? ' · FFT' : '')
       })
       this.tapCells.push(cell)
       diagram.appendChild(cell)
@@ -289,41 +330,41 @@ export class DebugPanel {
       this.ctxs.push(ctx)
     }
 
-    // VCO1<->VCO2 relationship badges + EG/LFO routing badges.
-    this.badgeSync = this.badge(diagram, 186, 36, 'SYNC', 'xd-svc-mini')
-    this.badgeRing = this.badge(diagram, 186, 56, 'RING', 'xd-svc-mini')
-    this.badgeXmod = this.badge(diagram, 186, 76, 'X-MOD', 'xd-svc-mini')
-    // The xd mono-sums all four voices between the VCAs and the FX chain.
-    // Centered on the VCA->MOD FX wire (gap midpoint x=213, wire y=259).
-    const sum = this.badge(diagram, 213, 259, 'Σ ×4', 'xd-svc-mini')
+    // Oscillator-relationship badges + mod-routing badges (def-declared).
+    for (const b of def.toggleBadges) {
+      const el = this.badge(diagram, b.x, b.y, b.label, 'xd-svc-mini')
+      this.toggleBadgeEls.push({ el, on: b.on })
+    }
+    // Voice-sum marker, centered on its wire.
+    const sum = this.badge(diagram, def.sumBadge.x, def.sumBadge.y, def.sumBadge.label, 'xd-svc-mini')
     sum.style.transform = 'translate(-50%, -50%)'
-    sum.title = 'all four voices are mono-summed here, before the effects'
-    this.badgeEg = this.badge(diagram, 296, 6, 'EG', 'xd-svc-badge xd-svc-badge--eg')
-    this.badgeLfo = this.badge(diagram, 296, 186, 'LFO', 'xd-svc-badge xd-svc-badge--lfo')
+    sum.title = def.sumBadge.title
+    for (const b of def.modBadges) {
+      const el = this.badge(diagram, b.x, b.y, b.label, 'xd-svc-badge ' + b.cls)
+      this.modBadgeEls.push({ el, text: b.text, amt: b.amt })
+    }
 
     if (this.store) {
       this.store.onParam(() => this.refreshRouting())
       this.store.onProgram(() => this.refreshRouting())
       this.refreshRouting()
     } else {
-      this.badgeEg.style.display = 'none'
-      this.badgeLfo.style.display = 'none'
+      for (const b of this.modBadgeEls) b.el.style.display = 'none'
     }
     this.diagramEl = diagram
 
     /* --- compact view (the original linear flow) ------------------ */
     const compact = document.createElement('div')
     compact.className = 'xd-svc-compact'
-    const compactArrows = ['⊕', '⊕', '→', '→', '→']
-    for (let k = 0; k < DebugPanel.COMPACT_IDX.length; k++) {
+    for (let k = 0; k < def.compact.indices.length; k++) {
       const slot = document.createElement('div')
       slot.className = 'xd-svc-slot'
       compact.appendChild(slot)
       this.compactSlots.push(slot)
-      if (k < compactArrows.length) {
+      if (k < def.compact.arrows.length) {
         const arrow = document.createElement('div')
         arrow.className = 'xd-svc-arrow'
-        arrow.textContent = compactArrows[k]
+        arrow.textContent = def.compact.arrows[k]
         compact.appendChild(arrow)
       }
     }
@@ -340,7 +381,7 @@ export class DebugPanel {
     /* --- MOD row: tapped voice's modulator sparklines ------------------- */
     const modRow = document.createElement('div')
     modRow.className = 'xd-svc-mods'
-    for (let i = 0; i < MOD_SIGS.length; i++) {
+    for (let i = 0; i < def.modSigs.length; i++) {
       const cell = document.createElement('div')
       cell.className = 'xd-svc-mod'
       const cv = document.createElement('canvas')
@@ -349,7 +390,7 @@ export class DebugPanel {
       cv.height = 34 * (window.devicePixelRatio || 1)
       const label = document.createElement('div')
       label.className = 'xd-svc-label'
-      label.textContent = MOD_SIGS[i].label + ' · V1'
+      label.textContent = def.modSigs[i].label + ' · V1'
       this.modLabels.push(label)
       cell.append(cv, label)
       modRow.appendChild(cell)
@@ -464,11 +505,12 @@ export class DebugPanel {
     this.compactEl.style.display = compact ? '' : 'none'
     this.viewBtns.compact.classList.toggle('is-active', compact)
     this.viewBtns.diagram.classList.toggle('is-active', !compact)
+    const idx = this.def.compact.indices
     if (compact) {
-      // Move the shared cells into the compact slots (FX taps stay hidden in
-      // the diagram); clear absolute positioning.
-      for (let k = 0; k < DebugPanel.COMPACT_IDX.length; k++) {
-        const cell = this.tapCells[DebugPanel.COMPACT_IDX[k]]
+      // Move the shared cells into the compact slots (the other taps stay
+      // hidden in the diagram); clear absolute positioning.
+      for (let k = 0; k < idx.length; k++) {
+        const cell = this.tapCells[idx[k]]
         cell.classList.remove('xd-svc-cell')
         cell.style.left = ''
         cell.style.top = ''
@@ -478,8 +520,8 @@ export class DebugPanel {
       for (let i = 0; i < this.tapCells.length; i++) {
         const cell = this.tapCells[i]
         cell.classList.add('xd-svc-cell')
-        cell.style.left = CELLS[i].x + 'px'
-        cell.style.top = CELLS[i].y + 'px'
+        cell.style.left = this.def.stages[i].x + 'px'
+        cell.style.top = this.def.stages[i].y + 'px'
         this.diagramEl.appendChild(cell)
       }
     }
@@ -561,39 +603,31 @@ export class DebugPanel {
   private refreshRouting(): void {
     const s = this.store
     if (!s) return
-    const egT = s.getParam(P.EG_TARGET) // 0 CUTOFF, 1 PITCH 2, 2 PITCH
-    const egAmt = Math.abs(egIntToPercent(s.getParam(P.EG_INT))) / 100
-    const lfoT = s.getParam(P.LFO_TARGET) // 0 CUTOFF, 1 SHAPE, 2 PITCH
-    const lfoAmt = Math.abs(lfoIntTo01(s.getParam(P.LFO_INT)))
-    const oscSel = ['ALL', 'VCO 1+2', 'VCO 2', 'MULTI'][s.getParam(P.LFO_TARGET_OSC)] ?? 'ALL'
-    this.badgeEg.textContent = 'EG → ' + (['CUTOFF', 'PITCH 2', 'PITCH'][egT] ?? '')
-    this.badgeLfo.textContent =
-      'LFO → ' + (['CUTOFF', 'SHAPE', 'PITCH'][lfoT] ?? '') + (lfoT !== 0 ? ' · ' + oscSel : '')
-    const show = (el: SVGPathElement, on: boolean, amt: number): void => {
-      el.style.display = on && amt > 0.02 ? '' : 'none'
-      el.style.opacity = String(Math.min(1, 0.15 + amt * 0.85))
+    for (const w of this.routedWires) {
+      const on = w.on(s)
+      if (w.amt) {
+        const amt = w.amt(s)
+        w.el.style.display = on && amt > 0.02 ? '' : 'none'
+        w.el.style.opacity = String(Math.min(1, 0.15 + amt * 0.85))
+      } else {
+        w.el.style.display = on ? '' : 'none'
+      }
     }
-    show(this.wireEgCut, egT === 0, egAmt)
-    show(this.wireEgPitch, egT !== 0, egAmt)
-    show(this.wireLfoCut, lfoT === 0, lfoAmt)
-    show(this.wireLfoOsc, lfoT !== 0, lfoAmt)
-    this.badgeEg.style.opacity = egAmt > 0.02 ? '1' : '0.35'
-    this.badgeLfo.style.opacity = lfoAmt > 0.02 ? '1' : '0.35'
-    const post = s.getParam(P.MULTI_ROUTING) >= 0.5
-    this.wireMultiPre.style.display = post ? 'none' : ''
-    this.wireMultiPost.style.display = post ? '' : 'none'
-    this.badgeSync.classList.toggle('is-on', s.getParam(P.SYNC) >= 0.5)
-    this.badgeRing.classList.toggle('is-on', s.getParam(P.RING) >= 0.5)
-    this.badgeXmod.classList.toggle('is-on', s.getParam(P.CROSS_MOD) > 8)
+    for (const b of this.toggleBadgeEls) b.el.classList.toggle('is-on', b.on(s))
+    for (const b of this.modBadgeEls) {
+      b.el.textContent = b.text(s)
+      b.el.style.opacity = b.amt(s) > 0.02 ? '1' : '0.35'
+    }
   }
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
     for (let v = 0; v < this.voiceOn.length; v++) this.voiceOn[v] = m.voices[v]?.on === true
 
+    const stages = this.def.stages
     const multi = this.voicesMode === 'all' && m.vtaps && m.vtaps.length >= 24
-    for (let i = 0; i < CELL_TAPS.length; i++) {
-      const t = CELL_TAPS[i]
+    for (let i = 0; i < stages.length; i++) {
+      const t = stages[i]
       if (multi && t.r === undefined) {
         // Voice-path cell: overlay all four voices, 4-channel-scope style.
         const datas = [0, 1, 2, 3].map((v) => m.vtaps![v * 6 + t.l])
@@ -623,14 +657,15 @@ export class DebugPanel {
     // show all voices and no lane is highlighted as "tapped".
     const allMode = this.voicesMode === 'all'
     const shown = Math.max(0, Math.min(this.modHist.length - 1, m.tapped))
+    const modSigs = this.def.modSigs
     if (shown !== this.shownVoice || allMode !== this.modLabelsAll) {
       this.shownVoice = shown
       this.modLabelsAll = allMode
-      for (let s = 0; s < MOD_SIGS.length; s++) {
-        this.modLabels[s].textContent = MOD_SIGS[s].label + (allMode ? '' : ' · V' + (shown + 1))
+      for (let s = 0; s < modSigs.length; s++) {
+        this.modLabels[s].textContent = modSigs[s].label + (allMode ? '' : ' · V' + (shown + 1))
       }
     }
-    for (let s = 0; s < MOD_SIGS.length; s++) this.drawSparkline(s)
+    for (let s = 0; s < modSigs.length; s++) this.drawSparkline(s)
 
     let activeCount = 0
     for (let i = 0; i < this.lanes.length && i < m.voices.length; i++) {
@@ -824,7 +859,7 @@ export class DebugPanel {
     const ctx = this.modCtxs[s]
     const cv = this.modCanvases[s]
     if (!ctx) return
-    const sig = MOD_SIGS[s]
+    const sig = this.def.modSigs[s]
     const dpr = window.devicePixelRatio || 1
     const w = cv.width / dpr
     const h = cv.height / dpr

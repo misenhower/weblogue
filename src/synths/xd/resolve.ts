@@ -6,13 +6,13 @@
  * header). This module maps them to concrete params given the current
  * MULTI TYPE / MOD FX TYPE raw values.
  */
-import { P, PARAMS, clampParam } from '../shared/params'
+import { P, PARAMS, clampParam } from '../../shared/params'
 import {
   CC_ID_MODFX_SUB,
   CC_ID_MULTI_SHAPE,
   CC_ID_MULTI_SHIFT_SHAPE,
   CC_ID_MULTI_SUB,
-} from './midi'
+} from '../../midi/midi'
 
 const MULTI_SHAPE = [P.SHAPE_NOISE, P.SHAPE_VPM, P.SHAPE_USER] as const
 const MULTI_SHIFT_SHAPE = [P.SHIFTSHAPE_NOISE, P.SHIFTSHAPE_VPM, P.SHIFTSHAPE_USER] as const

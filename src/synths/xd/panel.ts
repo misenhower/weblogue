@@ -24,11 +24,11 @@
  * Layout/styling lives in src/ui/panel.css (the app imports it alongside
  * theme.css and kbd.css — this module imports no CSS).
  */
-import type { Store } from '../state/store'
-import { NUM_SLOTS } from '../state/persist'
-import { P, PARAMS, formatParam } from '../shared/params'
-import * as maps from '../shared/maps'
-import { NUM_STEPS, NOTES_PER_STEP } from '../shared/program'
+import type { Store } from '../../state/store'
+import { NUM_SLOTS } from '../../state/persist'
+import { P, PARAMS, formatParam } from '../../shared/params'
+import * as maps from '../../shared/maps'
+import { NUM_STEPS, NOTES_PER_STEP } from '../../shared/program'
 import {
   Knob,
   SelectorSwitch,
@@ -38,10 +38,10 @@ import {
   Led,
   type StepState,
   type SetValueOpts,
-} from './components'
-import { Keyboard } from './keyboard'
-import { Joystick } from './joystick'
-import { showMenu, type MenuItem } from './menu'
+} from '../../ui/components'
+import { Keyboard } from '../../ui/keyboard'
+import { Joystick } from '../../ui/joystick'
+import { showMenu, type MenuItem } from '../../ui/menu'
 
 export interface PanelOpts {
   store: Store

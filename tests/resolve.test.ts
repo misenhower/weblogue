@@ -4,7 +4,7 @@
  * MOD FX TYPE raw values.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveMidiParam } from '../src/midi/resolve'
+import { resolveMidiParam } from '../src/synths/xd/resolve'
 import {
   CC_ID_MODFX_SUB,
   CC_ID_MULTI_SHAPE,

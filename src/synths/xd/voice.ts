@@ -14,19 +14,19 @@
  *   mixer (smoothed levels) -> [multi pre] -> VCF (keytrack/EG/LFO cutoff)
  *   -> [multi post] -> VCA (amp EG * amp velocity * voiceGain)
  */
-import { Vco } from './osc'
-import { MultiEngine, type VpmTrims } from './multiengine'
-import { XdFilter } from './filter'
-import { AdsrEg, AdEg } from './eg'
-import { Lfo, LFO_MODE } from './lfo'
-import { Drift } from './drift'
+import { Vco } from '../../dsp/osc'
+import { MultiEngine, type VpmTrims } from '../../dsp/multiengine'
+import { XdFilter } from '../../dsp/filter'
+import { AdsrEg, AdEg } from '../../dsp/eg'
+import { Lfo, LFO_MODE } from '../../dsp/lfo'
+import { Drift } from '../../dsp/drift'
 import {
   EG_MAX_PITCH_CENTS,
   EG_MAX_CUTOFF_OCTAVES,
   LFO_MAX_PITCH_CENTS,
   LFO_MAX_CUTOFF_OCTAVES,
   LFO_MAX_SHAPE,
-} from '../shared/maps'
+} from '../../shared/maps'
 
 /** EG TARGET values (params.ts order): CUTOFF, PITCH 2, PITCH. */
 const EGT_CUTOFF = 0

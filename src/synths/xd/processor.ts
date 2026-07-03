@@ -1,4 +1,4 @@
-/// <reference path="./worklet.d.ts" />
+/// <reference path="../../dsp/worklet.d.ts" />
 /*
  * AudioWorklet processor for the minilogue xd replica.
  *
@@ -8,8 +8,8 @@
  * can never die, handles any block size, and always returns true.
  */
 import { Engine, DBG_TAP_SIZE } from './engine'
-import { PROCESSOR_NAME, SCOPE_SIZE } from '../shared/messages'
-import type { ToEngine } from '../shared/messages'
+import { PROCESSOR_NAME, SCOPE_SIZE } from '../../shared/messages'
+import type { ToEngine } from '../../shared/messages'
 
 const SCOPE_INTERVAL_S = 0.05
 const VOICES_INTERVAL_S = 0.03

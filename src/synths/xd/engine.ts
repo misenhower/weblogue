@@ -21,7 +21,7 @@ import {
   PARAM_COUNT,
   MOTION_PITCH_BEND,
   MOTION_GATE_TIME,
-} from '../shared/params'
+} from '../../shared/params'
 import {
   clamp,
   pitchToCents,
@@ -45,13 +45,13 @@ import {
   chordIndex,
   arpTypeIndex,
   microTuneCents,
-} from '../shared/maps'
-import type { Program, SeqData } from '../shared/program'
-import { Sequencer } from './seq'
+} from '../../shared/maps'
+import type { Program, SeqData } from '../../shared/program'
+import { Sequencer } from '../../dsp/seq'
 import { Voice } from './voice'
-import { ModFx } from './fx/modfx'
-import { DelayFx } from './fx/delay'
-import { ReverbFx } from './fx/reverb'
+import { ModFx } from '../../dsp/fx/modfx'
+import { DelayFx } from '../../dsp/fx/delay'
+import { ReverbFx } from '../../dsp/fx/reverb'
 
 const NV = 4
 /**

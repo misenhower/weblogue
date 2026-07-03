@@ -3,7 +3,7 @@
  * render audio offline in 128-frame blocks.
  */
 import { describe, it, expect } from 'vitest'
-import { Engine } from '../src/dsp/engine'
+import { Engine } from '../src/synths/xd/engine'
 import { initProgram } from '../src/shared/program'
 import { P, PARAMS, PARAM_COUNT } from '../src/shared/params'
 import { FACTORY_PRESETS } from '../src/state/presets'

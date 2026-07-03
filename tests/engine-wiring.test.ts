@@ -5,7 +5,7 @@
  * the same block-rate machinery as the joystick Y offset.
  */
 import { describe, it, expect } from 'vitest'
-import { Engine } from '../src/dsp/engine'
+import { Engine } from '../src/synths/xd/engine'
 import { initProgram } from '../src/shared/program'
 import { P, PARAMS, JOY_ASSIGN_DESTS } from '../src/shared/params'
 

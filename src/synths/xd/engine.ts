@@ -2,7 +2,8 @@
  * Engine — the minilogue xd replica's synth core (worklet-side, DOM-free).
  *
  * Owns the raw parameter store, 4 Voices, the FX chain (MOD FX -> DELAY ->
- * REVERB, spec §1) and a Sequencer (whose hooks feed notes/motion back in).
+ * REVERB, spec §1), a StepSeq and an Arp (whose hooks feed notes/motion
+ * back in).
  *
  * Layered parameter model (all mapping through shared/maps.ts):
  *   effective raw = (motion override ?? knob raw) + joystick-Y offset
@@ -12,10 +13,10 @@
  * non-destructive and recomputed at block rate.
  *
  * Voice modes (spec §3): POLY (+DUO zone), UNISON, CHORD, ARP. In ARP mode
- * live keys are fed to the sequencer's arpeggiator and its hook noteOns come
- * back into the poly allocator.
+ * live keys are fed to the arpeggiator and its hook noteOns come back into
+ * the poly allocator.
  */
-import { P, PARAMS, PARAM_COUNT } from './params'
+import { P, PARAMS, PARAM_COUNT, MOTION_META } from './params'
 import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../../shared/paramdef'
 import { clamp, dbToGain } from '../../shared/maps'
 import {
@@ -38,10 +39,12 @@ import {
   CHORDS,
   chordIndex,
   arpTypeIndex,
+  ARP_RATES,
   microTuneCents,
 } from './curves'
 import type { Program, SeqData } from '../../shared/program'
-import { Sequencer } from '../../dsp/seq'
+import { StepSeq } from '../../dsp/stepseq'
+import { Arp } from '../../dsp/arp'
 import { Voice } from './voice'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
@@ -167,11 +170,12 @@ export class Engine {
   private lastStartHz = 0
   private calcSemis = 60 // scratch: semitone of the last noteHz() call
 
-  // FX + sequencer.
+  // FX + sequencer/arp.
   private readonly modfx: ModFx
   private readonly delay: DelayFx
   private readonly reverb: ReverbFx
-  readonly seq: Sequencer
+  readonly stepSeq: StepSeq
+  readonly arp: Arp
   /** Playhead callback for the processor ({t:'step'} messages). */
   onStep: ((i: number) => void) | null = null
 
@@ -211,13 +215,21 @@ export class Engine {
     this.modfx = new ModFx(sr)
     this.delay = new DelayFx(sr)
     this.reverb = new ReverbFx(sr)
-    this.seq = new Sequencer(sr, {
+    this.stepSeq = new StepSeq(
+      sr,
+      {
+        noteOn: (note, vel) => this.hookNoteOn(note, vel),
+        noteOff: (note) => this.hookNoteOff(note),
+        motionValue: (id, v) => this.applyMotion(id, v),
+        stepChanged: (i) => {
+          if (this.onStep) this.onStep(i)
+        },
+      },
+      MOTION_META,
+    )
+    this.arp = new Arp(sr, {
       noteOn: (note, vel) => this.hookNoteOn(note, vel),
       noteOff: (note) => this.hookNoteOff(note),
-      motionValue: (id, v) => this.applyMotion(id, v),
-      stepChanged: (i) => {
-        if (this.onStep) this.onStep(i)
-      },
     })
     for (const m of PARAMS) this.params[m.id] = m.def
     this.curMode = Math.round(this.params[P.VOICE_MODE])
@@ -341,7 +353,7 @@ export class Engine {
       }
     }
     this.joyGateOff = gateOffset
-    this.seq.setGateTimeOffset(gateOffset + this.atGateOff)
+    this.stepSeq.setGateTimeOffset(gateOffset + this.atGateOff)
     if (dest === this.joyDest && offset === this.joyOffset) return
     const prev = this.joyDest
     this.joyDest = dest
@@ -370,7 +382,7 @@ export class Engine {
       }
     }
     this.atGateOff = gateOffset
-    this.seq.setGateTimeOffset(this.joyGateOff + gateOffset)
+    this.stepSeq.setGateTimeOffset(this.joyGateOff + gateOffset)
     if (dest === this.atDest && offset === this.atOffset) return
     const prev = this.atDest
     this.atDest = dest
@@ -760,11 +772,12 @@ export class Engine {
   }
 
   private syncArp(): void {
-    this.seq.setArp({
+    const rate = ARP_RATES[Math.round(this.effectiveParam(P.ARP_RATE))] ?? ARP_RATES[4]
+    this.arp.setConfig({
       enabled: this.curMode === VM_ARP,
       typeIndex: arpTypeIndex(this.effectiveParam(P.VM_DEPTH)),
       latch: this.params[P.ARP_LATCH] >= 0.5,
-      rateIndex: Math.round(this.effectiveParam(P.ARP_RATE)),
+      rateBeats: rate.beats,
       gate01: this.effectiveParam(P.ARP_GATE) / 72,
       swing: this.swing,
     })
@@ -818,7 +831,7 @@ export class Engine {
     const v = Math.max(1, Math.min(127, Math.round(vel)))
     this.physHeld[n] = 1
     if (this.curMode === VM_ARP) {
-      this.seq.arpKeyDown(n, v)
+      this.arp.keyDown(n, v)
       return
     }
     this.noteOnInternal(n, v, false)
@@ -830,7 +843,7 @@ export class Engine {
     this.physHeld[n] = 0
     // Always release the arp key buffer: a key registered in ARP mode may be
     // let go after a voice-mode switch and would otherwise linger forever.
-    this.seq.arpKeyUp(n)
+    this.arp.keyUp(n)
     if (this.curMode === VM_ARP) return
     this.noteOffInternal(n, false)
   }
@@ -847,15 +860,15 @@ export class Engine {
     for (let n = 0; n < 128; n++) {
       if (this.physHeld[n]) {
         this.physHeld[n] = 0
-        this.seq.arpKeyUp(n)
+        this.arp.keyUp(n)
       }
     }
     // Drop latched arp keys: momentary latch-off flush, then restore config.
-    this.seq.setArp({
+    this.arp.setConfig({
       enabled: false,
       typeIndex: 0,
       latch: false,
-      rateIndex: 4,
+      rateBeats: 0.25,
       gate01: 0.75,
       swing: this.swing,
     })
@@ -1197,12 +1210,12 @@ export class Engine {
   /* -------------------------------------------------- transport / data --- */
 
   setPlaying(on: boolean): void {
-    this.seq.setPlaying(on === true)
+    this.stepSeq.setPlaying(on === true)
     if (!on) this.clearMotionOverrides()
   }
 
   setSeqData(seq: SeqData): void {
-    this.seq.setSeq(seq)
+    this.stepSeq.setSeq(seq)
     this.updateTiming(seq.bpm, seq.swing)
     this.releaseStaleMotion(seq)
   }
@@ -1257,13 +1270,13 @@ export class Engine {
     this.pressure = 0
     this.pressureDirty = false
     this.atGateOff = 0
-    this.seq.setGateTimeOffset(0)
+    this.stepSeq.setGateTimeOffset(0)
     for (const meta of PARAMS) {
       const v = p.params[meta.id]
       this.params[meta.id] = clamp(Number.isFinite(v) ? v : meta.def, meta.min, meta.max)
     }
     this.curMode = Math.round(this.params[P.VOICE_MODE])
-    this.seq.setSeq(p.seq)
+    this.stepSeq.setSeq(p.seq)
     this.updateTiming(p.seq.bpm, p.seq.swing, true)
     this.applyAllParams()
     this.refreshBend()
@@ -1305,8 +1318,11 @@ export class Engine {
       }
     }
 
-    // Sequencer first: its hooks fire noteOn/noteOff/motion into the engine.
-    this.seq.process(frames)
+    // Sequencer/arp first: their hooks fire noteOn/noteOff/motion into the
+    // engine. The arp runs at the engine's transport bpm (same value the
+    // sequence carries; hardware shares one tempo).
+    this.stepSeq.process(frames)
+    this.arp.process(frames, this.bpm)
 
     const vs = this.voices
     const gc = this.gainCoef

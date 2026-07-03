@@ -386,10 +386,10 @@ describe('arp key buffer hygiene', () => {
     e.loadProgram(p)
     e.noteOn(60, 100)
     render(e, 0.05)
-    expect(e.seq.arpHeldCount()).toBe(1)
+    expect(e.arp.heldCount()).toBe(1)
     e.setParam(P.VOICE_MODE, 3) // switch to POLY while the key is held
     e.noteOff(60) // released outside ARP mode
-    expect(e.seq.arpHeldCount()).toBe(0) // buffer cleared, no stuck note
+    expect(e.arp.heldCount()).toBe(0) // buffer cleared, no stuck note
     e.setParam(P.VOICE_MODE, 0) // back to ARP with nothing held
     const buf = render(e, 0.5)
     assertFiniteBounded(buf)

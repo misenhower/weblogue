@@ -21,6 +21,16 @@ export function dbToGain(db: number): number {
   return Math.pow(10, db / 20)
 }
 
+/** Finite v, else def. */
+export function fin(v: number, def: number): number {
+  return Number.isFinite(v) ? v : def
+}
+
+/** Rounded and clamped int, def on junk. */
+export function clampInt(v: number, lo: number, hi: number, def: number): number {
+  return Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : def
+}
+
 // ---------------------------------------------------------------------------
 // Display formatting helpers (OLED-style)
 // ---------------------------------------------------------------------------

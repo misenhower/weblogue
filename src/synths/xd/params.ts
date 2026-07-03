@@ -5,6 +5,7 @@
  */
 import {
   type ParamMeta,
+  type MotionTargetMeta,
   knob,
   sw,
   menu,
@@ -13,6 +14,7 @@ import {
   formatParamIn,
   motionParamIdsOf,
   motionParamLabelIn,
+  motionMetaFor,
 } from '../../shared/paramdef'
 import { fmtRaw, fmtSec, fmtHz, fmtDb } from '../../shared/maps'
 import * as curves from './curves'
@@ -333,3 +335,6 @@ export const MOTION_PARAM_IDS: readonly number[] = motionParamIdsOf(PARAMS)
 export function motionParamLabel(id: number): string {
   return motionParamLabelIn(PARAMS, id)
 }
+
+/** Motion-target predicates for the StepSeq core, bound to the xd table. */
+export const MOTION_META: MotionTargetMeta = motionMetaFor(PARAMS)

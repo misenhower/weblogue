@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { Sequencer, type SeqHooks } from '../src/dsp/seq'
+import { StepSeq, type StepSeqHooks } from '../src/dsp/stepseq'
+import { Arp } from '../src/dsp/arp'
+import { MOTION_META } from '../src/synths/xd/params'
 import { initSeq } from '../src/shared/program'
 import type { SeqData } from '../src/shared/program'
 import { GATE_TIE } from '../src/shared/program'
@@ -22,7 +24,7 @@ function makeRec() {
   const motion: { t: number; id: number; v: number }[] = []
   const steps: { t: number; i: number }[] = []
   let now = 0
-  const hooks: SeqHooks = {
+  const hooks: StepSeqHooks = {
     noteOn: (note, vel) => events.push({ t: now, type: 'on', note, vel }),
     noteOff: (note) => events.push({ t: now, type: 'off', note, vel: 0 }),
     motionValue: (id, v) => motion.push({ t: now, id, v }),
@@ -40,7 +42,7 @@ function makeRec() {
 }
 
 /** Process `seconds` of audio in BLOCK-frame chunks, time-stamping hooks. */
-function run(s: Sequencer, rec: ReturnType<typeof makeRec>, seconds: number, t0 = 0): number {
+function run(s: { process(n: number): void }, rec: ReturnType<typeof makeRec>, seconds: number, t0 = 0): number {
   const frames = Math.round(seconds * SR)
   let done = 0
   while (done < frames) {
@@ -72,14 +74,19 @@ function fullSeq(): SeqData {
   return seq
 }
 
-function arpCfg(o: Partial<{ enabled: boolean; typeIndex: number; latch: boolean; rateIndex: number; gate01: number; swing: number }> = {}) {
-  return { enabled: true, typeIndex: 2, latch: false, rateIndex: 4, gate01: 0.5, swing: 0, ...o }
+function arpCfg(o: Partial<{ enabled: boolean; typeIndex: number; latch: boolean; rateBeats: number; gate01: number; swing: number }> = {}) {
+  return { enabled: true, typeIndex: 2, latch: false, rateBeats: 0.25, gate01: 0.5, swing: 0, ...o }
+}
+
+/** Run an Arp at a fixed 120 bpm through the block-chunking helper. */
+function arpProc(a: Arp): { process(n: number): void } {
+  return { process: (n) => a.process(n, 120) }
 }
 
 describe('sequencer timing', () => {
   it('fires ~64 noteOns over exactly 8 s at 120 bpm, 1/16, 16 steps', () => {
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(fullSeq())
     s.setPlaying(true)
     expect(s.playing).toBe(true)
@@ -97,7 +104,7 @@ describe('sequencer timing', () => {
     seq.steps[0] = noteStep([60], [GATE_TIE]) // TIE
     seq.steps[2] = noteStep([62], [36]) // different note -> releases the tie
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.45) // 21600 frames: stops before the pattern wraps at 24000
@@ -118,7 +125,7 @@ describe('sequencer timing', () => {
     const seq = fullSeq()
     seq.swing = 50
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 1.2)
@@ -135,7 +142,7 @@ describe('sequencer timing', () => {
     const seq = fullSeq()
     for (let i = 0; i < 16; i++) seq.activeSteps[i] = i % 2 === 0 // 8 active
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 2.5)
@@ -160,7 +167,7 @@ describe('motion lanes', () => {
       data: [[0, 200, 400, 600, 800], ...Array.from({ length: 15 }, () => null)],
     }
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.125) // exactly one 1/16 step at 120 bpm
@@ -185,7 +192,7 @@ describe('motion lanes', () => {
       data: [[100, 900, 900, 900, 900], [300, 0, 0, 0, 0], ...Array.from({ length: 14 }, () => null)],
     }
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.24) // just under two full steps
@@ -200,7 +207,7 @@ describe('motion lanes', () => {
     seq.motion[0].on = true
     seq.motion[0].data[0] = [7, 7, 7, 7, 7] // ~10% gate on step 0 only
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.3)
@@ -217,7 +224,7 @@ describe('motion lanes', () => {
   it('setGateTimeOffset (joystick GATE TIME) offsets gates live', () => {
     const seq = fullSeq() // gate 36 = 50%
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setGateTimeOffset(-29) // 36 - 29 = 7 -> ~10% gate
     s.setPlaying(true)
@@ -235,7 +242,7 @@ describe('TIE continuation', () => {
     seq.steps[0] = noteStep([60], [GATE_TIE])
     seq.steps[1] = noteStep([60], [36]) // continuation: ends at this step's gate
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.45) // 21600 frames: stops before the pattern wraps at 24000
@@ -253,7 +260,7 @@ describe('TIE continuation', () => {
     seq.steps[1] = noteStep([60], [GATE_TIE])
     seq.steps[2] = noteStep([60], [72]) // 100% gate: ends at step 2's boundary
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.45)
@@ -269,7 +276,7 @@ describe('TIE continuation', () => {
     seq.steps[0] = noteStep([60], [GATE_TIE])
     seq.steps[1] = noteStep([62], [36]) // different note: tie releases, 62 triggers
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(seq)
     s.setPlaying(true)
     run(s, rec, 0.45)
@@ -283,13 +290,13 @@ describe('TIE continuation', () => {
 describe('arpeggiator', () => {
   it('RISE 1 with held C-E-G repeats C,E,G ascending', () => {
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
-    s.setArp(arpCfg({ typeIndex: 2 })) // RISE 1
-    s.arpKeyDown(64, 100) // press order E, C, G — RISE sorts ascending
-    s.arpKeyDown(60, 100)
-    s.arpKeyDown(67, 100)
-    expect(s.arpHeldCount()).toBe(3)
-    run(s, rec, 1) // 16th steps at 120 bpm = 6000 samples each
+    const a = new Arp(SR, rec.hooks)
+    a.setConfig(arpCfg({ typeIndex: 2 })) // RISE 1
+    a.keyDown(64, 100) // press order E, C, G — RISE sorts ascending
+    a.keyDown(60, 100)
+    a.keyDown(67, 100)
+    expect(a.heldCount()).toBe(3)
+    run(arpProc(a), rec, 1) // 16th steps at 120 bpm = 6000 samples each
     const notes = ons(rec).map((e) => e.note)
     expect(notes.length).toBeGreaterThanOrEqual(8)
     expect(notes.slice(0, 8)).toEqual([60, 64, 67, 60, 64, 67, 60, 64])
@@ -300,20 +307,20 @@ describe('arpeggiator', () => {
 
   it('latch keeps arpeggiating after key release and re-arms on next press', () => {
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
-    s.setArp(arpCfg({ latch: true }))
-    s.arpKeyDown(60, 100)
-    let t = run(s, rec, 0.3)
-    s.arpKeyUp(60)
-    expect(s.arpHeldCount()).toBe(1) // still feeding the arp
+    const a = new Arp(SR, rec.hooks)
+    a.setConfig(arpCfg({ latch: true }))
+    a.keyDown(60, 100)
+    let t = run(arpProc(a), rec, 0.3)
+    a.keyUp(60)
+    expect(a.heldCount()).toBe(1) // still feeding the arp
     const before = ons(rec).length
-    t = run(s, rec, 0.5, t)
+    t = run(arpProc(a), rec, 0.5, t)
     expect(ons(rec).length).toBeGreaterThan(before + 2) // kept going
     // new press re-arms the latch set
-    s.arpKeyDown(62, 100)
-    expect(s.arpHeldCount()).toBe(1)
+    a.keyDown(62, 100)
+    expect(a.heldCount()).toBe(1)
     const mark = rec.events.length
-    run(s, rec, 0.3, t)
+    run(arpProc(a), rec, 0.3, t)
     const later = rec.events.slice(mark).filter((e) => e.type === 'on')
     expect(later.length).toBeGreaterThan(0)
     for (const e of later) expect(e.note).toBe(62)
@@ -321,13 +328,13 @@ describe('arpeggiator', () => {
 
   it('without latch, releasing all keys stops the arp and releases its note', () => {
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
-    s.setArp(arpCfg({ gate01: 1 })) // full gate: note held to the boundary
-    s.arpKeyDown(60, 100)
-    let t = run(s, rec, 0.05)
-    s.arpKeyUp(60)
-    t = run(s, rec, 0.3, t)
-    expect(s.arpHeldCount()).toBe(0)
+    const a = new Arp(SR, rec.hooks)
+    a.setConfig(arpCfg({ gate01: 1 })) // full gate: note held to the boundary
+    a.keyDown(60, 100)
+    let t = run(arpProc(a), rec, 0.05)
+    a.keyUp(60)
+    t = run(arpProc(a), rec, 0.3, t)
+    expect(a.heldCount()).toBe(0)
     expect(ons(rec, 60).length).toBe(1)
     expect(offs(rec, 60).length).toBe(1)
   })
@@ -340,19 +347,21 @@ describe('stop / cleanup', () => {
     seq.steps[0] = noteStep([60], [GATE_TIE])
     seq.steps[2] = noteStep([63, 67], [72, GATE_TIE])
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
+    const a = new Arp(SR, rec.hooks)
+    const both = { process: (n: number) => { s.process(n); a.process(n, 120) } }
     s.setSeq(seq)
-    s.setArp(arpCfg({ typeIndex: 8, latch: true })) // POLY 1 chord + latch
-    s.arpKeyDown(48, 90)
-    s.arpKeyDown(52, 90)
-    s.arpKeyUp(48)
-    s.arpKeyUp(52)
+    a.setConfig(arpCfg({ typeIndex: 8, latch: true })) // POLY 1 chord + latch
+    a.keyDown(48, 90)
+    a.keyDown(52, 90)
+    a.keyUp(48)
+    a.keyUp(52)
     s.setPlaying(true)
-    let t = run(s, rec, 1)
+    let t = run(both, rec, 1)
     expect(s.currentStep).toBeGreaterThanOrEqual(0)
     s.setPlaying(false)
-    s.setArp(arpCfg({ enabled: false }))
-    run(s, rec, 0.1, t)
+    a.setConfig(arpCfg({ enabled: false }))
+    run(both, rec, 0.1, t)
     // paired on/off per note
     const counts = new Map<number, number>()
     for (const e of rec.events) {
@@ -368,7 +377,7 @@ describe('stop / cleanup', () => {
 
   it('reset() silently clears all state', () => {
     const rec = makeRec()
-    const s = new Sequencer(SR, rec.hooks)
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
     s.setSeq(fullSeq())
     s.setPlaying(true)
     run(s, rec, 0.3)

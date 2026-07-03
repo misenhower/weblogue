@@ -72,3 +72,24 @@ export function motionParamLabelIn(table: readonly ParamMeta[], id: number): str
   if (id === MOTION_GATE_TIME) return 'GATE TIME'
   return table[id]?.label ?? 'None'
 }
+
+/** Motion-lane target validity/smoothability, decoupled from any param table
+ *  so the step sequencer core doesn't depend on a synth definition. */
+export interface MotionTargetMeta {
+  isTarget(pid: number): boolean
+  isSmooth(pid: number): boolean
+}
+
+export function motionMetaFor(table: readonly ParamMeta[]): MotionTargetMeta {
+  return {
+    isTarget(pid: number): boolean {
+      if (pid === MOTION_PITCH_BEND || pid === MOTION_GATE_TIME) return true
+      return pid >= 0 && pid < table.length && !!table[pid]
+    },
+    isSmooth(pid: number): boolean {
+      if (pid === MOTION_PITCH_BEND || pid === MOTION_GATE_TIME) return true
+      const m = table[pid]
+      return !!m && !!m.motionSmooth
+    },
+  }
+}

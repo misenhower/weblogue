@@ -12,6 +12,7 @@ Items marked UNCONFIRMED are best-effort inferences; see §16. The official MIDI
   Program architecture: 2 VCO, 1 VCF, 2 EG, 1 VCA, 1 LFO, DELAY. [KorgWeb spec, OM p.62]
 - Post-voice-sum (after VCAs): voices sum + AUDIO IN → **HI PASS + DELAY block** with feedback loop → OUT. [OM p.3 block diagram]
 - 200 programs: 001–100 preset, 101–200 user. 8 favorites in global data. 37 slim keys, velocity, **no aftertouch**.
+- **Strictly MONO output** (single 6.3mm mono OUTPUT jack; the delay line is mono — stereo output arrived with the xd).
 - **No** multi engine, **no** drive switch, **no** ModFX/reverb, **no** microtuning, **no** joystick (assignable SLIDER instead).
 
 ## 2. Master

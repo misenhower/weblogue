@@ -34,9 +34,12 @@ export const OG_DEBUG_DEF: DebugDef = {
     { label: 'MIX', l: 3, x: 260, y: 76 },
     { label: 'FILTER', l: 4, x: 480, y: 76 },
     { label: 'VCA', l: 5, x: 8, y: 236 },
-    { label: 'PRE DELAY', l: 6, r: 7, x: 248, y: 236 },
-    { label: 'HI PASS+DELAY', l: 8, r: 9, x: 444, y: 236 },
-    { label: 'OUTPUT', l: 10, r: 11, x: 626, y: 236 },
+    // The OG is strictly MONO out (single output jack; stereo came with the
+    // xd) — the engine's FX tap pairs carry identical channels, so these
+    // cells render mono (no L/R overlay or legend).
+    { label: 'PRE DELAY', l: 6, x: 248, y: 236 },
+    { label: 'HI PASS+DELAY', l: 8, x: 444, y: 236 },
+    { label: 'OUTPUT', l: 10, x: 626, y: 236 },
   ],
   wires: [
     // Audio path (all static: the OG has no multi pre/post-VCF routing).

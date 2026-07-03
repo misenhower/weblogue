@@ -63,10 +63,14 @@ npm run build      # typecheck + production bundle
 npm run preview    # serve the production build on http://localhost:4173
 ```
 
-Architecture: `src/shared/` holds the parameter registry, hardware mapping curves, program format, and
-the UI↔engine message protocol; `src/dsp/` is the engine (plain TS classes, worklet-glued in
-`processor.ts`); `src/ui/` is the framework-free panel; `src/state/` is the program store; `src/midi/`
-is Web MIDI input. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
+Architecture: `src/shared/` is the synth-agnostic framework (parameter metadata, program/sequence
+data model, generic math helpers, and the UI↔engine message protocol); `src/dsp/` holds the generic
+DSP modules (oscillator, filter, EGs, LFO, drift, multi engine, FX, step sequencer, arpeggiator);
+`src/synths/xd/` is the minilogue xd definition (parameter table, hardware curves, voice graph,
+engine wiring, worklet entry, panel layout, CC resolver, program serialization); `src/ui/` holds the
+framework-free UI primitives; `src/state/` is the program store; `src/midi/` is Web MIDI input.
+`src/dsp/` and `src/shared/` never import from `src/synths/` — new synth modes add a definition, not
+engine forks. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
 documentation, including post-research findings), [docs/implementation-notes.md](docs/implementation-notes.md)
 (design decisions, undocumented-hardware interpretations, engine mechanics), and
 [docs/service-mode.md](docs/service-mode.md).

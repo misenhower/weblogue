@@ -6,12 +6,37 @@ README. This file is the engineering detail behind both.
 
 ## Architecture in one paragraph
 
-The whole synth runs in a single AudioWorkletProcessor (`src/dsp/processor.ts`, a thin message shell
-around `Engine`). The UI owns the Program — `Store` (src/state) is the source of truth, forwarding param
-changes and sequence edits to the engine over the `ToEngine` protocol (src/shared/messages.ts); the engine
-keeps a playback copy. All raw↔physical mapping goes through `src/shared/maps.ts`, which reproduces
-Korg's official piecewise tables exactly (VCO pitch, EG INT quadratic, chord/arp knob zones, LFO BPM
-divisions); ids in `src/shared/params.ts` are append-only.
+The whole synth runs in a single AudioWorkletProcessor (`src/synths/xd/processor.ts`, a thin message
+shell around `Engine`). The UI owns the Program — `Store` (src/state) is the source of truth, forwarding
+param changes and sequence edits to the engine over the `ToEngine` protocol (src/shared/messages.ts); the
+engine keeps a playback copy. All raw↔physical mapping goes through `src/synths/xd/curves.ts`, which
+reproduces Korg's official piecewise tables exactly (VCO pitch, EG INT quadratic, chord/arp knob zones,
+LFO BPM divisions); ids in `src/synths/xd/params.ts` are append-only.
+
+## Synth-definition split (2026-07-02)
+
+Preparation for multiple 'logue-family modes (base minilogue, monologue, prologue): the codebase is cut
+into a synth-agnostic core and a per-synth definition. Rules and residue a maintainer needs:
+
+- **Layout.** `src/shared/` = framework (paramdef.ts metadata/factories, program.ts data model +
+  gate/step-resolution semantics, maps.ts generic math/format helpers, messages.ts protocol).
+  `src/dsp/` = generic DSP modules, including the step sequencer (`stepseq.ts`, motion-target
+  predicates injected as `MotionTargetMeta`) and arpeggiator (`arp.ts`, rate injected as
+  beats-per-step; the 13 xd type behaviors are the family superset). `src/synths/xd/` = the xd:
+  params table, curves, voice graph, engine (binding switch + voice modes + FX chain order),
+  worklet entry, panel, CC resolver, program init/serialization.
+- **Direction rule.** `src/dsp/` and `src/shared/` never import from `src/synths/` — a new synth mode
+  is a new definition directory, never a fork of a core module. Hardware-calibration findings land as
+  per-synth data in curves/config tables (docs/hardware-calibration.md).
+- **Program format.** v2 adds `synthId` ('xd'); v1 files (no synthId) load as xd. The xd deserializer
+  refuses other synths' programs (returns null) rather than loading them as xd defaults.
+- **Deliberately deferred to the first second-synth (base minilogue) work:** extracting the
+  mostly-generic voice allocator and the `applyParam` binding switch out of `synths/xd/engine.ts` —
+  cutting those seams without a second consumer risks the wrong abstraction. Known xd residue in
+  generic dirs, acceptable until then: the fixed CC map in `src/midi/midi.ts`, xd-isms in
+  `src/ui/display.ts`/`menu.ts`/`debugpanel.ts`, the xd-shaped `DbgVoice`/tap layout in
+  `src/shared/messages.ts` and `PROCESSOR_NAME = 'xd-processor'`, and the xd voice/motion dimensions
+  (`NUM_STEPS`, `NOTES_PER_STEP`, …) in `src/shared/program.ts`.
 
 ## Interpretations where the hardware is undocumented
 

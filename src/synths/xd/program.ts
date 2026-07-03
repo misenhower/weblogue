@@ -6,8 +6,11 @@ import type { Program, SeqData } from '../../shared/program'
 import { initSeq, NUM_STEPS, NUM_MOTION_LANES, NOTES_PER_STEP, MOTION_POINTS } from '../../shared/program'
 import { PARAMS, PARAM_BY_KEY, clampParam } from './params'
 
+export const SYNTH_ID = 'xd'
+
 export function initProgram(name = 'Init Program'): Program {
   return {
+    synthId: SYNTH_ID,
     name,
     params: PARAMS.map((p) => p.def),
     seq: initSeq(),
@@ -21,13 +24,16 @@ export function cloneProgram(p: Program): Program {
 export function serializeProgram(p: Program): string {
   const params: Record<string, number> = {}
   for (const meta of PARAMS) params[meta.key] = p.params[meta.id]
-  return JSON.stringify({ v: 1, name: p.name, params, seq: p.seq })
+  return JSON.stringify({ v: 2, synthId: SYNTH_ID, name: p.name, params, seq: p.seq })
 }
 
 export function deserializeProgram(json: string): Program | null {
   try {
     const o = JSON.parse(json)
     if (!o || typeof o !== 'object') return null
+    // v1 predates synthId and is always an xd program; refuse other synths'
+    // programs rather than silently loading them as xd defaults.
+    if (typeof o.synthId === 'string' && o.synthId !== SYNTH_ID) return null
     const prog = initProgram(typeof o.name === 'string' ? o.name.slice(0, 16) : 'Program')
     if (o.params && typeof o.params === 'object') {
       for (const [key, val] of Object.entries(o.params)) {

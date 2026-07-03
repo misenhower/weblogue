@@ -57,6 +57,8 @@ export interface SeqData {
 }
 
 export interface Program {
+  /** Which synth definition this program belongs to (e.g. 'xd'). */
+  synthId: string
   name: string
   params: number[] // indexed by param id
   seq: SeqData

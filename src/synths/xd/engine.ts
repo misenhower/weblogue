@@ -174,6 +174,8 @@ export class Engine {
   private readonly modfx: ModFx
   private readonly delay: DelayFx
   private readonly reverb: ReverbFx
+  /** Serial FX chain in processing order (spec §1: MOD FX -> DELAY -> REVERB). */
+  private readonly fxChain: ReadonlyArray<{ process(l: Float32Array, r: Float32Array, n: number): void }>
   readonly stepSeq: StepSeq
   readonly arp: Arp
   /** Playhead callback for the processor ({t:'step'} messages). */
@@ -215,6 +217,7 @@ export class Engine {
     this.modfx = new ModFx(sr)
     this.delay = new DelayFx(sr)
     this.reverb = new ReverbFx(sr)
+    this.fxChain = [this.modfx, this.delay, this.reverb]
     this.stepSeq = new StepSeq(
       sr,
       {
@@ -1372,11 +1375,11 @@ export class Engine {
       }
     }
 
-    this.modfx.process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, false)
-    this.delay.process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(8, outL, outR, frames, false)
-    this.reverb.process(outL, outR, frames)
+    // Serial FX chain; SERVICE MODE taps the signal between stages.
+    for (let f = 0; f < this.fxChain.length; f++) {
+      this.fxChain[f].process(outL, outR, frames)
+      if (this.dbgOn && f + 1 < this.fxChain.length) this.writeFxTap(6 + 2 * f, outL, outR, frames, false)
+    }
 
     // Final transparent safety limiter + peak metering.
     let peak = this.peak

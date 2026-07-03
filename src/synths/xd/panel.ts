@@ -26,8 +26,9 @@
  */
 import type { Store } from '../../state/store'
 import { NUM_SLOTS } from '../../state/persist'
-import { P, PARAMS, formatParam } from '../../shared/params'
-import * as maps from '../../shared/maps'
+import { P, PARAMS, formatParam } from './params'
+import { fmtPercent01, fmtHz } from '../../shared/maps'
+import * as curves from './curves'
 import { NUM_STEPS, NOTES_PER_STEP } from '../../shared/program'
 import {
   Knob,
@@ -732,7 +733,7 @@ export class Panel {
       step: 0.01,
       value: MASTER_DEFAULT,
       defaultValue: MASTER_DEFAULT,
-      format: (v) => maps.fmtPercent01(v),
+      format: (v) => fmtPercent01(v),
       onInput: (v) => this.opts.onMaster(v),
     })
 
@@ -785,13 +786,13 @@ export class Panel {
   private formatVmDepth(v: number): string {
     switch (this.store.getParam(P.VOICE_MODE)) {
       case 0: // ARP
-        return maps.ARP_TYPES[maps.arpTypeIndex(v)]
+        return curves.ARP_TYPES[curves.arpTypeIndex(v)]
       case 1: // CHORD
-        return maps.CHORDS[maps.chordIndex(v)].name
+        return curves.CHORDS[curves.chordIndex(v)].name
       case 2: // UNISON
-        return maps.unisonDetuneCents(v).toFixed(1) + ' Cent'
+        return curves.unisonDetuneCents(v).toFixed(1) + ' Cent'
       default: {
-        const pd = maps.polyDuo(v)
+        const pd = curves.polyDuo(v)
         return pd.duo ? 'Duo ' + Math.round(pd.amount * 100) : 'Poly'
       }
     }
@@ -948,8 +949,8 @@ export class Panel {
       label: 'RATE',
       format: (v) =>
         this.store.getParam(P.LFO_MODE) === 2
-          ? maps.LFO_BPM_DIVISIONS[maps.lfoBpmDivIndex(v)].label
-          : maps.fmtHz(maps.lfoRateToHz(v)),
+          ? curves.LFO_BPM_DIVISIONS[curves.lfoBpmDivIndex(v)].label
+          : fmtHz(curves.lfoRateToHz(v)),
     })
     const int = this.paramKnob(P.LFO_INT, 'm', { label: 'INT', bipolar: true })
     const target = this.paramSwitch(P.LFO_TARGET, { label: 'TARGET' })

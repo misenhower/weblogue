@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 import { Engine, DBG_TAP_SIZE } from '../src/synths/xd/engine'
-import { P } from '../src/shared/params'
+import { P } from '../src/synths/xd/params'
 import { Store } from '../src/state/store'
 import { FACTORY_PRESETS } from '../src/state/presets'
 import { DebugPanel } from '../src/ui/debugpanel'

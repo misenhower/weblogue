@@ -26,7 +26,7 @@
  * The module never touches `navigator` at import time, so it is safe to
  * import in tests / SSR; init() returns false when Web MIDI is unavailable.
  */
-import { P } from '../shared/params'
+import { P } from '../synths/xd/params'
 
 // ---------------------------------------------------------------------------
 // Sentinel ids for engine-dependent CCs (resolved by the app).

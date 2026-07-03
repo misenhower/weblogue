@@ -6,8 +6,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import { Engine } from '../src/synths/xd/engine'
-import { initProgram } from '../src/shared/program'
-import { P, PARAMS, JOY_ASSIGN_DESTS } from '../src/shared/params'
+import { initProgram } from '../src/synths/xd/program'
+import { P, PARAMS, JOY_ASSIGN_DESTS } from '../src/synths/xd/params'
 
 const SR = 48000
 const BLOCK = 128

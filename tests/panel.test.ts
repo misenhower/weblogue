@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { FACTORY_PRESETS } from '../src/state/presets'
-import { P } from '../src/shared/params'
+import { P } from '../src/synths/xd/params'
 import { Panel, type PanelOpts } from '../src/synths/xd/panel'
 
 /* ---------------------------------------------------------------- shims */

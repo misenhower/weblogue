@@ -12,19 +12,14 @@ import {
   NUM_MOTION_LANES,
   NOTES_PER_STEP,
   MOTION_POINTS,
-  initProgram,
   initSeq,
-  cloneProgram,
+  GATE_TIE,
+  STEP_RESOLUTIONS,
 } from '../shared/program'
+import { initProgram, cloneProgram } from '../synths/xd/program'
 import type { ToEngine } from '../shared/messages'
-import {
-  PARAMS,
-  PARAM_COUNT,
-  clampParam,
-  MOTION_PITCH_BEND,
-  MOTION_GATE_TIME,
-} from '../shared/params'
-import { GATE_TIE, STEP_RESOLUTIONS } from '../shared/maps'
+import { PARAMS, PARAM_COUNT, clampParam } from '../synths/xd/params'
+import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../shared/paramdef'
 import { NUM_SLOTS, loadBank, saveBankSlot, slotName } from './persist'
 
 /** 'ui' = panel control, 'menu' = OLED menu edit (panel controls must resync). */

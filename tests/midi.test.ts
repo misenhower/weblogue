@@ -11,7 +11,7 @@ import {
   type MidiInputPortLike,
   type MidiMessageEventLike,
 } from '../src/midi/midi'
-import { P } from '../src/shared/params'
+import { P } from '../src/synths/xd/params'
 
 // ---------------------------------------------------------------------------
 // decodeCc — pure decoder

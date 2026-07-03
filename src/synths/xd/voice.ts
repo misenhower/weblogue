@@ -26,7 +26,7 @@ import {
   LFO_MAX_PITCH_CENTS,
   LFO_MAX_CUTOFF_OCTAVES,
   LFO_MAX_SHAPE,
-} from '../../shared/maps'
+} from './curves'
 
 /** EG TARGET values (params.ts order): CUTOFF, PITCH 2, PITCH. */
 const EGT_CUTOFF = 0

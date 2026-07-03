@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { Sequencer, type SeqHooks } from '../src/dsp/seq'
 import { initSeq } from '../src/shared/program'
 import type { SeqData } from '../src/shared/program'
-import { GATE_TIE } from '../src/shared/maps'
-import { P, MOTION_GATE_TIME } from '../src/shared/params'
+import { GATE_TIE } from '../src/shared/program'
+import { P } from '../src/synths/xd/params'
+import { MOTION_GATE_TIME } from '../src/shared/paramdef'
 
 const SR = 48000
 const BLOCK = 128

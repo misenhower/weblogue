@@ -12,7 +12,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { FACTORY_PRESETS } from '../src/state/presets'
-import { P, PARAMS, MOTION_PARAM_IDS, MOTION_GATE_TIME, formatParam } from '../src/shared/params'
+import { P, PARAMS, MOTION_PARAM_IDS, formatParam } from '../src/synths/xd/params'
+import { MOTION_GATE_TIME } from '../src/shared/paramdef'
 import { NUM_MOTION_LANES } from '../src/shared/program'
 import { Display } from '../src/ui/display'
 

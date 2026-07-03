@@ -15,15 +15,10 @@
  * live keys are fed to the sequencer's arpeggiator and its hook noteOns come
  * back into the poly allocator.
  */
+import { P, PARAMS, PARAM_COUNT } from './params'
+import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../../shared/paramdef'
+import { clamp, dbToGain } from '../../shared/maps'
 import {
-  P,
-  PARAMS,
-  PARAM_COUNT,
-  MOTION_PITCH_BEND,
-  MOTION_GATE_TIME,
-} from '../../shared/params'
-import {
-  clamp,
   pitchToCents,
   egIntToPercent,
   attackToSec,
@@ -37,7 +32,6 @@ import {
   lfoIntTo01,
   levelTo01,
   programLevelToDb,
-  dbToGain,
   portamentoToSec,
   polyDuo,
   unisonDetuneCents,
@@ -45,7 +39,7 @@ import {
   chordIndex,
   arpTypeIndex,
   microTuneCents,
-} from '../../shared/maps'
+} from './curves'
 import type { Program, SeqData } from '../../shared/program'
 import { Sequencer } from '../../dsp/seq'
 import { Voice } from './voice'

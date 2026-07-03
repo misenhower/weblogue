@@ -12,15 +12,15 @@
  *   - VM_DEPTH zone tables (chordIndex / arpTypeIndex / polyDuo) decide
  *     chord type, arp type, and the POLY->DUO split at 256.
  */
-import { P, clampParam } from '../shared/params'
+import { P, clampParam } from '../synths/xd/params'
+import { initProgram } from '../synths/xd/program'
 import {
-  initProgram,
   NUM_STEPS,
   MOTION_POINTS,
+  GATE_TIE,
   type Program,
   type SeqData,
 } from '../shared/program'
-import { GATE_TIE } from '../shared/maps'
 
 // --- readable enum values (indices into the switch label tables) -------------
 const SQR = 0

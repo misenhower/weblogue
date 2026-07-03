@@ -14,12 +14,10 @@ import {
   formatParam,
   motionParamLabel,
   MOTION_PARAM_IDS,
-  MOTION_GATE_TIME,
   P,
-  type ParamMeta,
-} from '../shared/params'
-import { STEP_RESOLUTIONS } from '../shared/maps'
-import { NUM_MOTION_LANES } from '../shared/program'
+} from '../synths/xd/params'
+import { MOTION_GATE_TIME, type ParamMeta } from '../shared/paramdef'
+import { STEP_RESOLUTIONS, NUM_MOTION_LANES } from '../shared/program'
 
 const SCREEN_W = 330
 const SCREEN_H = 114

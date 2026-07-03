@@ -1,10 +1,21 @@
 /*
- * Parameter registry — single source of truth for every program parameter.
- * Ids are stable and append-only. Continuous panel knobs use hardware-style
- * raw values 0..1023; switches/enums use small ints; menu params use the
- * hardware's stored ranges (see docs/xd-spec.md).
+ * minilogue xd parameter table — single source of truth for every program
+ * parameter of the xd definition. Ids are stable and append-only; raw ranges
+ * mirror the hardware (see docs/xd-spec.md).
  */
-import * as maps from './maps'
+import {
+  type ParamMeta,
+  knob,
+  sw,
+  menu,
+  buildParamTable,
+  clampParamIn,
+  formatParamIn,
+  motionParamIdsOf,
+  motionParamLabelIn,
+} from '../../shared/paramdef'
+import { fmtRaw, fmtSec, fmtHz, fmtDb } from '../../shared/maps'
+import * as curves from './curves'
 
 export const P = {
   VCO1_WAVE: 0,
@@ -107,24 +118,6 @@ export const P = {
 export type ParamId = (typeof P)[keyof typeof P]
 export const PARAM_COUNT = 95
 
-/** Virtual motion-sequence targets that are not program parameters. */
-export const MOTION_PITCH_BEND = 1000
-export const MOTION_GATE_TIME = 1001
-
-export interface ParamMeta {
-  id: number
-  key: string // stable serialization key
-  label: string // OLED / tooltip name
-  kind: 'knob' | 'switch' | 'menu'
-  min: number
-  max: number
-  def: number
-  labels?: readonly string[] // for enums: display per value
-  fmt?: (raw: number) => string
-  motion?: boolean // recordable in a motion lane
-  motionSmooth?: boolean // continuous (smoothable) vs switch-type
-}
-
 const WAVES = ['SQR', 'TRI', 'SAW'] as const
 const OCTAVES = ["16'", "8'", "4'", "2'"] as const
 const ONOFF = ['Off', 'On'] as const
@@ -201,24 +194,14 @@ const VPM_TYPES = [
   'Fat1', 'Fat2', 'Air1', 'Air2', 'Decay1', 'Decay2', 'Creep', 'Throat',
 ] as const
 
-function knob(id: number, key: string, label: string, def: number, extra?: Partial<ParamMeta>): ParamMeta {
-  return { id, key, label, kind: 'knob', min: 0, max: 1023, def, motion: true, motionSmooth: true, fmt: maps.fmtRaw, ...extra }
-}
-function sw(id: number, key: string, label: string, labels: readonly string[], def: number, extra?: Partial<ParamMeta>): ParamMeta {
-  return { id, key, label, kind: 'switch', min: 0, max: labels.length - 1, def, labels, motion: true, motionSmooth: false, ...extra }
-}
-function menu(id: number, key: string, label: string, min: number, max: number, def: number, extra?: Partial<ParamMeta>): ParamMeta {
-  return { id, key, label, kind: 'menu', min, max, def, motion: false, motionSmooth: false, ...extra }
-}
-
 const DEFS: ParamMeta[] = [
   sw(P.VCO1_WAVE, 'vco1Wave', 'VCO1 WAVE', WAVES, 2),
   sw(P.VCO1_OCTAVE, 'vco1Octave', 'VCO1 OCTAVE', OCTAVES, 1),
-  knob(P.VCO1_PITCH, 'vco1Pitch', 'VCO1 PITCH', 512, { fmt: maps.fmtCents }),
+  knob(P.VCO1_PITCH, 'vco1Pitch', 'VCO1 PITCH', 512, { fmt: curves.fmtCents }),
   knob(P.VCO1_SHAPE, 'vco1Shape', 'VCO1 SHAPE', 0),
   sw(P.VCO2_WAVE, 'vco2Wave', 'VCO2 WAVE', WAVES, 2),
   sw(P.VCO2_OCTAVE, 'vco2Octave', 'VCO2 OCTAVE', OCTAVES, 1),
-  knob(P.VCO2_PITCH, 'vco2Pitch', 'VCO2 PITCH', 512, { fmt: maps.fmtCents }),
+  knob(P.VCO2_PITCH, 'vco2Pitch', 'VCO2 PITCH', 512, { fmt: curves.fmtCents }),
   knob(P.VCO2_SHAPE, 'vco2Shape', 'VCO2 SHAPE', 0),
   sw(P.SYNC, 'sync', 'OSC SYNC', ONOFF, 0),
   sw(P.RING, 'ring', 'RING MOD', ONOFF, 0),
@@ -237,24 +220,24 @@ const DEFS: ParamMeta[] = [
   knob(P.VCO1_LEVEL, 'vco1Level', 'VCO1 LEVEL', 1023),
   knob(P.VCO2_LEVEL, 'vco2Level', 'VCO2 LEVEL', 0),
   knob(P.MULTI_LEVEL, 'multiLevel', 'MULTI LEVEL', 0),
-  knob(P.CUTOFF, 'cutoff', 'CUTOFF', 1023, { fmt: (r) => maps.fmtHz(maps.cutoffToHz(r)) }),
+  knob(P.CUTOFF, 'cutoff', 'CUTOFF', 1023, { fmt: (r) => fmtHz(curves.cutoffToHz(r)) }),
   knob(P.RESONANCE, 'resonance', 'RESONANCE', 0),
   sw(P.DRIVE, 'drive', 'DRIVE', PCT3, 0, { motion: false }),
   sw(P.KEYTRACK, 'keytrack', 'KEYTRACK', PCT3, 0),
-  knob(P.AMP_ATTACK, 'ampAttack', 'AMP EG ATTACK', 0, { fmt: (r) => maps.fmtSec(maps.attackToSec(r)) }),
-  knob(P.AMP_DECAY, 'ampDecay', 'AMP EG DECAY', 200, { fmt: (r) => maps.fmtSec(maps.decayToSec(r)) }),
+  knob(P.AMP_ATTACK, 'ampAttack', 'AMP EG ATTACK', 0, { fmt: (r) => fmtSec(curves.attackToSec(r)) }),
+  knob(P.AMP_DECAY, 'ampDecay', 'AMP EG DECAY', 200, { fmt: (r) => fmtSec(curves.decayToSec(r)) }),
   knob(P.AMP_SUSTAIN, 'ampSustain', 'AMP EG SUSTAIN', 1023),
-  knob(P.AMP_RELEASE, 'ampRelease', 'AMP EG RELEASE', 100, { fmt: (r) => maps.fmtSec(maps.releaseToSec(r)) }),
-  knob(P.EG_ATTACK, 'egAttack', 'EG ATTACK', 0, { fmt: (r) => maps.fmtSec(maps.attackToSec(r)) }),
-  knob(P.EG_DECAY, 'egDecay', 'EG DECAY', 300, { fmt: (r) => maps.fmtSec(maps.decayToSec(r)) }),
-  knob(P.EG_INT, 'egInt', 'EG INT', 512, { fmt: maps.fmtEgInt }),
+  knob(P.AMP_RELEASE, 'ampRelease', 'AMP EG RELEASE', 100, { fmt: (r) => fmtSec(curves.releaseToSec(r)) }),
+  knob(P.EG_ATTACK, 'egAttack', 'EG ATTACK', 0, { fmt: (r) => fmtSec(curves.attackToSec(r)) }),
+  knob(P.EG_DECAY, 'egDecay', 'EG DECAY', 300, { fmt: (r) => fmtSec(curves.decayToSec(r)) }),
+  knob(P.EG_INT, 'egInt', 'EG INT', 512, { fmt: curves.fmtEgInt }),
   sw(P.EG_TARGET, 'egTarget', 'EG TARGET', ['CUTOFF', 'PITCH 2', 'PITCH'], 0),
   sw(P.LFO_WAVE, 'lfoWave', 'LFO WAVE', WAVES, 1),
   sw(P.LFO_MODE, 'lfoMode', 'LFO MODE', ['1-SHOT', 'NORMAL', 'BPM'], 1),
   knob(P.LFO_RATE, 'lfoRate', 'LFO RATE', 512, {
-    fmt: (r) => maps.fmtHz(maps.lfoRateToHz(r)),
+    fmt: (r) => fmtHz(curves.lfoRateToHz(r)),
   }),
-  knob(P.LFO_INT, 'lfoInt', 'LFO INT', 512, { fmt: maps.fmtLfoInt }),
+  knob(P.LFO_INT, 'lfoInt', 'LFO INT', 512, { fmt: curves.fmtLfoInt }),
   sw(P.LFO_TARGET, 'lfoTarget', 'LFO TARGET', ['CUTOFF', 'SHAPE', 'PITCH'], 2),
   sw(P.MODFX_ON, 'modFxOn', 'MOD FX', ONOFF, 0),
   sw(P.MODFX_TYPE, 'modFxType', 'MOD FX TYPE', MODFX_TYPES, 0, { motion: false }),
@@ -269,16 +252,16 @@ const DEFS: ParamMeta[] = [
   sw(P.DELAY_SUB, 'delaySub', 'DELAY TYPE', DELAY_SUBS, 0, { motion: false }),
   knob(P.DELAY_TIME, 'delayTime', 'DELAY TIME', 512),
   knob(P.DELAY_DEPTH, 'delayDepth', 'DELAY DEPTH', 512),
-  { id: P.DELAY_DRYWET, key: 'delayDryWet', label: 'DELAY DRY/WET', kind: 'knob', min: 0, max: 1024, def: 512, motion: false, motionSmooth: true, fmt: maps.fmtRaw },
+  { id: P.DELAY_DRYWET, key: 'delayDryWet', label: 'DELAY DRY/WET', kind: 'knob', min: 0, max: 1024, def: 512, motion: false, motionSmooth: true, fmt: fmtRaw },
   sw(P.REVERB_ON, 'reverbOn', 'REVERB', ONOFF, 0),
   sw(P.REVERB_SUB, 'reverbSub', 'REVERB TYPE', REVERB_SUBS, 0, { motion: false }),
   knob(P.REVERB_TIME, 'reverbTime', 'REVERB TIME', 512),
   knob(P.REVERB_DEPTH, 'reverbDepth', 'REVERB DEPTH', 512),
-  { id: P.REVERB_DRYWET, key: 'reverbDryWet', label: 'REVERB DRY/WET', kind: 'knob', min: 0, max: 1024, def: 512, motion: false, motionSmooth: true, fmt: maps.fmtRaw },
+  { id: P.REVERB_DRYWET, key: 'reverbDryWet', label: 'REVERB DRY/WET', kind: 'knob', min: 0, max: 1024, def: 512, motion: false, motionSmooth: true, fmt: fmtRaw },
   sw(P.VOICE_MODE, 'voiceMode', 'VOICE MODE', ['ARP', 'CHORD', 'UNISON', 'POLY'], 3),
   knob(P.VM_DEPTH, 'vmDepth', 'VOICE MODE DEPTH', 0),
   sw(P.ARP_LATCH, 'arpLatch', 'ARP LATCH', ONOFF, 0, { motion: false }),
-  menu(P.ARP_RATE, 'arpRate', 'ARP RATE', 0, maps.ARP_RATES.length - 1, 4, { labels: maps.ARP_RATES.map((r) => r.label) }),
+  menu(P.ARP_RATE, 'arpRate', 'ARP RATE', 0, curves.ARP_RATES.length - 1, 4, { labels: curves.ARP_RATES.map((r) => r.label) }),
   menu(P.ARP_GATE, 'arpGate', 'ARP GATE TIME', 0, 72, 54, { fmt: (r) => Math.round((r / 72) * 100) + '%' }),
   menu(P.OCTAVE, 'octave', 'KBD OCTAVE', 0, 4, 2, { labels: ['-2', '-1', '0', '+1', '+2'] }),
   menu(P.PORTAMENTO, 'portamento', 'PORTAMENTO', 0, 127, 0, {
@@ -289,7 +272,7 @@ const DEFS: ParamMeta[] = [
   menu(P.PORTAMENTO_MODE, 'portamentoMode', 'PORTAMENTO MODE', 0, 1, 0, { labels: ['Auto', 'On'] }),
   menu(P.PORTAMENTO_BPM, 'portamentoBpm', 'PORTAMENTO BPM', 0, 1, 0, { labels: ONOFF }),
   menu(P.PROGRAM_LEVEL, 'programLevel', 'PROGRAM LEVEL', 12, 132, 102, {
-    fmt: (r) => maps.fmtDb(maps.programLevelToDb(r)),
+    fmt: (r) => fmtDb(curves.programLevelToDb(r)),
   }),
   menu(P.PROGRAM_TUNING, 'programTuning', 'PROGRAM TUNING', 0, 100, 50, {
     fmt: (r) => (r - 50 > 0 ? '+' : '') + (r - 50) + 'C',
@@ -316,8 +299,8 @@ const DEFS: ParamMeta[] = [
   menu(P.VPM_MOD_ATTACK, 'vpmModAttack', 'VPM MOD ATTACK', 0, 200, 100, { fmt: fmtBipolar200 }),
   menu(P.VPM_MOD_DECAY, 'vpmModDecay', 'VPM MOD DECAY', 0, 200, 100, { fmt: fmtBipolar200 }),
   menu(P.VPM_KEY_TRACK, 'vpmKeyTrack', 'VPM KEY TRACK', 0, 200, 100, { fmt: fmtBipolar200 }),
-  menu(P.MICRO_TUNING, 'microTuning', 'MICROTUNING', 0, maps.MICRO_TUNINGS.length - 1, 0, {
-    labels: maps.MICRO_TUNINGS.map((t) => t.name),
+  menu(P.MICRO_TUNING, 'microTuning', 'MICROTUNING', 0, curves.MICRO_TUNINGS.length - 1, 0, {
+    labels: curves.MICRO_TUNINGS.map((t) => t.name),
   }),
   menu(P.SCALE_KEY, 'scaleKey', 'SCALE KEY', 0, 24, 12, {
     fmt: (r) => (r - 12 > 0 ? '+' : '') + (r - 12) + ' Note',
@@ -332,43 +315,21 @@ function fmtBipolar200(r: number): string {
   return (v > 0 ? '+' : '') + v + '%'
 }
 
-export const PARAMS: readonly ParamMeta[] = (() => {
-  const arr = new Array<ParamMeta>(PARAM_COUNT)
-  for (const d of DEFS) {
-    if (arr[d.id]) throw new Error('duplicate param id ' + d.id)
-    arr[d.id] = d
-  }
-  for (let i = 0; i < PARAM_COUNT; i++) {
-    if (!arr[i]) throw new Error('missing param id ' + i)
-  }
-  return arr
-})()
+export const PARAMS: readonly ParamMeta[] = buildParamTable(DEFS, PARAM_COUNT)
 
 export const PARAM_BY_KEY: ReadonlyMap<string, ParamMeta> = new Map(PARAMS.map((p) => [p.key, p]))
 
 export function clampParam(id: number, v: number): number {
-  const m = PARAMS[id]
-  if (!m) return v
-  return Math.max(m.min, Math.min(m.max, Math.round(v)))
+  return clampParamIn(PARAMS, id, v)
 }
 
 export function formatParam(id: number, v: number): string {
-  const m = PARAMS[id]
-  if (!m) return String(v)
-  if (m.labels) return m.labels[Math.max(m.min, Math.min(m.max, Math.round(v)))] ?? String(v)
-  if (m.fmt) return m.fmt(v)
-  return String(Math.round(v))
+  return formatParamIn(PARAMS, id, v)
 }
 
 /** Params recordable into motion lanes (plus the two virtual targets). */
-export const MOTION_PARAM_IDS: readonly number[] = [
-  ...PARAMS.filter((p) => p.motion).map((p) => p.id),
-  MOTION_PITCH_BEND,
-  MOTION_GATE_TIME,
-]
+export const MOTION_PARAM_IDS: readonly number[] = motionParamIdsOf(PARAMS)
 
 export function motionParamLabel(id: number): string {
-  if (id === MOTION_PITCH_BEND) return 'PITCH BEND'
-  if (id === MOTION_GATE_TIME) return 'GATE TIME'
-  return PARAMS[id]?.label ?? 'None'
+  return motionParamLabelIn(PARAMS, id)
 }

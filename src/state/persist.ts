@@ -12,7 +12,7 @@
  * for that slot (if any) and Init Program otherwise.
  */
 import type { Program } from '../shared/program'
-import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from '../shared/program'
+import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from '../synths/xd/program'
 
 export const NUM_SLOTS = 500
 

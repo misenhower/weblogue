@@ -10,9 +10,20 @@
  * arrays. setSeq()/setArp()/arpKey* are control-path calls and may allocate.
  */
 import type { SeqData } from '../shared/program'
-import { initSeq, NUM_STEPS, NUM_MOTION_LANES, NOTES_PER_STEP, MOTION_POINTS } from '../shared/program'
-import { MOTION_PITCH_BEND, MOTION_GATE_TIME, PARAMS } from '../shared/params'
-import { ARP_RATES, ARP_TYPES, STEP_RESOLUTIONS, clamp, gateTo01, isTie } from '../shared/maps'
+import {
+  initSeq,
+  NUM_STEPS,
+  NUM_MOTION_LANES,
+  NOTES_PER_STEP,
+  MOTION_POINTS,
+  STEP_RESOLUTIONS,
+  gateTo01,
+  isTie,
+} from '../shared/program'
+import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../shared/paramdef'
+import { PARAMS } from '../synths/xd/params'
+import { ARP_RATES, ARP_TYPES } from '../synths/xd/curves'
+import { clamp } from '../shared/maps'
 
 export interface SeqHooks {
   noteOn(note: number, vel: number): void

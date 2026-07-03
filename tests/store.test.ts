@@ -6,9 +6,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { NUM_SLOTS } from '../src/state/persist'
-import { P, MOTION_PITCH_BEND, PARAMS } from '../src/shared/params'
-import { initProgram, NOTES_PER_STEP, MOTION_POINTS, type Program } from '../src/shared/program'
-import { GATE_TIE, STEP_RESOLUTIONS } from '../src/shared/maps'
+import { P, PARAMS } from '../src/synths/xd/params'
+import { MOTION_PITCH_BEND } from '../src/shared/paramdef'
+import { NOTES_PER_STEP, MOTION_POINTS, GATE_TIE, STEP_RESOLUTIONS, type Program } from '../src/shared/program'
+import { initProgram } from '../src/synths/xd/program'
 import type { ToEngine } from '../src/shared/messages'
 
 // ---------------------------------------------------------------- test shims

@@ -12,7 +12,20 @@
  * LFOs and phases.
  */
 
-import { noiseDecimHz, noiseHighHz, noiseLowHz, noisePeakBwHz } from '../shared/maps'
+// NOISE shape -> physical maps (spec §5; the multi engine — and these curves —
+// are shared by the prologue's identical engine).
+function noiseHighHz(shape01: number): number {
+  return 10 * Math.pow(2100, clamp(shape01, 0, 1))
+}
+function noiseLowHz(shape01: number): number {
+  return 10 * Math.pow(2100, clamp(shape01, 0, 1))
+}
+function noisePeakBwHz(shape01: number): number {
+  return 110 * Math.pow(8, clamp(shape01, 0, 1))
+}
+function noiseDecimHz(shape01: number): number {
+  return 240 * Math.pow(200, clamp(shape01, 0, 1))
+}
 
 export const MULTI_TYPE = { NOISE: 0, VPM: 1, USER: 2 } as const
 

@@ -9,8 +9,8 @@
  */
 import type { FromEngine } from '../shared/messages'
 import type { Store } from '../state/store'
-import { P } from '../shared/params'
-import { egIntToPercent, lfoIntTo01 } from '../shared/maps'
+import { P } from '../synths/xd/params'
+import { egIntToPercent, lfoIntTo01 } from '../synths/xd/curves'
 import { fftMag } from './fft'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>

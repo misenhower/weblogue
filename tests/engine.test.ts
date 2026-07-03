@@ -4,8 +4,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import { Engine } from '../src/synths/xd/engine'
-import { initProgram } from '../src/shared/program'
-import { P, PARAMS, PARAM_COUNT } from '../src/shared/params'
+import { initProgram } from '../src/synths/xd/program'
+import { P, PARAMS, PARAM_COUNT } from '../src/synths/xd/params'
 import { FACTORY_PRESETS } from '../src/state/presets'
 
 const SR = 48000

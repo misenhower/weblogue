@@ -11,7 +11,7 @@ import {
   CC_ID_MULTI_SHIFT_SHAPE,
   CC_ID_MULTI_SUB,
 } from '../src/midi/midi'
-import { P, PARAMS } from '../src/shared/params'
+import { P, PARAMS } from '../src/synths/xd/params'
 
 const MODFX_SUB_IDS = [
   P.MODFX_SUB_CHORUS,

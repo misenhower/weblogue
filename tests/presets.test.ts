@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { FACTORY_PRESETS } from '../src/state/presets'
-import { PARAMS, PARAM_COUNT, P } from '../src/shared/params'
-import {
-  deserializeProgram,
-  serializeProgram,
-  MOTION_POINTS,
-  NUM_STEPS,
-} from '../src/shared/program'
-import { arpTypeIndex, chordIndex, polyDuo, isTie } from '../src/shared/maps'
+import { PARAMS, PARAM_COUNT, P } from '../src/synths/xd/params'
+import { MOTION_POINTS, NUM_STEPS, isTie } from '../src/shared/program'
+import { deserializeProgram, serializeProgram } from '../src/synths/xd/program'
+import { arpTypeIndex, chordIndex, polyDuo } from '../src/synths/xd/curves'
 
 describe('FACTORY_PRESETS', () => {
   it('contains at least 28 programs', () => {

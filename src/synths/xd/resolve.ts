@@ -6,7 +6,7 @@
  * header). This module maps them to concrete params given the current
  * MULTI TYPE / MOD FX TYPE raw values.
  */
-import { P, PARAMS, clampParam } from '../../shared/params'
+import { P, PARAMS, clampParam } from './params'
 import {
   CC_ID_MODFX_SUB,
   CC_ID_MULTI_SHAPE,

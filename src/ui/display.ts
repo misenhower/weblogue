@@ -9,15 +9,26 @@
  * module stays fully testable under happy-dom.
  */
 import type { Store, ParamSource } from '../state/store'
-import {
-  PARAMS,
-  formatParam,
-  motionParamLabel,
-  MOTION_PARAM_IDS,
-  P,
-} from '../synths/xd/params'
 import { MOTION_GATE_TIME, type ParamMeta } from '../shared/paramdef'
 import { STEP_RESOLUTIONS, NUM_MOTION_LANES } from '../shared/program'
+
+/**
+ * Synth-specific display surface, injected by the synth app (see
+ * src/synths/<id>/display-def.ts). Everything else the OLED renders — seq
+ * fields, motion lanes, scope, transport/MIDI indicators — is synth-agnostic.
+ */
+export interface DisplayDef {
+  /** Parameter table (dense, id-indexed): overlay labels/ranges. */
+  params: readonly ParamMeta[]
+  formatParam(id: number, v: number): string
+  /** PROG EDIT menu pages, in order. */
+  menuParams: readonly ParamMeta[]
+  /** Motion-lane ASSIGN cycle (recordable param ids + virtual targets). */
+  motionParamIds: readonly number[]
+  motionParamLabel(id: number): string
+  /** Status-line voice-mode readout (param id + short labels); optional. */
+  voiceMode?: { id: number; labels: readonly string[] }
+}
 
 const SCREEN_W = 330
 const SCREEN_H = 114
@@ -30,7 +41,6 @@ const HOLD_DELAY_MS = 250
 const HOLD_REPEAT_MS = 60
 
 const MONO = "ui-monospace, Menlo, Consolas, 'Courier New', monospace"
-const VOICE_SHORT = ['ARP', 'CHD', 'UNI', 'POLY'] as const
 
 type Screen = 'home' | 'overlay' | 'menu'
 
@@ -59,6 +69,7 @@ export class Display {
   el: HTMLElement
 
   private store: Store
+  private def: DisplayDef
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D | null
   private dpr: number
@@ -92,10 +103,12 @@ export class Display {
   private fg = ''
   private bg = ''
 
-  private menuParams: readonly ParamMeta[] = PARAMS.filter((p) => p.kind === 'menu')
+  private menuParams: readonly ParamMeta[]
 
-  constructor(opts: { store: Store }) {
+  constructor(opts: { store: Store; def: DisplayDef }) {
     this.store = opts.store
+    this.def = opts.def
+    this.menuParams = opts.def.menuParams
 
     /* ---- DOM ------------------------------------------------------ */
     this.el = document.createElement('div')
@@ -386,8 +399,8 @@ export class Display {
     if (!l) return
     switch (this.motionField) {
       case 0: {
-        // ASSIGN: cycle through [-1 (unassigned), ...MOTION_PARAM_IDS]
-        const cycle = [-1, ...MOTION_PARAM_IDS]
+        // ASSIGN: cycle through [-1 (unassigned), ...def.motionParamIds]
+        const cycle = [-1, ...this.def.motionParamIds]
         let idx = cycle.indexOf(l.paramId)
         if (idx < 0) idx = 0
         const next = cycle[(idx + dir + cycle.length) % cycle.length]
@@ -528,11 +541,13 @@ export class Display {
     ctx.fillStyle = fg
 
     /* header: program slot + name, or the param readout while adjusting */
-    const overlayMeta = this.screen === 'overlay' ? PARAMS[this.overlayId] : undefined
+    const overlayMeta = this.screen === 'overlay' ? this.def.params[this.overlayId] : undefined
     if (overlayMeta) {
       const v = store.getParam(overlayMeta.id)
       this.text(ctx, overlayMeta.label, 10, 25, 11, { alpha: 0.85 })
-      this.text(ctx, formatParam(overlayMeta.id, v), SCREEN_W - 10, 26, 15, { align: 'right' })
+      this.text(ctx, this.def.formatParam(overlayMeta.id, v), SCREEN_W - 10, 26, 15, {
+        align: 'right',
+      })
       if (overlayMeta.kind === 'knob') {
         const span = overlayMeta.max - overlayMeta.min || 1
         const t = Math.max(0, Math.min(1, (v - overlayMeta.min) / span))
@@ -561,8 +576,12 @@ export class Display {
     ctx.globalAlpha = 1
     const bpm = store.program.seq.bpm
     this.text(ctx, 'BPM ' + bpm.toFixed(1), 10, y, 10)
-    const vm = store.getParam(P.VOICE_MODE)
-    this.text(ctx, VOICE_SHORT[vm] ?? 'POLY', 96, y, 10, { alpha: 0.85 })
+    const vmDef = this.def.voiceMode
+    if (vmDef) {
+      const vm = store.getParam(vmDef.id)
+      const short = vmDef.labels[vm] ?? vmDef.labels[vmDef.labels.length - 1] ?? ''
+      this.text(ctx, short, 96, y, 10, { alpha: 0.85 })
+    }
 
     let x = 140
     if (store.playing) {
@@ -671,7 +690,7 @@ export class Display {
     if (p.kind === 'prog') {
       const v = this.store.getParam(p.meta.id)
       this.text(ctx, p.meta.label, SCREEN_W / 2, 46, 13, { align: 'center', alpha: 0.85 })
-      this.text(ctx, formatParam(p.meta.id, v), SCREEN_W / 2, 84, 26, { align: 'center' })
+      this.text(ctx, this.def.formatParam(p.meta.id, v), SCREEN_W / 2, 84, 26, { align: 'center' })
     } else if (p.kind === 'seq') {
       const seq = this.store.program.seq
       let value: string
@@ -713,7 +732,7 @@ export class Display {
     const l = this.store.program.seq.motion[lane]
     if (!l) return
     const values = [
-      l.paramId === -1 ? '---' : motionParamLabel(l.paramId),
+      l.paramId === -1 ? '---' : this.def.motionParamLabel(l.paramId),
       l.on ? 'ON' : 'OFF',
       l.smooth ? 'ON' : 'OFF',
       '[+] EXEC',

@@ -16,6 +16,7 @@ import { P, PARAMS, MOTION_PARAM_IDS, formatParam } from '../src/synths/xd/param
 import { MOTION_GATE_TIME } from '../src/shared/paramdef'
 import { NUM_MOTION_LANES } from '../src/shared/program'
 import { Display } from '../src/ui/display'
+import { XD_DISPLAY_DEF } from '../src/synths/xd/display-def'
 
 /* ------------------------------------------------------------------ layout */
 
@@ -113,7 +114,7 @@ function make(withCtx = true): { store: Store; display: Display; texts: string[]
   const m = makeCtx()
   nextCtx = withCtx ? m.ctx : null
   const store = new Store(XD_DEF)
-  const display = new Display({ store })
+  const display = new Display({ store, def: XD_DISPLAY_DEF })
   document.body.appendChild(display.el)
   return { store, display, texts: m.texts, calls: m.calls }
 }

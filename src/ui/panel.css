@@ -446,3 +446,151 @@
 .xd-shift-on .xd-sec-prog .xd-section-title {
   color: var(--xd-led-white);
 }
+
+/* ==================================================================
+   original minilogue (OG) panel — layout under the .og- prefix.
+   Reuses the xd chrome (sections, legends, OLED wells, LED anims)
+   from theme.css and the shared rules above; only OG layout here.
+   ================================================================== */
+
+.og-panel-scale {
+  --og-scale: 1;
+  width: 1500px;
+  transform: scale(var(--og-scale));
+  transform-origin: top left;
+}
+
+.og-panel-root {
+  width: 1500px;
+  box-sizing: border-box;
+  padding: 16px 18px 18px;
+  border-radius: 8px;
+}
+
+.og-panel-root *,
+.og-panel-root *::before,
+.og-panel-root *::after {
+  box-sizing: border-box;
+}
+
+.og-row-a > .xd-section,
+.og-row-b > .xd-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+/* keep silkscreen labels compact so sections pack tight */
+.og-panel-root .xd-knob-label {
+  max-width: 68px;
+}
+
+.og-panel-root .xd-selector-pos {
+  font-size: 8px;
+}
+
+/* etched divider legend inside VCO 2 (the hardware's MODULATION strip) */
+.og-subhead {
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  text-align: center;
+  border-top: 1px solid var(--xd-line);
+  padding-top: 4px;
+  margin: 0 4px;
+}
+
+/* ---------------------------------------------------------------- */
+/* FILTER                                                            */
+/* ---------------------------------------------------------------- */
+
+.og-filter-row {
+  align-items: center;
+}
+
+.og-filter-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------- */
+/* VOICE MODE (8 dedicated LED buttons + DEPTH)                      */
+/* ---------------------------------------------------------------- */
+
+.og-vm-btns {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.og-vm-btns .xd-ledbtn-label {
+  font-size: 7px;
+  max-width: 46px;
+}
+
+/* ---------------------------------------------------------------- */
+/* PROGRAM block (encoder + WRITE/EXIT/EDIT beside the OLED well)    */
+/* ---------------------------------------------------------------- */
+
+.og-sec-prog {
+  min-width: 442px;
+  flex: 0 0 auto;
+}
+
+.og-prog-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 140px;
+}
+
+.og-prog-btns {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- */
+/* sequencer strip: STEPS chip + optional 16-step strip              */
+/* ---------------------------------------------------------------- */
+
+.og-steps-chip {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--xd-line);
+  border-radius: 9px;
+  padding: 3px 10px;
+  color: var(--xd-legend-dim);
+  font-family: var(--xd-legend-font);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.og-steps-chip.is-on {
+  color: var(--xd-legend);
+  border-color: var(--xd-legend-dim);
+}
+
+/* .xd-seq-steps sets display:flex — re-assert the hidden attribute */
+.og-seq-steps[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* keybed row: assignable SLIDER left of the keys (no joystick)      */
+/* ---------------------------------------------------------------- */
+
+.og-slider-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 14px;
+}

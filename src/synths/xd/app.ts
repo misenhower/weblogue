@@ -11,6 +11,7 @@ import { Store } from '../../state/store'
 import { XD_DEF } from './def'
 import { Panel } from './panel'
 import { Display } from '../../ui/display'
+import { XD_DISPLAY_DEF } from './display-def'
 import { DebugPanel } from '../../ui/debugpanel'
 import { attachComputerKeyboard } from '../../ui/keyboard'
 import { MidiInput } from '../../midi/midi'
@@ -35,7 +36,7 @@ export function buildXdApp(opts: SynthAppOpts): SynthApp {
     onJoyY: (v) => send({ t: 'joyY', v }),
     onMaster: (v) => opts.onMaster(v),
   })
-  const display = new Display({ store })
+  const display = new Display({ store, def: XD_DISPLAY_DEF })
   panel.displaySlot.appendChild(display.el)
   root.appendChild(panel.el)
 

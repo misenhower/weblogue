@@ -19,7 +19,7 @@ function render(e: Engine, seconds: number): void {
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {
     const e = new Engine(SR)
-    const dst = [0, 1, 2, 3, 4, 5, 6, 7].map(() => new Float32Array(DBG_TAP_SIZE))
+    const dst = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
 
     e.noteOn(60, 100)
     render(e, 0.1)
@@ -35,10 +35,31 @@ describe('engine SERVICE MODE taps', () => {
     expect(rms(dst[3])).toBeGreaterThan(0.001) // mix tap
     expect(rms(dst[4])).toBeGreaterThan(0.0005) // post-filter tap
     expect(rms(dst[5])).toBeGreaterThan(0.0005) // post-VCA (note held, EG up)
-    expect(rms(dst[6])).toBeGreaterThan(0.0005) // post-mod-fx (bypass = voice sum)
-    expect(rms(dst[7])).toBeGreaterThan(0.0005) // post-delay
+    expect(rms(dst[6])).toBeGreaterThan(0.0005) // post-mod-fx L
+    expect(rms(dst[7])).toBeGreaterThan(0.0005) // post-mod-fx R
+    expect(rms(dst[8])).toBeGreaterThan(0.0005) // post-delay L
+    expect(rms(dst[10])).toBeGreaterThan(0.0005) // output L
     for (const d of dst) for (const v of d) expect(Number.isFinite(v)).toBe(true)
     e.noteOff(60)
+  })
+
+  it('stereo FX taps diverge with a ping-pong delay', () => {
+    const e = new Engine(SR)
+    e.setDebug(true)
+    e.setParam(P.DELAY_ON, 1)
+    e.setParam(P.DELAY_SUB, 2) // PING PONG
+    e.setParam(P.DELAY_TIME, 830) // ~350ms
+    e.setParam(P.DELAY_DEPTH, 800)
+    e.noteOn(60, 100)
+    render(e, 0.15)
+    e.noteOff(60)
+    render(e, 0.3) // tap window lands inside the first echo (~350-500ms, L only)
+    const dst = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
+    e.copyDebugTaps(dst)
+    let diff = 0
+    for (let i = 0; i < DBG_TAP_SIZE; i++) diff += (dst[8][i] - dst[9][i]) ** 2
+    expect(Math.sqrt(diff / DBG_TAP_SIZE)).toBeGreaterThan(1e-4) // delay L != R
+    e.setDebug(false)
   })
 
   it('voice info reports the played note and drift within analog bounds', () => {
@@ -130,7 +151,7 @@ describe('round-robin voice allocation (hardware cycles voices)', () => {
 
 describe('DebugPanel', () => {
   function fakeMsg(): Extract<FromEngine, { t: 'dbg' }> {
-    const taps = [0, 1, 2, 3, 4, 5, 6, 7].map(() => {
+    const taps = Array.from({ length: 12 }, () => 0).map(() => {
       const a = new Float32Array(DBG_TAP_SIZE)
       for (let i = 0; i < a.length; i++) a[i] = Math.sin((i / a.length) * Math.PI * 6)
       return a
@@ -138,7 +159,6 @@ describe('DebugPanel', () => {
     return {
       t: 'dbg',
       taps,
-      postFx: new Float32Array(256),
       voices: [
         { note: 60, on: true, amp: 0.8, drift1: 1.2, drift2: -0.7, modEg: 0.4, lfo: 0.2, hz: 262.1 },
         { note: 64, on: true, amp: 0.5, drift1: -2.4, drift2: 0.3, modEg: 0.1, lfo: -0.6, hz: 329.6 },

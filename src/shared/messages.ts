@@ -39,9 +39,10 @@ export type FromEngine =
   | { t: 'voices'; notes: number[] } // sounding MIDI notes (key/LED feedback)
   | { t: 'level'; v: number } // output meter 0..1
   | {
-      t: 'dbg' // SERVICE MODE frame (~12/s while enabled)
-      taps: Float32Array[] // [vco1, vco2, multi, mix, postFilter, postVca, postModFx, postDelay]
-      postFx: Float32Array // post-FX mono, SCOPE_SIZE
+      t: 'dbg' // SERVICE MODE frame (~30/s while enabled)
+      // 0-5 mono voice taps: vco1, vco2, multi, mix, postFilter, postVca;
+      // 6-11 stereo FX pairs: modFxL, modFxR, delayL, delayR, outL, outR.
+      taps: Float32Array[]
       voices: DbgVoice[] // 4 lanes
       load: number // audio-thread load 0..1
       tapped: number // voice index feeding the taps

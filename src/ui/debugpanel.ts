@@ -17,6 +17,19 @@ type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'VCA', 'MOD FX', 'DELAY', 'OUTPUT'] as const
+/** Which telemetry tap(s) feed each scope cell; r set = stereo overlay. */
+const CELL_TAPS: ReadonlyArray<{ l: number; r?: number }> = [
+  { l: 0 },
+  { l: 1 },
+  { l: 2 },
+  { l: 3 },
+  { l: 4 },
+  { l: 5 },
+  { l: 6, r: 7 },
+  { l: 8, r: 9 },
+  { l: 10, r: 11 },
+]
+const R_COLOR = '#8fb8e0'
 /** Cell positions in the 796x306 diagram (see the wire paths below). */
 const CELLS = [
   { x: 8, y: 4 },
@@ -491,22 +504,13 @@ export class DebugPanel {
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
-    const scopes: (Float32Array | undefined)[] = [
-      m.taps[0],
-      m.taps[1],
-      m.taps[2],
-      m.taps[3],
-      m.taps[4],
-      m.taps[5],
-      m.taps[6],
-      m.taps[7],
-      m.postFx,
-    ]
-    for (let i = 0; i < scopes.length; i++) {
-      const data = scopes[i]
-      if (!data) continue
-      if (this.fftOn[i]) this.drawSpectrum(i, data)
-      else this.drawScope(i, data)
+    for (let i = 0; i < CELL_TAPS.length; i++) {
+      const t = CELL_TAPS[i]
+      const dataL = m.taps[t.l]
+      if (!dataL) continue
+      const dataR = t.r !== undefined ? m.taps[t.r] : undefined
+      if (this.fftOn[i]) this.drawSpectrum(i, dataL, dataR)
+      else this.drawScope(i, dataL, dataR)
     }
 
     // MOD sparklines: every voice's modulators record continuously; the
@@ -556,7 +560,7 @@ export class DebugPanel {
   }
 
   /** Log-frequency, log-magnitude spectrum (30 Hz .. 16 kHz, 0..-80 dB). */
-  private drawSpectrum(i: number, data: Float32Array): void {
+  private drawSpectrum(i: number, dataL: Float32Array, dataR?: Float32Array): void {
     const ctx = this.ctxs[i]
     const cv = this.canvases[i]
     if (!ctx) return
@@ -565,12 +569,25 @@ export class DebugPanel {
     const h = cv.height / dpr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, w, h)
+    if (dataR) this.traceSpectrum(ctx, dataR, w, h, R_COLOR, 0.9)
+    this.traceSpectrum(ctx, dataL, w, h, this.fg, dataR ? 0.9 : 1)
+    if (dataR) this.drawLrLegend(ctx, w)
+  }
+
+  private traceSpectrum(
+    ctx: CanvasRenderingContext2D,
+    data: Float32Array,
+    w: number,
+    h: number,
+    color: string,
+    alpha: number,
+  ): void {
     const mag = fftMag(data)
     const nyq = this.sampleRate / 2
     const fLo = 30
     const fHi = Math.min(16000, nyq)
-    ctx.strokeStyle = this.fg
-    ctx.globalAlpha = 1
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
     ctx.lineWidth = 1.2
     ctx.beginPath()
     for (let px = 0; px < w; px++) {
@@ -586,6 +603,20 @@ export class DebugPanel {
       else ctx.lineTo(px, py)
     }
     ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+
+  /** Tiny channel legend for stereo cells. */
+  private drawLrLegend(ctx: CanvasRenderingContext2D, w: number): void {
+    ctx.font = '700 7px monospace'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.globalAlpha = 0.9
+    ctx.fillStyle = this.fg
+    ctx.fillText('L', w - 17, 3)
+    ctx.fillStyle = R_COLOR
+    ctx.fillText('R', w - 9, 3)
+    ctx.globalAlpha = 1
   }
 
   /** Rolling sparkline of one modulator signal. */
@@ -630,7 +661,7 @@ export class DebugPanel {
     ctx.stroke()
   }
 
-  private drawScope(i: number, data: Float32Array): void {
+  private drawScope(i: number, dataL: Float32Array, dataR?: Float32Array): void {
     const ctx = this.ctxs[i]
     const cv = this.canvases[i]
     if (!ctx) return
@@ -647,21 +678,41 @@ export class DebugPanel {
     ctx.lineTo(w, h / 2)
     ctx.stroke()
     ctx.globalAlpha = 1
-    ctx.lineWidth = 1.4
-    ctx.beginPath()
     // Center-trigger: lock a rising zero crossing to the horizontal middle
     // (searching the middle third of the frame), so periodic waveforms hold
     // still with their trigger point centered; fall back to the frame center.
-    const n = data.length
+    // Stereo cells share the L channel's trigger so inter-channel timing
+    // (ping-pong bounce, chorus width) stays honest.
+    const n = dataL.length
     const win = n > 768 ? 512 : n - Math.floor(n / 3)
     const half = Math.floor(win / 2)
     let trig = Math.floor(n / 2)
     for (let x = half + 1; x <= n - (win - half); x++) {
-      if (data[x - 1] <= 0 && data[x] > 0) {
+      if (dataL[x - 1] <= 0 && dataL[x] > 0) {
         trig = x
         break
       }
     }
+    if (dataR) this.traceWave(ctx, dataR, trig, half, win, w, h, R_COLOR, 0.9)
+    this.traceWave(ctx, dataL, trig, half, win, w, h, this.fg, dataR ? 0.9 : 1)
+    if (dataR) this.drawLrLegend(ctx, w)
+  }
+
+  private traceWave(
+    ctx: CanvasRenderingContext2D,
+    data: Float32Array,
+    trig: number,
+    half: number,
+    win: number,
+    w: number,
+    h: number,
+    color: string,
+    alpha: number,
+  ): void {
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
     for (let x = 0; x < win; x++) {
       let s = data[trig - half + x]
       if (!Number.isFinite(s)) s = 0
@@ -673,5 +724,6 @@ export class DebugPanel {
       else ctx.lineTo(px, py)
     }
     ctx.stroke()
+    ctx.globalAlpha = 1
   }
 }

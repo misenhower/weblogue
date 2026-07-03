@@ -199,18 +199,10 @@ export class Engine {
   // --- SERVICE MODE (debug panel) taps: zero-cost unless enabled ---------
   private dbgOn = false
   private dbgVoice = 0 // most recently triggered voice index
-  // Rings 0-5: tapped voice (vco1, vco2, multi, mix, filt, vca).
-  // Rings 6-7: FX chain stages, mono-summed (post mod fx, post delay).
-  private readonly dbgRings = [
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-    new Float32Array(DBG_TAP_SIZE),
-  ]
+  // Rings 0-5: tapped voice, mono (vco1, vco2, multi, mix, filt, vca).
+  // Rings 6-11: FX chain stages, stereo pairs (mod L/R, delay L/R, out L/R —
+  // the signal is genuinely stereo from the mod effects onward).
+  private readonly dbgRings = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
   private dbgW = 0
   private dbgFxW = 0
 
@@ -1352,7 +1344,7 @@ export class Engine {
     this.modfx.process(outL, outR, frames)
     if (this.dbgOn) this.writeFxTap(6, outL, outR, frames, false)
     this.delay.process(outL, outR, frames)
-    if (this.dbgOn) this.writeFxTap(7, outL, outR, frames, true)
+    if (this.dbgOn) this.writeFxTap(8, outL, outR, frames, false)
     this.reverb.process(outL, outR, frames)
 
     // Final transparent safety limiter + peak metering.
@@ -1372,6 +1364,7 @@ export class Engine {
       if (m > peak) peak = m
     }
     this.peak = peak
+    if (this.dbgOn) this.writeFxTap(10, outL, outR, frames, true) // final output
   }
 
   /* -------------------------------------------------------- telemetry ---- */
@@ -1390,18 +1383,20 @@ export class Engine {
     return this.dbgVoice
   }
 
-  /** FX-stage tap: mono average written after an FX stage processes. */
-  private writeFxTap(ring: number, l: Float32Array, r: Float32Array, n: number, advance: boolean): void {
-    const buf = this.dbgRings[ring]
+  /** FX-stage tap: stereo pair written after an FX stage processes. */
+  private writeFxTap(base: number, l: Float32Array, r: Float32Array, n: number, advance: boolean): void {
+    const bufL = this.dbgRings[base]
+    const bufR = this.dbgRings[base + 1]
     let w = this.dbgFxW
     for (let s = 0; s < n; s++) {
-      buf[w] = (l[s] + r[s]) * 0.5
+      bufL[w] = l[s]
+      bufR[w] = r[s]
       w = (w + 1) % DBG_TAP_SIZE
     }
     if (advance) this.dbgFxW = w
   }
 
-  /** Copy the eight tap rings (chronological order) into dst[0..7]. */
+  /** Copy the twelve tap rings (chronological order) into dst[0..11]. */
   copyDebugTaps(dst: Float32Array[]): void {
     for (let t = 0; t < this.dbgRings.length && t < dst.length; t++) {
       const w = t >= 6 ? this.dbgFxW : this.dbgW

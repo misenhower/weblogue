@@ -62,6 +62,11 @@ to re-derive and which are hardware facts.
 - Filter: cutoff span and taper, resonance taper, resonance/bass interaction, DRIVE 50/100% gain and character
 - EGs: A/D/S/R time curves and maxima, mod-EG decay-after-release, retrigger (from current level vs zero)
 - Mod depth scalings (all currently guessed): EG→pitch ±4800¢, EG→cutoff ±10 oct, LFO→pitch ±1200¢, LFO→cutoff ±7 oct, LFO→shape
+- LFO Voice Sync semantics (replica models it as a continuous block-rate phase share; manuals only say
+  "phase shared across voices"): with Voice Sync ON + Key Sync ON, does a staggered second note's LFO
+  re-lock to the already-sounding voices, or keep its key-synced phase? Also: with both syncs OFF, do
+  idle voices' LFOs actually free-run in lockstep, and does a RATE change apply to voices between notes?
+  (Method: LFO→pitch at high INT, slow rate, record two staggered notes, compare wobble alignment.)
 - Drift: magnitude/spectrum per VCO, reported VCO2-runs-fast bias
 - Portamento curve and timing (Auto vs On)
 - Arp variant behaviors (MANUAL/RISE/FALL 1 vs 2, POLY 1/2, RANDOM 3)

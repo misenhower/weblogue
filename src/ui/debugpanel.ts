@@ -128,6 +128,8 @@ export class DebugPanel {
   private histFill = 0
   private shownVoice = 0
   private modLabelsAll = false
+  /** Latest per-voice gate state; dims inactive voices' legend digits. */
+  private readonly voiceOn = [false, false, false, false]
   private readonly modLabels: HTMLElement[] = []
   private readonly lanes: Lane[] = []
   private loadFill!: HTMLElement
@@ -552,6 +554,8 @@ export class DebugPanel {
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
+    for (let v = 0; v < this.voiceOn.length; v++) this.voiceOn[v] = m.voices[v]?.on === true
+
     const multi = this.voicesMode === 'all' && m.vtaps && m.vtaps.length >= 24
     for (let i = 0; i < CELL_TAPS.length; i++) {
       const t = CELL_TAPS[i]
@@ -740,13 +744,13 @@ export class DebugPanel {
     if (drewAny) this.drawVoiceLegend(ctx, w)
   }
 
-  /** Corner legend for the 4-voice overlay: colored 1 2 3 4. */
+  /** Corner legend for the 4-voice overlay: colored 1 2 3 4, dimmed when idle. */
   private drawVoiceLegend(ctx: CanvasRenderingContext2D, w: number): void {
     ctx.font = '700 7px monospace'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
-    ctx.globalAlpha = 0.9
     for (let v = 0; v < 4; v++) {
+      ctx.globalAlpha = this.voiceOn[v] ? 0.9 : 0.28
       ctx.fillStyle = VOICE_COLORS[v]
       ctx.fillText(String(v + 1), w - 33 + v * 8, 3)
     }

@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CC_ID_MODFX_SUB,
-  CC_ID_MULTI_SHAPE,
-  CC_ID_MULTI_SHIFT_SHAPE,
-  CC_ID_MULTI_SUB,
   MidiInput,
-  decodeCc,
   type MidiAccessLike,
   type MidiHandlers,
   type MidiInputPortLike,
   type MidiMessageEventLike,
 } from '../src/midi/midi'
+import {
+  CC_ID_MODFX_SUB,
+  CC_ID_MULTI_SHAPE,
+  CC_ID_MULTI_SHIFT_SHAPE,
+  CC_ID_MULTI_SUB,
+  decodeCc,
+} from '../src/synths/xd/cc'
 import { P } from '../src/synths/xd/params'
 
 // ---------------------------------------------------------------------------
@@ -268,6 +270,7 @@ function makeHandlers(): { calls: Call[]; handlers: MidiHandlers } {
     joyY: (v) => calls.push(['joyY', v]),
     joyYMinus: (v) => calls.push(['joyYMinus', v]),
     panic: () => calls.push(['panic']),
+    decodeCc,
   }
   return { calls, handlers }
 }

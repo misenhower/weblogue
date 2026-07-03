@@ -10,7 +10,7 @@ import {
   CC_ID_MULTI_SHAPE,
   CC_ID_MULTI_SHIFT_SHAPE,
   CC_ID_MULTI_SUB,
-} from '../src/midi/midi'
+} from '../src/synths/xd/cc'
 import { P, PARAMS } from '../src/synths/xd/params'
 
 const MODFX_SUB_IDS = [

@@ -15,6 +15,7 @@ import { Display } from './ui/display'
 import { DebugPanel } from './ui/debugpanel'
 import { attachComputerKeyboard } from './ui/keyboard'
 import { MidiInput } from './midi/midi'
+import { decodeCc } from './synths/xd/cc'
 import { resolveMidiParam } from './synths/xd/resolve'
 import { P } from './synths/xd/params'
 import { MOTION_PITCH_BEND } from './shared/paramdef'
@@ -211,6 +212,7 @@ async function initMidi(): Promise<void> {
     joyY: (v) => send({ t: 'joyY', v }),
     joyYMinus: (v) => send({ t: 'joyY', v: -v }),
     panic: () => send({ t: 'allNotesOff' }),
+    decodeCc,
   })
   await midi.init()
 }

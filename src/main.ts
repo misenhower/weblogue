@@ -151,6 +151,7 @@ function toggleDebug(on = !debugOpen): void {
       debugPanel = new DebugPanel()
       debugPanel.onClose = () => toggleDebug(false)
     }
+    if (ctx) debugPanel.sampleRate = ctx.sampleRate
     app.appendChild(debugPanel.el)
     svcChip.style.display = 'none'
   } else if (debugPanel) {

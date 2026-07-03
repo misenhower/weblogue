@@ -8,11 +8,18 @@
  * {t:'debug', on} on toggle), so it costs nothing when closed.
  */
 import type { FromEngine } from '../shared/messages'
+import { fftMag } from './fft'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
 const TAP_LABELS = ['VCO 1', 'VCO 2', 'MIX', 'VCF', 'OUTPUT'] as const
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const HISTORY = 128 // sparkline points (~4s at 30fps telemetry)
+const MOD_SIGS = [
+  { label: 'AMP EG', color: '#8fe0a0', bipolar: false },
+  { label: 'MOD EG', color: '#e0c98f', bipolar: false },
+  { label: 'LFO', color: '#8fb8e0', bipolar: true },
+] as const
 
 function noteName(n: number): string {
   if (!Number.isFinite(n)) return '--'
@@ -20,9 +27,18 @@ function noteName(n: number): string {
   return NOTE_NAMES[((nn % 12) + 12) % 12] + String(Math.floor(nn / 12) - 1)
 }
 
+function fmtHzCents(hz: number, note: number): string {
+  if (!(hz > 0)) return '--'
+  const eq = 440 * Math.pow(2, (note - 69) / 12)
+  const cents = 1200 * Math.log2(hz / eq)
+  const hzStr = hz >= 1000 ? (hz / 1000).toFixed(2) + 'k' : hz.toFixed(1)
+  return hzStr + 'Hz ' + (cents >= 0 ? '+' : '') + cents.toFixed(0) + '¢'
+}
+
 interface Lane {
   led: HTMLElement
   note: HTMLElement
+  freq: HTMLElement
   ampFill: HTMLElement
   driftNeedle1: HTMLElement
   driftNeedle2: HTMLElement
@@ -33,9 +49,18 @@ interface Lane {
 export class DebugPanel {
   el: HTMLElement
   onClose?: () => void
+  /** Set by the app once the AudioContext exists (spectrum frequency axis). */
+  sampleRate = 48000
 
   private readonly canvases: HTMLCanvasElement[] = []
   private readonly ctxs: (CanvasRenderingContext2D | null)[] = []
+  private readonly fftOn: boolean[] = [false, false, false, false, false]
+  private readonly tapCells: HTMLElement[] = []
+  private readonly modCanvases: HTMLCanvasElement[] = []
+  private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
+  private readonly modHist = [new Float32Array(HISTORY), new Float32Array(HISTORY), new Float32Array(HISTORY)]
+  private histW = 0
+  private histFill = 0
   private readonly lanes: Lane[] = []
   private loadFill!: HTMLElement
   private loadText!: HTMLElement
@@ -73,6 +98,14 @@ export class DebugPanel {
       label.className = 'xd-svc-label'
       label.textContent = TAP_LABELS[i]
       cell.append(cv, label)
+      cell.title = 'click: waveform / spectrum'
+      const idx = i
+      cv.addEventListener('click', () => {
+        this.fftOn[idx] = !this.fftOn[idx]
+        cell.classList.toggle('is-fft', this.fftOn[idx])
+        label.textContent = TAP_LABELS[idx] + (this.fftOn[idx] ? ' · FFT' : '')
+      })
+      this.tapCells.push(cell)
       flow.appendChild(cell)
       if (i < TAP_LABELS.length - 1) {
         const arrow = document.createElement('div')
@@ -91,6 +124,31 @@ export class DebugPanel {
       this.ctxs.push(ctx)
     }
 
+    /* --- MOD row: tapped voice's modulator sparklines ------------------- */
+    const modRow = document.createElement('div')
+    modRow.className = 'xd-svc-mods'
+    for (let i = 0; i < MOD_SIGS.length; i++) {
+      const cell = document.createElement('div')
+      cell.className = 'xd-svc-mod'
+      const cv = document.createElement('canvas')
+      cv.className = 'xd-svc-mod-cv'
+      cv.width = 236 * (window.devicePixelRatio || 1)
+      cv.height = 34 * (window.devicePixelRatio || 1)
+      const label = document.createElement('div')
+      label.className = 'xd-svc-label'
+      label.textContent = MOD_SIGS[i].label
+      cell.append(cv, label)
+      modRow.appendChild(cell)
+      let ctx: CanvasRenderingContext2D | null = null
+      try {
+        ctx = cv.getContext('2d')
+      } catch {
+        ctx = null
+      }
+      this.modCanvases.push(cv)
+      this.modCtxs.push(ctx)
+    }
+
     /* --- voice lanes ---------------------------------------------------- */
     const lanes = document.createElement('div')
     lanes.className = 'xd-svc-lanes'
@@ -105,6 +163,9 @@ export class DebugPanel {
       const note = document.createElement('span')
       note.className = 'xd-svc-note'
       note.textContent = '--'
+      const freq = document.createElement('span')
+      freq.className = 'xd-svc-freq'
+      freq.textContent = '--'
       const amp = document.createElement('div')
       amp.className = 'xd-svc-amp'
       const ampFill = document.createElement('div')
@@ -120,9 +181,9 @@ export class DebugPanel {
       const driftText = document.createElement('span')
       driftText.className = 'xd-svc-drift-text'
       driftText.textContent = '+0.0 +0.0¢'
-      row.append(led, name, note, amp, drift, driftText)
+      row.append(led, name, note, freq, amp, drift, driftText)
       lanes.appendChild(row)
-      this.lanes.push({ led, note, ampFill, driftNeedle1, driftNeedle2, driftText, row })
+      this.lanes.push({ led, note, freq, ampFill, driftNeedle1, driftNeedle2, driftText, row })
     }
 
     /* --- health strip ---------------------------------------------------- */
@@ -144,7 +205,7 @@ export class DebugPanel {
     this.voicesText.textContent = 'VOICES 0/4'
     health.append(loadLabel, loadBar, this.loadText, this.voicesText)
 
-    this.el.append(head, flow, lanes, health)
+    this.el.append(head, flow, modRow, lanes, health)
   }
 
   /** Apply one telemetry frame. */
@@ -152,7 +213,21 @@ export class DebugPanel {
     const scopes: (Float32Array | undefined)[] = [m.taps[0], m.taps[1], m.taps[2], m.taps[3], m.postFx]
     for (let i = 0; i < scopes.length; i++) {
       const data = scopes[i]
-      if (data) this.drawScope(i, data)
+      if (!data) continue
+      if (this.fftOn[i]) this.drawSpectrum(i, data)
+      else this.drawScope(i, data)
+    }
+
+    // MOD sparklines: append the tapped voice's modulators to the history.
+    const tv = m.voices[m.tapped]
+    if (tv) {
+      const w = this.histW
+      this.modHist[0][w] = tv.amp
+      this.modHist[1][w] = tv.modEg
+      this.modHist[2][w] = tv.lfo
+      this.histW = (w + 1) % HISTORY
+      if (this.histFill < HISTORY) this.histFill++
+      for (let s = 0; s < MOD_SIGS.length; s++) this.drawSparkline(s)
     }
 
     let activeCount = 0
@@ -163,6 +238,7 @@ export class DebugPanel {
       lane.led.classList.toggle('is-on', v.on)
       lane.row.classList.toggle('is-tapped', i === m.tapped)
       lane.note.textContent = v.on ? noteName(v.note) : '--'
+      lane.freq.textContent = v.on ? fmtHzCents(v.hz, v.note) : '--'
       const amp = Math.max(0, Math.min(1, v.amp))
       lane.ampFill.style.width = (amp * 100).toFixed(1) + '%'
       const d1 = Math.max(-5, Math.min(5, v.drift1))
@@ -178,6 +254,81 @@ export class DebugPanel {
     this.loadFill.classList.toggle('is-hot', pct > 70)
     this.loadText.textContent = pct + '%'
     this.voicesText.textContent = 'VOICES ' + activeCount + '/4'
+  }
+
+  /** Log-frequency, log-magnitude spectrum (30 Hz .. 16 kHz, 0..-80 dB). */
+  private drawSpectrum(i: number, data: Float32Array): void {
+    const ctx = this.ctxs[i]
+    const cv = this.canvases[i]
+    if (!ctx) return
+    const dpr = window.devicePixelRatio || 1
+    const w = cv.width / dpr
+    const h = cv.height / dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    const mag = fftMag(data)
+    const nyq = this.sampleRate / 2
+    const fLo = 30
+    const fHi = Math.min(16000, nyq)
+    ctx.strokeStyle = this.fg
+    ctx.globalAlpha = 1
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    for (let px = 0; px < w; px++) {
+      const f = fLo * Math.pow(fHi / fLo, px / (w - 1))
+      const bin = (f / nyq) * (mag.length - 1)
+      const b0 = Math.floor(bin)
+      const frac = bin - b0
+      const v = mag[b0] * (1 - frac) + (mag[b0 + 1] ?? 0) * frac
+      const db = 20 * Math.log10(v + 1e-9)
+      const t = Math.max(0, Math.min(1, (db + 80) / 80)) // -80..0 dB
+      const py = h - 2 - t * (h - 5)
+      if (px === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.stroke()
+  }
+
+  /** Rolling sparkline of one modulator signal. */
+  private drawSparkline(s: number): void {
+    const ctx = this.modCtxs[s]
+    const cv = this.modCanvases[s]
+    if (!ctx) return
+    const sig = MOD_SIGS[s]
+    const dpr = window.devicePixelRatio || 1
+    const w = cv.width / dpr
+    const h = cv.height / dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    if (sig.bipolar) {
+      ctx.globalAlpha = 0.25
+      ctx.strokeStyle = sig.color
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(0, h / 2)
+      ctx.lineTo(w, h / 2)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+    const hist = this.modHist[s]
+    const n = this.histFill
+    if (n < 2) return
+    ctx.strokeStyle = sig.color
+    ctx.lineWidth = 1.3
+    ctx.beginPath()
+    for (let k = 0; k < n; k++) {
+      // oldest -> newest, right-aligned
+      const idx = (this.histW - n + k + HISTORY) % HISTORY
+      let v = hist[idx]
+      if (!Number.isFinite(v)) v = 0
+      const x = w - 1 - ((n - 1 - k) / (HISTORY - 1)) * w
+      const y = sig.bipolar
+        ? h / 2 - Math.max(-1, Math.min(1, v)) * (h / 2 - 2)
+        : h - 2 - Math.max(0, Math.min(1, v)) * (h - 4)
+      if (k === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
   }
 
   private drawScope(i: number, data: Float32Array): void {

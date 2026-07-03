@@ -134,10 +134,10 @@ describe('DebugPanel', () => {
       taps,
       postFx: new Float32Array(256),
       voices: [
-        { note: 60, on: true, amp: 0.8, drift1: 1.2, drift2: -0.7 },
-        { note: 64, on: true, amp: 0.5, drift1: -2.4, drift2: 0.3 },
-        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0 },
-        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0 },
+        { note: 60, on: true, amp: 0.8, drift1: 1.2, drift2: -0.7, modEg: 0.4, lfo: 0.2, hz: 262.1 },
+        { note: 64, on: true, amp: 0.5, drift1: -2.4, drift2: 0.3, modEg: 0.1, lfo: -0.6, hz: 329.6 },
+        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0, modEg: 0, lfo: 0, hz: 0 },
+        { note: 0, on: false, amp: 0, drift1: 0, drift2: 0, modEg: 0, lfo: 0, hz: 0 },
       ],
       load: 0.31,
       tapped: 1,
@@ -165,6 +165,32 @@ describe('DebugPanel', () => {
     const drifts = [...p.el.querySelectorAll('.xd-svc-drift-text')].map((n) => n.textContent)
     expect(drifts[0]).toBe('+1.2 -0.7¢')
     expect(drifts[1]).toBe('-2.4 +0.3¢')
+  })
+
+  it('lane shows the tuning readout (Hz + cents vs equal temperament)', () => {
+    const p = new DebugPanel()
+    p.update(fakeMsg())
+    const freqs = [...p.el.querySelectorAll('.xd-svc-freq')].map((n) => n.textContent)
+    expect(freqs[0]).toBe('262.1Hz +3¢') // 262.1 vs C4 = 261.63 -> +3.1 cents
+    expect(freqs[2]).toBe('--')
+  })
+
+  it('clicking a scope toggles spectrum mode and update still renders', () => {
+    const p = new DebugPanel()
+    const cell = p.el.querySelector('.xd-svc-tap') as HTMLElement
+    const cv = cell.querySelector('.xd-svc-scope') as HTMLCanvasElement
+    cv.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(cell.classList.contains('is-fft')).toBe(true)
+    expect(cell.querySelector('.xd-svc-label')!.textContent).toContain('FFT')
+    expect(() => p.update(fakeMsg())).not.toThrow()
+    cv.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(cell.classList.contains('is-fft')).toBe(false)
+  })
+
+  it('MOD sparklines accumulate history without throwing', () => {
+    const p = new DebugPanel()
+    for (let i = 0; i < 140; i++) p.update(fakeMsg()) // > HISTORY wraps the ring
+    expect(p.el.querySelectorAll('.xd-svc-mod-cv').length).toBe(3)
   })
 
   it('close button fires onClose; null 2d context never throws', () => {

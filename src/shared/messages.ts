@@ -28,6 +28,9 @@ export interface DbgVoice {
   amp: number // amp EG level 0..1
   drift1: number // VCO1 drift, cents
   drift2: number // VCO2 drift, cents (independent, like the hardware)
+  modEg: number // mod EG level 0..1
+  lfo: number // LFO output -1..1 (free-runs while idle)
+  hz: number // sounding base frequency (post-glide/bend), 0 when never played
 }
 
 export type FromEngine =

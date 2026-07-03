@@ -72,6 +72,32 @@
   padding-bottom: 12px;
 }
 
+.xd-svc-scope {
+  cursor: pointer;
+}
+.xd-svc-tap.is-fft .xd-svc-label {
+  color: #8fe0a0;
+}
+
+/* MOD sparkline row */
+.xd-svc-mods {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.xd-svc-mod {
+  flex: 1;
+  min-width: 0;
+}
+.xd-svc-mod-cv {
+  width: 100%;
+  height: 34px;
+  display: block;
+  background: var(--xd-oled, #0a0c0a);
+  border: 1px solid #26262b;
+  border-radius: 3px;
+}
+
 /* voice lanes */
 .xd-svc-lanes {
   display: grid;
@@ -112,6 +138,13 @@
   font-variant-numeric: tabular-nums;
   width: 34px;
   color: var(--xd-legend, #d8d8dc);
+}
+.xd-svc-freq {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  width: 96px;
+  color: var(--xd-legend-dim, #909097);
+  white-space: nowrap;
 }
 .xd-svc-amp {
   flex: 1;

@@ -204,6 +204,9 @@ export class Voice {
   lastDrift1 = 0
   lastDrift2 = 0
   lastAmp = 0
+  lastModEg = 0
+  lastLfo = 0
+  lastHz = 0
 
   get active(): boolean {
     return this.ampEg.active
@@ -402,9 +405,13 @@ export class Voice {
   tickIdle(): void {
     const d1 = this.drift1.tick()
     const d2 = this.drift2.tick()
+    // The hardware LFO free-runs too: keep its phase moving while idle so a
+    // non-key-synced note starts wherever the LFO genuinely is.
+    const lv = this.lfo.tick()
     if (this.tapOn) {
       this.lastDrift1 = d1
       this.lastDrift2 = d2
+      this.lastLfo = lv
     }
   }
 
@@ -490,6 +497,9 @@ export class Voice {
       this.lastDrift1 = drift1C
       this.lastDrift2 = drift2C
       this.lastAmp = ampV
+      this.lastModEg = egV
+      this.lastLfo = lfoV
+      this.lastHz = baseHz
     }
 
     // VCA: amp EG x amp velocity (0 = velocity ignored) x voice gain.

@@ -70,7 +70,9 @@ DSP modules (oscillator, filter, EGs, LFO, drift, multi engine, FX, step sequenc
 engine wiring, worklet entry, panel layout, CC resolver, program serialization); `src/ui/` holds the
 framework-free UI primitives; `src/state/` is the program store; `src/midi/` is Web MIDI input.
 `src/dsp/` and `src/shared/` never import from `src/synths/` — new synth modes add a definition, not
-engine forks. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
+engine forks. Two synths ship today: the **minilogue xd** and the **original minilogue**
+(`src/synths/og/`, hardware spec in [docs/og-spec.md](docs/og-spec.md)) — switch with the corner
+chips or `?synth=og`. Each synth keeps its own 500-slot program bank. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
 documentation, including post-research findings), [docs/implementation-notes.md](docs/implementation-notes.md)
 (design decisions, undocumented-hardware interpretations, engine mechanics), and
 [docs/service-mode.md](docs/service-mode.md).

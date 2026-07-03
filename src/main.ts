@@ -57,7 +57,7 @@ if (SYNTHS.length > 1) {
   }
   const pickerStyle = document.createElement('style')
   pickerStyle.textContent = `
-.synth-picker{position:fixed;top:10px;right:12px;display:flex;gap:6px;z-index:60}
+.synth-picker{position:fixed;bottom:10px;left:12px;display:flex;gap:6px;z-index:60}
 .synth-chip{font:600 11px/1 Futura,'Century Gothic',system-ui;letter-spacing:.12em;color:#9a9aa2;background:#1c1c20;border:1px solid #3a3a42;border-radius:6px;padding:7px 12px;cursor:pointer;text-transform:uppercase}
 .synth-chip:hover{color:#d8d8dc;border-color:#55555c}
 .synth-chip-on{color:#f5eedb;border-color:#6a6a72;cursor:default}

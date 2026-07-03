@@ -5,8 +5,9 @@
  */
 import type { SynthEntry } from './def'
 import { XD_ENTRY } from './xd/app'
+import { OG_ENTRY } from './og/app'
 
-export const SYNTHS: readonly SynthEntry[] = [XD_ENTRY]
+export const SYNTHS: readonly SynthEntry[] = [XD_ENTRY, OG_ENTRY]
 
 const LS_KEY = 'weblogue-synth'
 

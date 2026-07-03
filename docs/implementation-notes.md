@@ -30,13 +30,19 @@ into a synth-agnostic core and a per-synth definition. Rules and residue a maint
   per-synth data in curves/config tables (docs/hardware-calibration.md).
 - **Program format.** v2 adds `synthId` ('xd'); v1 files (no synthId) load as xd. The xd deserializer
   refuses other synths' programs (returns null) rather than loading them as xd defaults.
-- **Deliberately deferred to the first second-synth (base minilogue) work:** extracting the
-  mostly-generic voice allocator and the `applyParam` binding switch out of `synths/xd/engine.ts` —
-  cutting those seams without a second consumer risks the wrong abstraction. Known xd residue in
-  generic dirs, acceptable until then: the fixed CC map in `src/midi/midi.ts`, xd-isms in
-  `src/ui/display.ts`/`menu.ts`/`debugpanel.ts`, the xd-shaped `DbgVoice`/tap layout in
-  `src/shared/messages.ts` and `PROCESSOR_NAME = 'xd-processor'`, and the xd voice/motion dimensions
-  (`NUM_STEPS`, `NOTES_PER_STEP`, …) in `src/shared/program.ts`.
+- **Second synth landed (2026-07-02): the original minilogue** (`src/synths/og/`, spec in
+  docs/og-spec.md). The deferred allocator extraction became `dsp/voicebank.ts` (VoiceBank +
+  NoteStack); the OG engine builds its 8 voice modes on those primitives plus its own echo queue
+  (DELAY mode) and duck envelopes (SIDE CHAIN). Its UNCONFIRMED voicings (filter resLoss, delay
+  wet level, arp rate, mono sub curve, invert semantics, EG-MOD rate depth) are marked in
+  synths/og/curves.ts + engine.ts as calibration targets. Known OG gaps: no SERVICE MODE drawer
+  (ui/debugpanel.ts still reads xd param ids; the OG engine records compatible taps for later),
+  and the OLED menu set is the minimal correct og-spec §11 list.
+- **Known residue in generic dirs, acceptable for now:** xd-isms in `src/ui/menu.ts` and
+  `src/ui/debugpanel.ts` (display.ts is now def-injected), the CC1/CC2 joyY handlers and the
+  xd-shaped `DbgVoice`/tap layout in `src/shared/messages.ts` (`PROCESSOR_NAME` there is the xd's;
+  the og carries its own), and the family voice/motion dimensions (`NUM_STEPS`, `NOTES_PER_STEP`,
+  …) in `src/shared/program.ts`.
 
 ## Interpretations where the hardware is undocumented
 

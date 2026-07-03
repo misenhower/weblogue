@@ -199,6 +199,7 @@ export class Voice {
   tapOn = false
   tapV1 = 0
   tapV2 = 0
+  tapM = 0
   tapMix = 0
   tapFilt = 0
   lastDrift1 = 0
@@ -492,6 +493,7 @@ export class Voice {
     if (this.tapOn) {
       this.tapV1 = o1
       this.tapV2 = ch2
+      this.tapM = oM
       this.tapMix = x
       this.tapFilt = y
       this.lastDrift1 = drift1C

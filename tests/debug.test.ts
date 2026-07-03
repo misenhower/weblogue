@@ -17,7 +17,7 @@ function render(e: Engine, seconds: number): void {
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {
     const e = new Engine(SR)
-    const dst = [0, 1, 2, 3].map(() => new Float32Array(DBG_TAP_SIZE))
+    const dst = [0, 1, 2, 3, 4].map(() => new Float32Array(DBG_TAP_SIZE))
 
     e.noteOn(60, 100)
     render(e, 0.1)
@@ -29,8 +29,9 @@ describe('engine SERVICE MODE taps', () => {
     e.copyDebugTaps(dst)
     const rms = (a: Float32Array) => Math.sqrt(a.reduce((s, v) => s + v * v, 0) / a.length)
     expect(rms(dst[0])).toBeGreaterThan(0.001) // VCO1 tap sees the saw
-    expect(rms(dst[2])).toBeGreaterThan(0.001) // mix tap
-    expect(rms(dst[3])).toBeGreaterThan(0.0005) // post-filter tap
+    expect(rms(dst[2])).toBeGreaterThan(0.001) // MULTI tap (VPM runs pre-mixer)
+    expect(rms(dst[3])).toBeGreaterThan(0.001) // mix tap
+    expect(rms(dst[4])).toBeGreaterThan(0.0005) // post-filter tap
     for (const d of dst) for (const v of d) expect(Number.isFinite(v)).toBe(true)
     e.noteOff(60)
   })
@@ -124,7 +125,7 @@ describe('round-robin voice allocation (hardware cycles voices)', () => {
 
 describe('DebugPanel', () => {
   function fakeMsg(): Extract<FromEngine, { t: 'dbg' }> {
-    const taps = [0, 1, 2, 3].map(() => {
+    const taps = [0, 1, 2, 3, 4].map(() => {
       const a = new Float32Array(DBG_TAP_SIZE)
       for (let i = 0; i < a.length; i++) a[i] = Math.sin((i / a.length) * Math.PI * 6)
       return a
@@ -146,7 +147,7 @@ describe('DebugPanel', () => {
 
   it('builds 5 scopes, 4 lanes, and a health strip', () => {
     const p = new DebugPanel()
-    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(5)
+    expect(p.el.querySelectorAll('.xd-svc-scope').length).toBe(6)
     expect(p.el.querySelectorAll('.xd-svc-lane').length).toBe(4)
     expect(p.el.querySelector('.xd-svc-load')).toBeTruthy()
   })

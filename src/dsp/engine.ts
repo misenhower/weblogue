@@ -204,6 +204,7 @@ export class Engine {
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
     new Float32Array(DBG_TAP_SIZE),
+    new Float32Array(DBG_TAP_SIZE),
   ]
   private dbgW = 0
 
@@ -1334,8 +1335,9 @@ export class Engine {
         const w = this.dbgW
         this.dbgRings[0][w] = tv.tapV1
         this.dbgRings[1][w] = tv.tapV2
-        this.dbgRings[2][w] = tv.tapMix
-        this.dbgRings[3][w] = tv.tapFilt
+        this.dbgRings[2][w] = tv.tapM
+        this.dbgRings[3][w] = tv.tapMix
+        this.dbgRings[4][w] = tv.tapFilt
         this.dbgW = (w + 1) % DBG_TAP_SIZE
       }
     }
@@ -1379,11 +1381,11 @@ export class Engine {
     return this.dbgVoice
   }
 
-  /** Copy the four tap rings (chronological order) into dst[0..3]. */
+  /** Copy the five tap rings (chronological order) into dst[0..4]. */
   copyDebugTaps(dst: Float32Array[]): void {
     const w = this.dbgW
     const tail = DBG_TAP_SIZE - w
-    for (let t = 0; t < 4; t++) {
+    for (let t = 0; t < 5 && t < dst.length; t++) {
       const ring = this.dbgRings[t]
       const d = dst[t]
       d.set(ring.subarray(w), 0)

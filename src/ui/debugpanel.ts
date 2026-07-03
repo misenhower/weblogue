@@ -12,7 +12,7 @@ import { fftMag } from './fft'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
-const TAP_LABELS = ['VCO 1', 'VCO 2', 'MIX', 'VCF', 'OUTPUT'] as const
+const TAP_LABELS = ['VCO 1', 'VCO 2', 'MULTI', 'MIX', 'VCF', 'OUTPUT'] as const
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const HISTORY = 128 // sparkline points (~4s at 30fps telemetry)
 const MOD_SIGS = [
@@ -54,7 +54,7 @@ export class DebugPanel {
 
   private readonly canvases: HTMLCanvasElement[] = []
   private readonly ctxs: (CanvasRenderingContext2D | null)[] = []
-  private readonly fftOn: boolean[] = [false, false, false, false, false]
+  private readonly fftOn: boolean[] = [false, false, false, false, false, false]
   private readonly tapCells: HTMLElement[] = []
   private readonly modCanvases: HTMLCanvasElement[] = []
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
@@ -118,8 +118,8 @@ export class DebugPanel {
       if (i < TAP_LABELS.length - 1) {
         const arrow = document.createElement('div')
         arrow.className = 'xd-svc-arrow'
-        // VCO1 and VCO2 both feed MIX; mark the first joint accordingly.
-        arrow.textContent = i === 0 ? '⊕' : '→'
+        // VCO1, VCO2 and MULTI all sum into MIX; mark those joints.
+        arrow.textContent = i < 2 ? '⊕' : '→'
         flow.appendChild(arrow)
       }
       let ctx: CanvasRenderingContext2D | null = null
@@ -219,7 +219,7 @@ export class DebugPanel {
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
-    const scopes: (Float32Array | undefined)[] = [m.taps[0], m.taps[1], m.taps[2], m.taps[3], m.postFx]
+    const scopes: (Float32Array | undefined)[] = [m.taps[0], m.taps[1], m.taps[2], m.taps[3], m.taps[4], m.postFx]
     for (let i = 0; i < scopes.length; i++) {
       const data = scopes[i]
       if (!data) continue

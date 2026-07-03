@@ -1,28 +1,19 @@
 /*
- * App bootstrap: builds the UI, boots the AudioWorklet engine on the power-on
- * gesture, and wires store <-> engine <-> panel <-> display <-> MIDI.
+ * App bootstrap, synth-agnostic: picks a synth from the registry, builds its
+ * app (store + panel + MIDI wiring live in synths/<id>/app.ts), boots the
+ * AudioWorklet engine on the power-on gesture, and owns the page chrome
+ * (synth selector, power overlay, output gain/analyser).
  */
 import './ui/theme.css'
 import './ui/kbd.css'
 import './ui/panel.css'
 import './ui/display.css'
 import './ui/debug.css'
-import processorUrl from './synths/xd/processor.ts?worker&url'
-import { Store } from './state/store'
-import { XD_DEF } from './synths/xd/def'
-import { Panel } from './synths/xd/panel'
-import { Display } from './ui/display'
-import { DebugPanel } from './ui/debugpanel'
-import { attachComputerKeyboard } from './ui/keyboard'
-import { MidiInput } from './midi/midi'
-import { decodeCc } from './synths/xd/cc'
-import { resolveMidiParam } from './synths/xd/resolve'
-import { P } from './synths/xd/params'
-import { MOTION_PITCH_BEND } from './shared/paramdef'
-import { PROCESSOR_NAME } from './shared/messages'
+import { SYNTHS, pickSynth, switchSynth } from './synths/registry'
 import type { FromEngine, ToEngine } from './shared/messages'
 
-const app = document.getElementById('app')!
+const appRoot = document.getElementById('app')!
+const entry = pickSynth()
 
 // --- Engine connection (buffered until the worklet is up) ---------------
 let node: AudioWorkletNode | null = null
@@ -36,44 +27,44 @@ function send(msg: ToEngine): void {
   else pending.push(msg)
 }
 
-// --- State + UI ----------------------------------------------------------
-const store = new Store(XD_DEF)
-
 // MASTER knob level (panel default 0.8), tracked even before power-on so
 // pre-boot knob moves are applied when the audio graph comes up.
 let masterLevel = 0.8
 
-const panel = new Panel({
-  store,
-  onNoteOn: (note, vel) => send({ t: 'noteOn', note, vel }),
-  onNoteOff: (note) => send({ t: 'noteOff', note }),
-  onBend: (v) => {
-    send({ t: 'bend', v })
-    store.recKnob(MOTION_PITCH_BEND, v) // gates on rec mode/playing internally
-  },
-  onJoyY: (v) => send({ t: 'joyY', v }),
+// --- Synth app (store + panel + display + MIDI) --------------------------
+const app = entry.buildApp({
+  send,
   onMaster: (v) => {
     masterLevel = v
     if (masterGain) masterGain.gain.value = v * v // audio taper
   },
 })
-const display = new Display({ store })
-panel.displaySlot.appendChild(display.el)
-app.appendChild(panel.el)
+appRoot.appendChild(app.el)
 
-store.connect(send)
+window.addEventListener('resize', () => app.fit())
+app.fit()
 
-// Computer keyboard -> keybed; z/x octave keys write back to the param.
-attachComputerKeyboard(panel.keyboard)
-panel.keyboard.onOctaveShift = (o) => store.setParam(P.OCTAVE, o + 2)
-
-// Responsive scale (panel logical width 1440).
-function fitPanel(): void {
-  const s = Math.min(1, (window.innerWidth - 16) / 1456)
-  panel.el.style.setProperty('--xd-scale', String(s))
+// --- Synth selector (top-right chip row; switching reloads the page) -----
+if (SYNTHS.length > 1) {
+  const row = document.createElement('div')
+  row.className = 'synth-picker'
+  for (const s of SYNTHS) {
+    const chip = document.createElement('button')
+    chip.className = 'synth-chip' + (s.def.id === entry.def.id ? ' synth-chip-on' : '')
+    chip.textContent = s.def.title
+    if (s.def.id !== entry.def.id) chip.addEventListener('click', () => switchSynth(s.def.id))
+    row.appendChild(chip)
+  }
+  const pickerStyle = document.createElement('style')
+  pickerStyle.textContent = `
+.synth-picker{position:fixed;top:10px;right:12px;display:flex;gap:6px;z-index:60}
+.synth-chip{font:600 11px/1 Futura,'Century Gothic',system-ui;letter-spacing:.12em;color:#9a9aa2;background:#1c1c20;border:1px solid #3a3a42;border-radius:6px;padding:7px 12px;cursor:pointer;text-transform:uppercase}
+.synth-chip:hover{color:#d8d8dc;border-color:#55555c}
+.synth-chip-on{color:#f5eedb;border-color:#6a6a72;cursor:default}
+`
+  document.head.appendChild(pickerStyle)
+  appRoot.appendChild(row)
 }
-window.addEventListener('resize', fitPanel)
-fitPanel()
 
 // --- Power-on overlay (audio needs a user gesture) -----------------------
 const overlay = document.createElement('div')
@@ -87,13 +78,13 @@ style.textContent = `
 .xd-power-btn:hover span{background:var(--xd-led-white,#f5eedb);box-shadow:0 0 8px var(--xd-led-white,#f5eedb)}
 `
 document.head.appendChild(style)
-app.appendChild(overlay)
+appRoot.appendChild(overlay)
 
 async function powerOn(): Promise<void> {
   overlay.remove()
   ctx = new AudioContext({ latencyHint: 'interactive' })
-  await ctx.audioWorklet.addModule(processorUrl)
-  node = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
+  await ctx.audioWorklet.addModule(entry.processorUrl)
+  node = new AudioWorkletNode(ctx, entry.def.processorName, {
     numberOfInputs: 0,
     numberOfOutputs: 1,
     outputChannelCount: [2],
@@ -105,24 +96,10 @@ async function powerOn(): Promise<void> {
   node.connect(masterGain)
   masterGain.connect(analyser)
   analyser.connect(ctx.destination)
+  app.setSampleRate(ctx.sampleRate)
 
   node.port.onmessage = (e: MessageEvent) => {
-    const m = e.data as FromEngine
-    switch (m.t) {
-      case 'scope':
-        display.scopeFrame(m.data)
-        break
-      case 'step':
-        store.setPlayhead(m.i)
-        panel.setPlayhead(m.i)
-        break
-      case 'voices':
-        panel.setVoices(m.notes)
-        break
-      case 'dbg':
-        debugPanel?.update(m)
-        break
-    }
+    app.onEngineMessage(e.data as FromEngine)
   }
 
   // Flush everything queued before power-on (includes the program load that
@@ -131,91 +108,9 @@ async function powerOn(): Promise<void> {
   pending.length = 0
   send({ t: 'scope', on: true })
   await ctx.resume()
-  void initMidi()
+  void app.initMidi()
 }
 overlay.querySelector('button')!.addEventListener('click', () => void powerOn())
-
-// --- SERVICE MODE (debug drawer): ` key or the corner chip ---------------
-let debugPanel: DebugPanel | null = null
-let debugOpen = false
-
-const svcChip = document.createElement('button')
-svcChip.className = 'xd-svc-chip'
-svcChip.textContent = 'SERVICE'
-svcChip.addEventListener('click', () => toggleDebug())
-app.appendChild(svcChip)
-
-function toggleDebug(on = !debugOpen): void {
-  if (on === debugOpen) return
-  debugOpen = on
-  if (on) {
-    if (!debugPanel) {
-      debugPanel = new DebugPanel({ store })
-      debugPanel.onClose = () => toggleDebug(false)
-      debugPanel.onVoicesMode = (all) => {
-        if (debugOpen) send({ t: 'debug', on: true, all })
-      }
-    }
-    if (ctx) debugPanel.sampleRate = ctx.sampleRate
-    app.appendChild(debugPanel.el)
-    svcChip.style.display = 'none'
-  } else if (debugPanel) {
-    debugPanel.el.remove()
-    svcChip.style.display = ''
-  }
-  send({ t: 'debug', on, all: debugPanel?.voicesAll ?? false })
-}
-
-window.addEventListener('keydown', (e) => {
-  if (e.key !== '`' || e.repeat) return
-  const t = document.activeElement
-  if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
-  toggleDebug()
-})
-
-// --- MIDI ----------------------------------------------------------------
-function midiActivity(): void {
-  panel.flashMidi()
-  display.setMidiActive(true)
-}
-
-async function initMidi(): Promise<void> {
-  const midi = new MidiInput({
-    noteOn: (note, vel) => {
-      midiActivity()
-      send({ t: 'noteOn', note, vel })
-      store.recNoteOn(note, vel)
-    },
-    noteOff: (note) => {
-      send({ t: 'noteOff', note })
-      store.recNoteOff(note)
-    },
-    bend: (v) => {
-      send({ t: 'bend', v })
-      store.recKnob(MOTION_PITCH_BEND, v) // gates on rec mode/playing internally
-    },
-    sustain: (on) => send({ t: 'sustain', on }),
-    param: (id, v) => {
-      midiActivity()
-      const r = resolveMidiParam(id, v, store.getParam(P.MULTI_TYPE), store.getParam(P.MODFX_TYPE))
-      if (r) store.setParam(r.id, r.v, 'midi')
-    },
-    channelPressure: (v) => {
-      midiActivity()
-      send({ t: 'pressure', v })
-    },
-    programChange: (bankLsb, prog) => {
-      const slot = bankLsb * 100 + prog
-      if (slot >= 0 && slot < 500) store.loadSlot(slot)
-    },
-    connectionChange: () => {},
-    joyY: (v) => send({ t: 'joyY', v }),
-    joyYMinus: (v) => send({ t: 'joyY', v: -v }),
-    panic: () => send({ t: 'allNotesOff' }),
-    decodeCc,
-  })
-  await midi.init()
-}
 
 // --- Debug hook for automated verification -------------------------------
 ;(window as any).__xdDebug = {
@@ -231,5 +126,6 @@ async function initMidi(): Promise<void> {
   powerOn: () => powerOn(),
   noteOn: (note: number, vel = 100) => send({ t: 'noteOn', note, vel }),
   noteOff: (note: number) => send({ t: 'noteOff', note }),
-  store,
+  synthId: entry.def.id,
+  store: app.store,
 }

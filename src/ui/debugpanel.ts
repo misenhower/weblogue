@@ -54,6 +54,41 @@ const MOD_SIGS = [
   { label: 'LFO', color: '#8fb8e0', bipolar: true },
 ] as const
 
+function hexToRgba(hex: string, a: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${a})`
+}
+
+/**
+ * Fixed canvas-space glow gradient: transparent at the signal's zero line,
+ * strongest at the extremes — so louder signals reach into brighter zones.
+ * 'mirror' = bipolar (zero at h/2), 'up' = unipolar (zero at the bottom).
+ */
+function glowGradient(
+  ctx: CanvasRenderingContext2D,
+  h: number,
+  color: string,
+  mode: 'mirror' | 'up',
+  peakAlpha: number,
+): CanvasGradient {
+  const g = ctx.createLinearGradient(0, 0, 0, h)
+  if (mode === 'mirror') {
+    // Peak brightness is reached at ~80% amplitude, not only at the edges,
+    // so ordinary waveforms already glow visibly.
+    g.addColorStop(0, hexToRgba(color, peakAlpha))
+    g.addColorStop(0.1, hexToRgba(color, peakAlpha))
+    g.addColorStop(0.5, hexToRgba(color, 0))
+    g.addColorStop(0.9, hexToRgba(color, peakAlpha))
+    g.addColorStop(1, hexToRgba(color, peakAlpha))
+  } else {
+    g.addColorStop(0, hexToRgba(color, peakAlpha))
+    g.addColorStop(1, hexToRgba(color, 0))
+  }
+  return g
+}
+
 function noteName(n: number): string {
   if (!Number.isFinite(n)) return '--'
   const nn = Math.round(n)
@@ -633,8 +668,8 @@ export class DebugPanel {
     const h = cv.height / dpr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, w, h)
-    if (dataR) this.traceSpectrum(ctx, dataR, w, h, R_COLOR, 0.9)
-    this.traceSpectrum(ctx, dataL, w, h, this.fg, dataR ? 0.9 : 1)
+    if (dataR) this.traceSpectrum(ctx, dataR, w, h, R_COLOR, 0.9, 0.14)
+    this.traceSpectrum(ctx, dataL, w, h, this.fg, dataR ? 0.9 : 1, dataR ? 0.14 : 0.22)
     if (dataR) this.drawLrLegend(ctx, w)
   }
 
@@ -645,16 +680,13 @@ export class DebugPanel {
     h: number,
     color: string,
     alpha: number,
+    fillAlpha = 0.22,
   ): void {
     const mag = fftMag(data)
     const nyq = this.sampleRate / 2
     const fLo = 30
     const fHi = Math.min(16000, nyq)
-    ctx.strokeStyle = color
-    ctx.globalAlpha = alpha
-    ctx.lineWidth = 1.2
-    ctx.beginPath()
-    for (let px = 0; px < w; px++) {
+    const pointY = (px: number): number => {
       const f = fLo * Math.pow(fHi / fLo, px / (w - 1))
       const bin = (f / nyq) * (mag.length - 1)
       const b0 = Math.floor(bin)
@@ -662,7 +694,24 @@ export class DebugPanel {
       const v = mag[b0] * (1 - frac) + (mag[b0 + 1] ?? 0) * frac
       const db = 20 * Math.log10(v + 1e-9)
       const t = Math.max(0, Math.min(1, (db + 80) / 80)) // -80..0 dB
-      const py = h - 2 - t * (h - 5)
+      return h - 2 - t * (h - 5)
+    }
+    // Single anchored glow: -80 dB floor is the "zero", brightest at 0 dB.
+    if (fillAlpha > 0) {
+      ctx.fillStyle = glowGradient(ctx, h, color, 'up', fillAlpha)
+      ctx.beginPath()
+      ctx.moveTo(0, h - 2)
+      for (let px = 0; px < w; px++) ctx.lineTo(px, pointY(px))
+      ctx.lineTo(w - 1, h - 2)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    for (let px = 0; px < w; px++) {
+      const py = pointY(px)
       if (px === 0) ctx.moveTo(px, py)
       else ctx.lineTo(px, py)
     }
@@ -713,7 +762,7 @@ export class DebugPanel {
           break
         }
       }
-      this.traceWave(ctx, data, trig, half, win, w, h, VOICE_COLORS[v], 0.85)
+      this.traceWave(ctx, data, trig, half, win, w, h, VOICE_COLORS[v], 0.85, 0.18)
       drewAny = true
     }
     if (drewAny) this.drawVoiceLegend(ctx, w)
@@ -738,7 +787,7 @@ export class DebugPanel {
         if (a > peak) peak = a
       }
       if (peak < SILENT_PEAK) continue
-      this.traceSpectrum(ctx, data, w, h, VOICE_COLORS[v], 0.85)
+      this.traceSpectrum(ctx, data, w, h, VOICE_COLORS[v], 0.85, 0.12)
       drewAny = true
     }
     if (drewAny) this.drawVoiceLegend(ctx, w)
@@ -796,7 +845,7 @@ export class DebugPanel {
     if (this.voicesMode === 'all') {
       // 4-voice overlay: voice colors, fixed draw order, no tapped priority.
       for (let v = 0; v < this.modHist.length; v++) {
-        this.traceSparkline(ctx, this.modHist[v][s], n, w, h, sig.bipolar, VOICE_COLORS[v], 0.85)
+        this.traceSparkline(ctx, this.modHist[v][s], n, w, h, sig.bipolar, VOICE_COLORS[v], 0.85, 0.12)
       }
       this.drawVoiceLegend(ctx, w)
     } else {
@@ -813,13 +862,9 @@ export class DebugPanel {
     bipolar: boolean,
     color: string,
     alpha: number,
+    fillAlpha = 0.2,
   ): void {
-    ctx.strokeStyle = color
-    ctx.globalAlpha = alpha
-    ctx.lineWidth = 1.3
-    ctx.beginPath()
-    for (let k = 0; k < n; k++) {
-      // oldest -> newest, right-aligned
+    const pointXY = (k: number): [number, number] => {
       const idx = (this.histW - n + k + HISTORY) % HISTORY
       let v = hist[idx]
       if (!Number.isFinite(v)) v = 0
@@ -827,6 +872,29 @@ export class DebugPanel {
       const y = bipolar
         ? h / 2 - Math.max(-1, Math.min(1, v)) * (h / 2 - 2)
         : h - 2 - Math.max(0, Math.min(1, v)) * (h - 4)
+      return [x, y]
+    }
+    const base = bipolar ? h / 2 : h - 2
+    if (fillAlpha > 0 && n > 1) {
+      ctx.fillStyle = glowGradient(ctx, h, color, bipolar ? 'mirror' : 'up', fillAlpha)
+      ctx.beginPath()
+      const [x0] = pointXY(0)
+      ctx.moveTo(x0, base)
+      for (let k = 0; k < n; k++) {
+        const [x, y] = pointXY(k)
+        ctx.lineTo(x, y)
+      }
+      const [xn] = pointXY(n - 1)
+      ctx.lineTo(xn, base)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = 1.3
+    ctx.beginPath()
+    for (let k = 0; k < n; k++) {
+      const [x, y] = pointXY(k)
       if (k === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     }
@@ -866,8 +934,8 @@ export class DebugPanel {
         break
       }
     }
-    if (dataR) this.traceWave(ctx, dataR, trig, half, win, w, h, R_COLOR, 0.9)
-    this.traceWave(ctx, dataL, trig, half, win, w, h, this.fg, dataR ? 0.9 : 1)
+    if (dataR) this.traceWave(ctx, dataR, trig, half, win, w, h, R_COLOR, 0.9, 0.22)
+    this.traceWave(ctx, dataL, trig, half, win, w, h, this.fg, dataR ? 0.9 : 1, dataR ? 0.22 : 0.38)
     if (dataR) this.drawLrLegend(ctx, w)
   }
 
@@ -881,18 +949,32 @@ export class DebugPanel {
     h: number,
     color: string,
     alpha: number,
+    fillAlpha = 0.38,
   ): void {
+    const pointY = (x: number): number => {
+      let s = data[trig - half + x]
+      if (!Number.isFinite(s)) s = 0
+      if (s > 1.4) s = 1.4
+      else if (s < -1.4) s = -1.4
+      return h / 2 - s * (h / 2 - 3) * 0.71
+    }
+    // Anchored glow: fill trace-to-centerline with a fixed vertical gradient.
+    if (fillAlpha > 0) {
+      ctx.fillStyle = glowGradient(ctx, h, color, 'mirror', fillAlpha)
+      ctx.beginPath()
+      ctx.moveTo(0, h / 2)
+      for (let x = 0; x < win; x++) ctx.lineTo((x / (win - 1)) * w, pointY(x))
+      ctx.lineTo(w, h / 2)
+      ctx.closePath()
+      ctx.fill()
+    }
     ctx.strokeStyle = color
     ctx.globalAlpha = alpha
     ctx.lineWidth = 1.4
     ctx.beginPath()
     for (let x = 0; x < win; x++) {
-      let s = data[trig - half + x]
-      if (!Number.isFinite(s)) s = 0
-      if (s > 1.4) s = 1.4
-      else if (s < -1.4) s = -1.4
       const px = (x / (win - 1)) * w
-      const py = h / 2 - s * (h / 2 - 3) * 0.71
+      const py = pointY(x)
       if (x === 0) ctx.moveTo(px, py)
       else ctx.lineTo(px, py)
     }

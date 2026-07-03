@@ -519,3 +519,58 @@
   stroke: #000;
   stroke-width: 0.75;
 }
+
+/* popover menu (readout pickers) */
+.xd-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 150px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: #141418;
+  border: 1px solid #3a3a40;
+  border-radius: 6px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.7);
+  padding: 4px;
+}
+.xd-menu-header {
+  font: 700 8px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.16em;
+  color: var(--xd-legend-dim, #909097);
+  text-transform: uppercase;
+  padding: 7px 8px 3px;
+}
+.xd-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--xd-legend, #d8d8dc);
+  font: 500 11px/1.1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.xd-menu-item:hover {
+  background: #26262c;
+}
+.xd-menu-item.is-selected {
+  color: #8fe0a0;
+  background: #1d241e;
+}
+.xd-menu-item.is-action {
+  color: var(--xd-legend-dim, #909097);
+  font-style: italic;
+}
+.xd-menu-item.is-action:hover {
+  color: var(--xd-legend, #d8d8dc);
+}
+.xd-clickable-readout {
+  cursor: pointer;
+}
+.xd-clickable-readout:hover {
+  border-color: #55555c !important;
+}

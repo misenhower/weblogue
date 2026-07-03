@@ -41,6 +41,7 @@ import {
 } from './components'
 import { Keyboard } from './keyboard'
 import { Joystick } from './joystick'
+import { showMenu, type MenuItem } from './menu'
 
 export interface PanelOpts {
   store: Store
@@ -651,6 +652,73 @@ export class Panel {
     this.store.setName(next.trim().slice(0, 16))
   }
 
+  /* ------------------------------------------------- readout menus -- */
+
+  /** Multi readout: every oscillator across all three engines, grouped. */
+  private openMultiMenu(): void {
+    const type = Math.round(this.store.getParam(P.MULTI_TYPE))
+    const groups = PARAMS[P.MULTI_TYPE].labels ?? []
+    const items: MenuItem[] = []
+    for (let t = 0; t < MULTI_SELECTS.length; t++) {
+      items.push({ label: String(groups[t] ?? t) })
+      const labels = PARAMS[MULTI_SELECTS[t]].labels ?? []
+      const cur = Math.round(this.store.getParam(MULTI_SELECTS[t]))
+      for (let i = 0; i < labels.length; i++) {
+        items.push({ label: labels[i], value: t * 100 + i, selected: t === type && i === cur })
+      }
+    }
+    showMenu(this.multiDisplay, items, (v) => {
+      const t = Math.floor((v as number) / 100)
+      this.store.setParam(P.MULTI_TYPE, t, 'ui')
+      this.store.setParam(MULTI_SELECTS[t], (v as number) % 100, 'ui')
+    })
+  }
+
+  /** FX readout: the addressed section's types (MOD grouped by type). */
+  private openFxMenu(anchor: HTMLElement): void {
+    if (this.fxSection === 2) {
+      const type = Math.round(this.store.getParam(P.MODFX_TYPE))
+      const typeLabels = PARAMS[P.MODFX_TYPE].labels ?? []
+      const items: MenuItem[] = []
+      for (let t = 0; t < MODFX_SUBS.length; t++) {
+        items.push({ label: String(typeLabels[t] ?? t) })
+        const labels = PARAMS[MODFX_SUBS[t]].labels ?? []
+        const cur = Math.round(this.store.getParam(MODFX_SUBS[t]))
+        for (let i = 0; i < labels.length; i++) {
+          items.push({ label: labels[i], value: t * 100 + i, selected: t === type && i === cur })
+        }
+      }
+      showMenu(anchor, items, (v) => {
+        const t = Math.floor((v as number) / 100)
+        this.store.setParam(P.MODFX_TYPE, t, 'ui')
+        this.store.setParam(MODFX_SUBS[t], (v as number) % 100, 'ui')
+      })
+      return
+    }
+    const subId = this.fxSection === 0 ? P.DELAY_SUB : P.REVERB_SUB
+    const labels = PARAMS[subId].labels ?? []
+    const cur = Math.round(this.store.getParam(subId))
+    const items: MenuItem[] = labels.map((l, i) => ({ label: l, value: i, selected: i === cur }))
+    showMenu(anchor, items, (v) => this.store.setParam(subId, v as number, 'ui'))
+  }
+
+  /** Program readout: browser over all 500 slots, plus rename. */
+  private openProgramMenu(anchor: HTMLElement): void {
+    const names = this.store.slotNames()
+    const items: MenuItem[] = [{ label: 'Rename…', value: -1, action: true }]
+    for (let i = 0; i < names.length; i++) {
+      items.push({
+        label: String(i + 1).padStart(3, '0') + '  ' + names[i],
+        value: i,
+        selected: i === this.store.slot,
+      })
+    }
+    showMenu(anchor, items, (v) => {
+      if ((v as number) < 0) this.renamePrompt()
+      else this.store.loadSlot(v as number)
+    })
+  }
+
   /* ================================================================ */
   /* section builders                                                  */
   /* ================================================================ */
@@ -763,6 +831,9 @@ export class Panel {
     const oct = this.paramSwitch(P.MULTI_OCTAVE, { label: 'OCTAVE' })
 
     this.multiDisplay = div('xd-multi-display')
+    this.multiDisplay.classList.add('xd-clickable-readout')
+    this.multiDisplay.title = 'choose oscillator'
+    this.multiDisplay.addEventListener('click', () => this.openMultiMenu())
     const enc = new EncoderWheel({ label: 'TYPE', onStep: (dir) => this.stepMultiSelect(dir) })
     const typeBlock = div('xd-multi-typeblock')
     typeBlock.append(this.multiDisplay, enc.el)
@@ -810,9 +881,12 @@ export class Panel {
   private buildProgram(): HTMLElement {
     this.progNum = div('xd-prog-num')
     this.progName = div('xd-prog-name')
-    // double-click the name readout = rename the working program
-    this.progName.addEventListener('dblclick', () => this.renamePrompt())
     const readout = div('xd-prog-readout')
+    readout.classList.add('xd-clickable-readout')
+    readout.title = 'browse programs'
+    // click = program browser (with Rename inside); dblclick rename stays.
+    readout.addEventListener('click', () => this.openProgramMenu(readout))
+    this.progName.addEventListener('dblclick', () => this.renamePrompt())
     readout.append(this.progNum, this.progName)
 
     this.midiLed = new Led({ color: 'red' })
@@ -909,6 +983,9 @@ export class Panel {
     this.fxLine1 = div('xd-fx-line1')
     this.fxLine2 = div('xd-fx-line2')
     const readout = div('xd-fx-display')
+    readout.classList.add('xd-clickable-readout')
+    readout.title = 'choose effect type'
+    readout.addEventListener('click', () => this.openFxMenu(readout))
     readout.append(this.fxLine1, this.fxLine2)
 
     this.fxTimeKnob = new Knob({

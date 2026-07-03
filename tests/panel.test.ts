@@ -505,3 +505,59 @@ describe('Panel: master + keyboard glue', () => {
     }
   })
 })
+
+describe('readout menus', () => {
+  afterEach(() => {
+    document.querySelector('.xd-menu')?.remove()
+  })
+
+  it('multi readout opens a grouped menu; picking switches engine + osc', () => {
+    const { store, panel } = make()
+    document.body.appendChild(panel.el)
+    const readout = panel.el.querySelector('.xd-multi-display') as HTMLElement
+    readout.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const menu = document.querySelector('.xd-menu')!
+    expect(menu.querySelectorAll('.xd-menu-header').length).toBe(3) // NOISE/VPM/USR
+    expect(menu.querySelectorAll('.xd-menu-item').length).toBe(24) // 4+16+4
+    const items = [...menu.querySelectorAll('.xd-menu-item')] as HTMLButtonElement[]
+    const throat = items.find((i) => i.textContent === 'Throat')!
+    throat.click()
+    expect(store.getParam(P.MULTI_TYPE)).toBe(1)
+    expect(store.getParam(P.SELECT_VPM)).toBe(15)
+    panel.el.remove()
+  })
+
+  it('fx readout lists the addressed section; picking sets the subtype', () => {
+    const { store, panel } = make()
+    document.body.appendChild(panel.el)
+    const readout = panel.el.querySelector('.xd-fx-display') as HTMLElement
+    readout.dispatchEvent(new MouseEvent('click', { bubbles: true })) // DEL by default
+    const menu = document.querySelector('.xd-menu')!
+    const items = [...menu.querySelectorAll('.xd-menu-item')] as HTMLButtonElement[]
+    expect(items.length).toBe(12) // delay subtypes
+    items.find((i) => i.textContent === 'Tape')!.click()
+    expect(store.getParam(P.DELAY_SUB)).toBe(4)
+    panel.el.remove()
+  })
+
+  it('program readout browses slots and offers rename', () => {
+    const { store, panel } = make()
+    document.body.appendChild(panel.el)
+    const readout = panel.el.querySelector('.xd-prog-readout') as HTMLElement
+    readout.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const menu = document.querySelector('.xd-menu')!
+    const items = [...menu.querySelectorAll('.xd-menu-item')] as HTMLButtonElement[]
+    expect(items.length).toBe(501) // Rename… + 500 slots
+    expect(items[0].classList.contains('is-action')).toBe(true)
+    items[3].click() // slot index 2 ("003 ...")
+    expect(store.slot).toBe(2)
+    // rename action goes through window.prompt
+    readout.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const items2 = [...document.querySelectorAll('.xd-menu .xd-menu-item')] as HTMLButtonElement[]
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Renamed Prog')
+    items2[0].click()
+    expect(store.program.name).toBe('Renamed Prog')
+    promptSpy.mockRestore()
+    panel.el.remove()
+  })
+})

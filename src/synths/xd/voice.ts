@@ -16,11 +16,12 @@
  */
 import { Vco } from '../../dsp/osc'
 import { MultiEngine, type VpmTrims } from '../../dsp/multiengine'
-import { XdFilter } from '../../dsp/filter'
+import { SvfFilter } from '../../dsp/filter'
 import { AdsrEg, AdEg } from '../../dsp/eg'
 import { Lfo, LFO_MODE } from '../../dsp/lfo'
 import { Drift } from '../../dsp/drift'
 import {
+  XD_FILTER_CFG,
   EG_MAX_PITCH_CENTS,
   EG_MAX_CUTOFF_OCTAVES,
   LFO_MAX_PITCH_CENTS,
@@ -65,7 +66,7 @@ export class Voice {
   private readonly vco1: Vco
   private readonly vco2: Vco
   private readonly multi: MultiEngine
-  private readonly filter: XdFilter
+  private readonly filter: SvfFilter
   private readonly ampEg: AdsrEg
   private readonly modEg: AdEg
   private readonly lfo: Lfo
@@ -132,7 +133,7 @@ export class Voice {
     this.vco1 = new Vco(sr)
     this.vco2 = new Vco(sr)
     this.multi = new MultiEngine(sr)
-    this.filter = new XdFilter(sr)
+    this.filter = new SvfFilter(sr, XD_FILTER_CFG)
     this.ampEg = new AdsrEg(sr)
     this.modEg = new AdEg(sr)
     this.lfo = new Lfo(sr)

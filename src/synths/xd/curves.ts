@@ -7,6 +7,7 @@
  * (docs/hardware-calibration.md).
  */
 import { clamp, lerp, expMap } from '../../shared/maps'
+import type { SvfCfg } from '../../dsp/filter'
 
 // ---------------------------------------------------------------------------
 // VCO PITCH knob: raw 0..1023 -> cents -1200..+1200 [MIDIimp note P5, exact]
@@ -72,6 +73,19 @@ export function resonanceTo01(raw: number): number {
   return Math.pow(clamp(raw, 0, 1023) / 1023, 1.1)
 }
 export const KEYTRACK_AMOUNT = [0, 0.5, 1] as const
+
+/** xd filter voicing (fixed 2-pole + 3-position drive; spec §6-7). */
+export const XD_FILTER_CFG: SvfCfg = {
+  kMax: 2.0, // r = 0: critically damped, no resonant hump
+  kMin: 0.025, // r = 1: Q = 40 — rings hard, just shy of self-oscillation
+  resCurve: 1.4, // musical taper: resonance ramps in over the upper half
+  driveGains: [1.0, 2.6, 6.0], // OFF / 50% / 100%
+  driveMakeups: [1.0, 0.7, 0.45],
+  satLevel: 1.25,
+  bassComp: 0.15, // xd keeps its low end at high resonance
+  resLoss: 0,
+  poles: 2,
+}
 
 // ---------------------------------------------------------------------------
 // LFO [MIDIimp note P11]

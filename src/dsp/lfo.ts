@@ -1,5 +1,5 @@
 /*
- * LFO for the minilogue xd replica.
+ * LFO ('logue-family).
  *
  * Plain TS class — no DOM, no worklet globals. sampleRate is injected.
  * Runs per-sample (tick), no allocation on the audio path.
@@ -27,12 +27,13 @@
 export const LFO_WAVE = { SQR: 0, TRI: 1, SAW: 2 } as const
 export const LFO_MODE = { ONE_SHOT: 0, NORMAL: 1, BPM: 2 } as const
 
-const SLEW_TIME = 0.001 // seconds to traverse the full -1..+1 range
+const DEFAULT_SLEW_TIME = 0.001 // seconds to traverse the full -1..+1 range
+const DEFAULT_MAX_FREQ = 100 // panel LFOs; raise for EG->rate mod into audio range
 const MIN_FREQ = 0
-const MAX_FREQ = 100 // 0.01..~40 Hz in practice; headroom for BPM sync
 
 export class Lfo {
   private readonly sr: number
+  private readonly maxFreq: number
   private readonly maxStep: number
   private ph = 0
   private inc = 0
@@ -42,9 +43,11 @@ export class Lfo {
   private hold = 0 // ONE_SHOT: frozen output target once done
   private out = 0 // slewed output state
 
-  constructor(sampleRate: number) {
+  constructor(sampleRate: number, maxFreqHz = DEFAULT_MAX_FREQ, slewTime = DEFAULT_SLEW_TIME) {
     this.sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
-    this.maxStep = 2 / (SLEW_TIME * this.sr)
+    this.maxFreq = Number.isFinite(maxFreqHz) && maxFreqHz > 0 ? maxFreqHz : DEFAULT_MAX_FREQ
+    const slew = Number.isFinite(slewTime) && slewTime > 0 ? slewTime : DEFAULT_SLEW_TIME
+    this.maxStep = 2 / (slew * this.sr)
     this.setFreq(1)
   }
 
@@ -54,7 +57,7 @@ export class Lfo {
 
   setFreq(hz: number): void {
     if (!Number.isFinite(hz)) return
-    const f = hz < MIN_FREQ ? MIN_FREQ : hz > MAX_FREQ ? MAX_FREQ : hz
+    const f = hz < MIN_FREQ ? MIN_FREQ : hz > this.maxFreq ? this.maxFreq : hz
     this.inc = f / this.sr
   }
 

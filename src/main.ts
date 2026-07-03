@@ -9,7 +9,7 @@ import './ui/display.css'
 import './ui/debug.css'
 import processorUrl from './synths/xd/processor.ts?worker&url'
 import { Store } from './state/store'
-import { FACTORY_PRESETS } from './state/presets'
+import { XD_DEF } from './synths/xd/def'
 import { Panel } from './synths/xd/panel'
 import { Display } from './ui/display'
 import { DebugPanel } from './ui/debugpanel'
@@ -36,7 +36,7 @@ function send(msg: ToEngine): void {
 }
 
 // --- State + UI ----------------------------------------------------------
-const store = new Store(FACTORY_PRESETS)
+const store = new Store(XD_DEF)
 
 // MASTER knob level (panel default 0.8), tracked even before power-on so
 // pre-boot knob moves are applied when the audio graph comes up.

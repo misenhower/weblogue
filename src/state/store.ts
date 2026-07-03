@@ -16,11 +16,10 @@ import {
   GATE_TIE,
   STEP_RESOLUTIONS,
 } from '../shared/program'
-import { initProgram, cloneProgram } from '../synths/xd/program'
 import type { ToEngine } from '../shared/messages'
-import { PARAMS, PARAM_COUNT, clampParam } from '../synths/xd/params'
 import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../shared/paramdef'
-import { NUM_SLOTS, loadBank, saveBankSlot, slotName } from './persist'
+import type { StoreDef } from '../synths/def'
+import { loadBank, saveBankSlot, slotName } from './persist'
 
 /** 'ui' = panel control, 'menu' = OLED menu edit (panel controls must resync). */
 export type ParamSource = 'ui' | 'menu' | 'midi' | 'load' | 'motion' | 'engine'
@@ -32,6 +31,7 @@ function clampInt(v: number, lo: number, hi: number): number {
 }
 
 export class Store {
+  private readonly def: StoreDef
   private bank: Program[]
   private prog: Program
   private slotIndex = 0
@@ -70,9 +70,10 @@ export class Store {
 
   private seqNotifyQueued = false
 
-  constructor(factory: Program[]) {
-    this.bank = loadBank(factory)
-    this.prog = cloneProgram(this.bank[0])
+  constructor(def: StoreDef) {
+    this.def = def
+    this.bank = loadBank(def)
+    this.prog = def.cloneProgram(this.bank[0])
   }
 
   /** Attach the engine sink; immediately syncs it with the current program. */
@@ -94,9 +95,9 @@ export class Store {
   }
 
   setParam(id: number, v: number, source: ParamSource = 'ui'): void {
-    if (!Number.isInteger(id) || id < 0 || id >= PARAM_COUNT) return
+    if (!Number.isInteger(id) || id < 0 || id >= this.def.paramCount) return
     if (!Number.isFinite(v)) return
-    const cv = clampParam(id, v)
+    const cv = this.def.clampParam(id, v)
     const changed = this.prog.params[id] !== cv
     this.prog.params[id] = cv
     const userEdit = source === 'ui' || source === 'menu' || source === 'midi'
@@ -142,7 +143,7 @@ export class Store {
     this.clearRtHeld()
     this.send({ t: 'loadProgram', program: this.prog })
     for (const fn of this.programLs) fn(this.prog, this.slotIndex)
-    for (let id = 0; id < PARAM_COUNT; id++) {
+    for (let id = 0; id < this.def.paramCount; id++) {
       const v = this.prog.params[id]
       for (const fn of this.paramLs) fn(id, v, 'load')
     }
@@ -150,9 +151,9 @@ export class Store {
   }
 
   loadSlot(n: number): void {
-    if (!Number.isInteger(n) || n < 0 || n >= NUM_SLOTS) return
+    if (!Number.isInteger(n) || n < 0 || n >= this.def.numSlots) return
     this.slotIndex = n
-    this.prog = cloneProgram(this.bank[n])
+    this.prog = this.def.cloneProgram(this.bank[n])
     this.isDirty = false
     this.afterLoad()
   }
@@ -163,9 +164,9 @@ export class Store {
    * updates (the program is live) but the program stays dirty.
    */
   writeSlot(n: number = this.slotIndex): boolean {
-    if (!Number.isInteger(n) || n < 0 || n >= NUM_SLOTS) return false
-    this.bank[n] = cloneProgram(this.prog)
-    const ok = saveBankSlot(n, this.prog)
+    if (!Number.isInteger(n) || n < 0 || n >= this.def.numSlots) return false
+    this.bank[n] = this.def.cloneProgram(this.prog)
+    const ok = saveBankSlot(this.def, n, this.prog)
     this.slotIndex = n
     this.isDirty = !ok
     for (const fn of this.programLs) fn(this.prog, this.slotIndex)
@@ -173,14 +174,14 @@ export class Store {
   }
 
   loadProgramData(p: Program): void {
-    this.prog = cloneProgram(p)
+    this.prog = this.def.cloneProgram(p)
     this.isDirty = true
     this.afterLoad()
   }
 
   slotNames(): string[] {
-    const out = new Array<string>(NUM_SLOTS)
-    for (let i = 0; i < NUM_SLOTS; i++) out[i] = slotName(i)
+    const out = new Array<string>(this.def.numSlots)
+    for (let i = 0; i < this.def.numSlots; i++) out[i] = slotName(this.def, i)
     return out
   }
 
@@ -191,7 +192,7 @@ export class Store {
   }
 
   initCurrent(): void {
-    this.prog = initProgram()
+    this.prog = this.def.initProgram()
     this.isDirty = true
     this.afterLoad()
   }
@@ -322,7 +323,7 @@ export class Store {
 
   /** Motion values for virtual targets pass through unclamped. */
   private clampMotionValue(paramId: number, v: number): number {
-    if (paramId >= 0 && paramId < PARAM_COUNT) return clampParam(paramId, v)
+    if (paramId >= 0 && paramId < this.def.paramCount) return this.def.clampParam(paramId, v)
     return v
   }
 
@@ -668,7 +669,7 @@ export class Store {
     if (paramId === MOTION_PITCH_BEND || paramId === MOTION_GATE_TIME) {
       smooth = true
     } else {
-      const meta = PARAMS[paramId]
+      const meta = this.def.params[paramId]
       if (!meta || meta.motion !== true) return false
       smooth = meta.motionSmooth === true
     }

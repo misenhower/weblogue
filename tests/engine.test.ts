@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { Engine } from '../src/synths/xd/engine'
 import { initProgram } from '../src/synths/xd/program'
 import { P, PARAMS, PARAM_COUNT } from '../src/synths/xd/params'
-import { FACTORY_PRESETS } from '../src/state/presets'
+import { FACTORY_PRESETS } from '../src/synths/xd/presets'
 
 const SR = 48000
 const BLOCK = 128

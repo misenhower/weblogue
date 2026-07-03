@@ -1,27 +1,26 @@
 /*
- * Bank persistence: 500 program slots backed by localStorage.
+ * Bank persistence: program slots backed by localStorage, namespaced per
+ * synth definition (def.bankKey).
  *
- * Storage layout (all under the 'xd-web-bank-v1' namespace):
- *   'xd-web-bank-v1'         -> marker written once the bank has been seeded
- *   'xd-web-bank-v1/<slot>'  -> one serialized program per slot (O(1) writes)
- *   'xd-web-bank-v1/names'   -> JSON string[] of NUM_SLOTS names (cheap index)
+ * Storage layout (under the def's namespace, e.g. 'xd-web-bank-v1'):
+ *   '<bankKey>'         -> marker written once the bank has been seeded
+ *   '<bankKey>/<slot>'  -> one serialized program per slot (O(1) writes)
+ *   '<bankKey>/names'   -> JSON string[] of numSlots names (cheap index)
  *
  * loadBank() returns a Proxy-backed Program[] that lazy-loads slots on first
- * access, so startup never deserializes all 500 programs. Corrupt entries
- * fall back to Init Program; missing entries fall back to the factory preset
- * for that slot (if any) and Init Program otherwise.
+ * access, so startup never deserializes the whole bank. Corrupt entries fall
+ * back to Init Program; missing entries fall back to the factory preset for
+ * that slot (if any) and Init Program otherwise.
  */
 import type { Program } from '../shared/program'
-import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from '../synths/xd/program'
+import type { StoreDef } from '../synths/def'
 
 export const NUM_SLOTS = 500
 
-const BANK_KEY = 'xd-web-bank-v1'
-const NAMES_KEY = BANK_KEY + '/names'
 const INIT_NAME = 'Init Program'
 
-function slotKey(slot: number): string {
-  return BANK_KEY + '/' + slot
+function slotKey(def: StoreDef, slot: number): string {
+  return def.bankKey + '/' + slot
 }
 
 function storage(): Storage | null {
@@ -53,17 +52,17 @@ function safeSet(key: string, value: string): boolean {
   }
 }
 
-/** Names index cache; refreshed by loadBank() (i.e. on every app startup). */
-let namesCache: string[] | null = null
+/** Names index caches per bank namespace; refreshed by loadBank(). */
+const namesCaches = new Map<string, string[]>()
 
-function readNames(): string[] {
-  const raw = safeGet(NAMES_KEY)
+function readNames(def: StoreDef): string[] {
+  const raw = safeGet(def.bankKey + '/names')
   if (raw !== null) {
     try {
       const arr: unknown = JSON.parse(raw)
       if (Array.isArray(arr)) {
-        const names = new Array<string>(NUM_SLOTS)
-        for (let i = 0; i < NUM_SLOTS; i++) {
+        const names = new Array<string>(def.numSlots)
+        for (let i = 0; i < def.numSlots; i++) {
           const n: unknown = arr[i]
           names[i] = typeof n === 'string' ? n : INIT_NAME
         }
@@ -73,54 +72,61 @@ function readNames(): string[] {
       /* corrupt index: rebuild below */
     }
   }
-  return new Array<string>(NUM_SLOTS).fill(INIT_NAME)
+  return new Array<string>(def.numSlots).fill(INIT_NAME)
 }
 
-function ensureNames(): string[] {
-  if (!namesCache) namesCache = readNames()
-  return namesCache
+function ensureNames(def: StoreDef): string[] {
+  let names = namesCaches.get(def.bankKey)
+  if (!names) {
+    names = readNames(def)
+    namesCaches.set(def.bankKey, names)
+  }
+  return names
 }
 
-function readSlot(slot: number, factory: Program[]): Program {
-  const raw = safeGet(slotKey(slot))
+function readSlot(def: StoreDef, slot: number): Program {
+  const raw = safeGet(slotKey(def, slot))
   if (raw !== null) {
     // Entry exists: use it, or fall back to Init Program if corrupt.
-    const p = deserializeProgram(raw)
-    return p ?? initProgram()
+    const p = def.deserializeProgram(raw)
+    return p ?? def.initProgram()
   }
   // Missing entry: factory preset for the first slots, Init Program elsewhere.
-  if (slot < factory.length) return cloneProgram(factory[slot])
-  return initProgram()
+  const factory = def.factoryPresets
+  if (slot < factory.length) return def.cloneProgram(factory[slot])
+  return def.initProgram()
 }
 
 /**
- * Load the 500-slot bank. On first run, seeds factory presets into the first
+ * Load a def's bank. On first run, seeds factory presets into the first
  * slots (Init Program elsewhere). Returned array lazy-loads each slot on
  * first access; index assignment updates the in-memory cache only (use
  * saveBankSlot for the write-through).
  */
-export function loadBank(factory: Program[]): Program[] {
-  if (safeGet(BANK_KEY) === null) {
+export function loadBank(def: StoreDef): Program[] {
+  const n = def.numSlots
+  if (safeGet(def.bankKey) === null) {
     // First run: seed factory presets + names index.
-    const names = new Array<string>(NUM_SLOTS).fill(INIT_NAME)
-    for (let i = 0; i < factory.length && i < NUM_SLOTS; i++) {
-      safeSet(slotKey(i), serializeProgram(factory[i]))
+    const factory = def.factoryPresets
+    const names = new Array<string>(n).fill(INIT_NAME)
+    for (let i = 0; i < factory.length && i < n; i++) {
+      safeSet(slotKey(def, i), def.serializeProgram(factory[i]))
       names[i] = factory[i].name
     }
-    safeSet(NAMES_KEY, JSON.stringify(names))
-    safeSet(BANK_KEY, '1')
-    namesCache = names
+    safeSet(def.bankKey + '/names', JSON.stringify(names))
+    safeSet(def.bankKey, '1')
+    namesCaches.set(def.bankKey, names)
   } else {
-    namesCache = readNames()
+    namesCaches.set(def.bankKey, readNames(def))
   }
 
   const cache = new Map<number, Program>()
-  const target: Program[] = new Array<Program>(NUM_SLOTS)
+  const target: Program[] = new Array<Program>(n)
 
   const indexOf = (prop: string | symbol): number => {
     if (typeof prop !== 'string') return -1
     const i = Number(prop)
-    return Number.isInteger(i) && i >= 0 && i < NUM_SLOTS ? i : -1
+    return Number.isInteger(i) && i >= 0 && i < n ? i : -1
   }
 
   return new Proxy(target, {
@@ -129,7 +135,7 @@ export function loadBank(factory: Program[]): Program[] {
       if (i >= 0) {
         let p = cache.get(i)
         if (!p) {
-          p = readSlot(i, factory)
+          p = readSlot(def, i)
           cache.set(i, p)
         }
         return p
@@ -155,18 +161,18 @@ export function loadBank(factory: Program[]): Program[] {
  * Returns false when the write did not persist (e.g. QuotaExceededError);
  * the in-memory names index is still updated (the program is live).
  */
-export function saveBankSlot(slot: number, p: Program): boolean {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= NUM_SLOTS) return false
-  const slotOk = safeSet(slotKey(slot), serializeProgram(p))
-  const names = ensureNames()
+export function saveBankSlot(def: StoreDef, slot: number, p: Program): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= def.numSlots) return false
+  const slotOk = safeSet(slotKey(def, slot), def.serializeProgram(p))
+  const names = ensureNames(def)
   names[slot] = p.name
-  const namesOk = safeSet(NAMES_KEY, JSON.stringify(names))
-  if (safeGet(BANK_KEY) === null) safeSet(BANK_KEY, '1')
+  const namesOk = safeSet(def.bankKey + '/names', JSON.stringify(names))
+  if (safeGet(def.bankKey) === null) safeSet(def.bankKey, '1')
   return slotOk && namesOk
 }
 
 /** Cheap name lookup from the names index (no program deserialization). */
-export function slotName(slot: number): string {
-  if (!Number.isInteger(slot) || slot < 0 || slot >= NUM_SLOTS) return INIT_NAME
-  return ensureNames()[slot]
+export function slotName(def: StoreDef, slot: number): string {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= def.numSlots) return INIT_NAME
+  return ensureNames(def)[slot]
 }

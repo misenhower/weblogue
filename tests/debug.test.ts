@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Engine, DBG_TAP_SIZE } from '../src/synths/xd/engine'
 import { P } from '../src/synths/xd/params'
 import { Store } from '../src/state/store'
-import { FACTORY_PRESETS } from '../src/state/presets'
+import { XD_DEF } from '../src/synths/xd/def'
 import { DebugPanel } from '../src/ui/debugpanel'
 import type { FromEngine } from '../src/shared/messages'
 
@@ -259,7 +259,7 @@ describe('DebugPanel', () => {
   })
 
   it('routing wires and badges follow the store', () => {
-    const store = new Store(FACTORY_PRESETS)
+    const store = new Store(XD_DEF)
     store.initCurrent()
     const p = new DebugPanel({ store })
     const eg = p.el.querySelector('.xd-svc-badge--eg') as HTMLElement

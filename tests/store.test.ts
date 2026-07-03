@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
+import { XD_DEF } from '../src/synths/xd/def'
 import { NUM_SLOTS } from '../src/state/persist'
 import { P, PARAMS } from '../src/synths/xd/params'
 import { MOTION_PITCH_BEND } from '../src/shared/paramdef'
@@ -89,13 +90,13 @@ const SLOT_KEY_RE = /^xd-web-bank-v1\/\d+$/
 
 describe('Store params', () => {
   it('gets and sets param values', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.RESONANCE, 512)
     expect(s.getParam(P.RESONANCE)).toBe(512)
   })
 
   it('clamps via param meta (knob, dry/wet, switch, menu)', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.CUTOFF, 5000)
     expect(s.getParam(P.CUTOFF)).toBe(1023)
     s.setParam(P.CUTOFF, -3)
@@ -111,7 +112,7 @@ describe('Store params', () => {
   })
 
   it('ignores NaN values and out-of-range ids', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const before = s.getParam(P.CUTOFF)
     s.setParam(P.CUTOFF, NaN)
     s.setParam(P.CUTOFF, Infinity)
@@ -122,7 +123,7 @@ describe('Store params', () => {
   })
 
   it('notifies listeners with (id, value, source) and supports unsubscribe', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const events: Array<[number, number, string]> = []
     const off = s.onParam((id, v, src) => events.push([id, v, src]))
     s.setParam(P.CUTOFF, 700)
@@ -137,7 +138,7 @@ describe('Store params', () => {
   })
 
   it('forwards {t:"param"} to the sink with the clamped value', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     s.setParam(P.CUTOFF, 5000)
     const pm = msgs.filter((m) => m.t === 'param')
@@ -145,7 +146,7 @@ describe('Store params', () => {
   })
 
   it('does not echo engine-sourced params back to the sink', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     s.setParam(P.CUTOFF, 600, 'engine')
     expect(msgs.filter((m) => m.t === 'param').length).toBe(0)
@@ -153,7 +154,7 @@ describe('Store params', () => {
   })
 
   it('marks dirty on ui/midi changes but not on silent load', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.dirty).toBe(false)
     s.setParam(P.CUTOFF, s.getParam(P.CUTOFF)) // no-op set
     expect(s.dirty).toBe(false)
@@ -169,7 +170,7 @@ describe('Store params', () => {
 
 describe('bank persistence', () => {
   it('seeds factory presets + Init Programs on first run', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.program.name).toBe('Fat Bass')
     expect(s.getParam(P.CUTOFF)).toBe(400)
     const names = s.slotNames()
@@ -184,14 +185,14 @@ describe('bank persistence', () => {
   })
 
   it('roundtrips write -> reload through localStorage', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.CUTOFF, 123)
     s.setName('My Patch')
     s.writeSlot(7)
     expect(s.slot).toBe(7)
     expect(s.dirty).toBe(false)
 
-    const s2 = new Store(makeFactory())
+    const s2 = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s2.slotNames()[7]).toBe('My Patch')
     s2.loadSlot(7)
     expect(s2.program.name).toBe('My Patch')
@@ -200,19 +201,19 @@ describe('bank persistence', () => {
   })
 
   it('falls back to Init Program on corrupt slot entries', () => {
-    new Store(makeFactory()) // first run seeds
+    new Store({ ...XD_DEF, factoryPresets: makeFactory() }) // first run seeds
     mock.setItem('xd-web-bank-v1/0', '{definitely not json')
     mock.setItem('xd-web-bank-v1/1', '"just a string"')
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.program.name).toBe('Init Program') // slot 0 was corrupt
     s.loadSlot(1)
     expect(s.program.name).toBe('Init Program')
   })
 
   it('lazy-loads slots: startup reads only the current slot', () => {
-    new Store(makeFactory()) // seed pass
+    new Store({ ...XD_DEF, factoryPresets: makeFactory() }) // seed pass
     mock.gets.length = 0
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const slotReads = mock.gets.filter((k) => SLOT_KEY_RE.test(k))
     expect(slotReads).toEqual(['xd-web-bank-v1/0'])
     // slot names come from the cheap index, not per-slot deserialization
@@ -225,7 +226,7 @@ describe('bank persistence', () => {
   })
 
   it('writeSlot persists O(1): one slot entry + the names index', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const setCounts = new Map<string, number>()
     const origSet = mock.setItem.bind(mock)
     mock.setItem = (k: string, v: string) => {
@@ -240,7 +241,7 @@ describe('bank persistence', () => {
   })
 
   it('runs the dirty-flag lifecycle across loadSlot/writeSlot', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.dirty).toBe(false)
     s.setParam(P.CUTOFF, 999)
     expect(s.dirty).toBe(true)
@@ -257,7 +258,7 @@ describe('bank persistence', () => {
   })
 
   it('writeSlot returns false and stays dirty when the storage write fails', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.CUTOFF, 222)
     s.setName('No Room')
     expect(s.dirty).toBe(true)
@@ -273,14 +274,14 @@ describe('bank persistence', () => {
   })
 
   it('writeSlot returns true when persistence succeeds', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.CUTOFF, 321)
     expect(s.writeSlot(9)).toBe(true)
     expect(s.dirty).toBe(false)
   })
 
   it('edits do not leak into the bank until writeSlot', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setParam(P.CUTOFF, 50)
     s.loadSlot(1)
     s.loadSlot(0)
@@ -292,14 +293,14 @@ describe('bank persistence', () => {
 
 describe('program load / init', () => {
   it('connect immediately syncs the sink with a loadProgram', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     expect(msgs.length).toBe(1)
     expect(msgs[0].t).toBe('loadProgram')
   })
 
   it('loadSlot sends loadProgram and notifies params with source "load"', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     const sources = new Set<string>()
     let progEvents = 0
@@ -316,7 +317,7 @@ describe('program load / init', () => {
   })
 
   it('initCurrent resets to Init Program, marks dirty, sends loadProgram', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     s.initCurrent()
     expect(s.program.name).toBe('Init Program')
@@ -326,7 +327,7 @@ describe('program load / init', () => {
   })
 
   it('loadProgramData installs external program data', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     const p = initProgram('Imported')
     p.params[P.RESONANCE] = 777
@@ -345,7 +346,7 @@ describe('program load / init', () => {
 
 describe('sequencer editing', () => {
   it('coalesces seq mutations into one sink message per microtask', async () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const msgs = capture(s)
     let seqEvents = 0
     s.onSeq(() => seqEvents++)
@@ -367,7 +368,7 @@ describe('sequencer editing', () => {
   })
 
   it('clamps setSeqField values', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setSeqField('bpm', 500)
     expect(s.program.seq.bpm).toBe(300)
     s.setSeqField('bpm', 3)
@@ -389,7 +390,7 @@ describe('sequencer editing', () => {
   })
 
   it('setStep caps notes, fills default vels/gates; clearStep empties', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const notes = Array.from({ length: 12 }, (_, i) => 60 + i)
     s.setStep(3, notes, [200], [])
     const st = s.program.seq.steps[3]
@@ -403,7 +404,7 @@ describe('sequencer editing', () => {
   })
 
   it('toggleStep only mutes/unmutes steps that have notes', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.toggleStep(0) // empty step: no-op
     expect(s.program.seq.steps[0].on).toBe(false)
     s.setStep(0, [60], [100], [54])
@@ -416,7 +417,7 @@ describe('sequencer editing', () => {
   })
 
   it('toggleActiveStep flips the skip mask; clearSequence keeps settings', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.toggleActiveStep(5)
     expect(s.program.seq.activeSteps[5]).toBe(false)
     s.setSeqField('bpm', 99)
@@ -437,7 +438,7 @@ describe('sequencer editing', () => {
 
 describe('step recording', () => {
   it('collects held keys and writes the chord when all are released', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setRecMode('step')
     expect(s.recMode).toBe('step')
     expect(s.stepRecCursor).toBe(0)
@@ -457,7 +458,7 @@ describe('step recording', () => {
   })
 
   it('recRest with no keys writes a rest and advances', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setStep(0, [55], [100], [54]) // pre-existing content gets cleared
     s.setRecMode('step')
     s.recRest()
@@ -468,7 +469,7 @@ describe('step recording', () => {
   })
 
   it('recRest while keys held writes a TIE and continues the note', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setRecMode('step')
     s.recNoteOn(55, 80)
     s.recRest() // tie
@@ -486,7 +487,7 @@ describe('step recording', () => {
   })
 
   it('exits rec mode when the cursor reaches stepLength', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setSeqField('stepLength', 2)
     s.setRecMode('step')
     let recEvents = 0
@@ -503,7 +504,7 @@ describe('step recording', () => {
   })
 
   it('jumpStepRec moves the cursor (clamped to stepLength)', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.jumpStepRec(5) // not recording: no-op
     expect(s.stepRecCursor).toBe(-1)
     s.setRecMode('step')
@@ -519,7 +520,7 @@ describe('step recording', () => {
   })
 
   it('caps a collected chord at NOTES_PER_STEP', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setRecMode('step')
     for (let i = 0; i < 10; i++) s.recNoteOn(40 + i, 100)
     for (let i = 0; i < 10; i++) s.recNoteOff(40 + i)
@@ -528,7 +529,7 @@ describe('step recording', () => {
   })
 
   it('starting playback cancels step rec', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setRecMode('step')
     s.setPlaying(true)
     expect(s.recMode).toBe('off')
@@ -542,7 +543,7 @@ describe('step recording', () => {
 
 describe('realtime recording', () => {
   function playingStore(): Store {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setPlaying(true)
     s.setRecMode('realtime')
     s.setPlayhead(3)
@@ -575,7 +576,7 @@ describe('realtime recording', () => {
   })
 
   it('does nothing when not playing or playhead invalid', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setRecMode('realtime')
     s.recNoteOn(60, 100) // not playing
     expect(s.program.seq.steps.every((st) => st.notes.length === 0)).toBe(true)
@@ -681,7 +682,7 @@ describe('realtime recording', () => {
   })
 
   it('reports playhead updates to listeners', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     const seen: number[] = []
     s.onPlayhead((i) => seen.push(i))
     s.setPlayhead(0)
@@ -696,7 +697,7 @@ describe('realtime recording', () => {
 
 describe('motion recording', () => {
   function playingStore(): Store {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setPlaying(true)
     s.setRecMode('realtime')
     s.setPlayhead(2)
@@ -768,7 +769,7 @@ describe('motion recording', () => {
   })
 
   it('returns false when not in realtime rec while playing', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.recKnob(P.CUTOFF, 500)).toBe(false) // rec off
     s.setRecMode('realtime')
     expect(s.recKnob(P.CUTOFF, 500)).toBe(false) // not playing
@@ -778,7 +779,7 @@ describe('motion recording', () => {
   })
 
   it('findMotionLane reuses an existing lane and allocates on demand', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     expect(s.findMotionLane(P.CUTOFF)).toBe(-1)
     const a = s.findMotionLane(P.CUTOFF, true)
     expect(a).toBe(0)
@@ -789,7 +790,7 @@ describe('motion recording', () => {
   })
 
   it('writeMotionStep pads/clamps points; clearMotionLane resets the lane', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setMotionLane(0, { paramId: P.CUTOFF, on: true, smooth: true })
     s.writeMotionStep(0, 4, [2000])
     expect(s.program.seq.motion[0].data[4]).toEqual([1023, 1023, 1023, 1023, 1023])
@@ -811,7 +812,7 @@ describe('motion recording', () => {
 
 describe('full program roundtrip through the bank', () => {
   it('persists sequence and motion data across a reload', () => {
-    const s = new Store(makeFactory())
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s.setStep(0, [60, 64, 67], [100, 90, 80], [54, 54, GATE_TIE])
     s.toggleActiveStep(7)
     s.setSeqField('bpm', 174)
@@ -820,7 +821,7 @@ describe('full program roundtrip through the bank', () => {
     s.setName('Seq Prog')
     s.writeSlot(33)
 
-    const s2 = new Store(makeFactory())
+    const s2 = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
     s2.loadSlot(33)
     const q = s2.program.seq
     expect(s2.program.name).toBe('Seq Prog')

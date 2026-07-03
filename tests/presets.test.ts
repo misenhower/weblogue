@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FACTORY_PRESETS } from '../src/state/presets'
+import { FACTORY_PRESETS } from '../src/synths/xd/presets'
 import { PARAMS, PARAM_COUNT, P } from '../src/synths/xd/params'
 import { MOTION_POINTS, NUM_STEPS, isTie } from '../src/shared/program'
 import { deserializeProgram, serializeProgram } from '../src/synths/xd/program'

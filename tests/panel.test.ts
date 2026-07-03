@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
-import { FACTORY_PRESETS } from '../src/state/presets'
+import { XD_DEF } from '../src/synths/xd/def'
 import { P } from '../src/synths/xd/params'
 import { Panel, type PanelOpts } from '../src/synths/xd/panel'
 
@@ -77,7 +77,7 @@ function pev(
 }
 
 function make(): { store: Store; panel: Panel; opts: PanelOpts } {
-  const store = new Store(FACTORY_PRESETS)
+  const store = new Store(XD_DEF)
   const opts: PanelOpts = {
     store,
     onNoteOn: vi.fn(),

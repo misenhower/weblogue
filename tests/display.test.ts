@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
-import { FACTORY_PRESETS } from '../src/state/presets'
+import { XD_DEF } from '../src/synths/xd/def'
 import { P, PARAMS, MOTION_PARAM_IDS, formatParam } from '../src/synths/xd/params'
 import { MOTION_GATE_TIME } from '../src/shared/paramdef'
 import { NUM_MOTION_LANES } from '../src/shared/program'
@@ -112,7 +112,7 @@ afterEach(() => {
 function make(withCtx = true): { store: Store; display: Display; texts: string[]; calls: string[] } {
   const m = makeCtx()
   nextCtx = withCtx ? m.ctx : null
-  const store = new Store(FACTORY_PRESETS)
+  const store = new Store(XD_DEF)
   const display = new Display({ store })
   document.body.appendChild(display.el)
   return { store, display, texts: m.texts, calls: m.calls }
@@ -499,12 +499,12 @@ describe('scope, MIDI indicator, program loads', () => {
     void display
     const first = renderTexts(texts)
     expect(first).toContain('001')
-    expect(first).toContain(FACTORY_PRESETS[0].name.toUpperCase())
+    expect(first).toContain(XD_DEF.factoryPresets[0].name.toUpperCase())
 
     store.loadSlot(2)
     const after = renderTexts(texts)
     expect(after).toContain('003')
-    expect(after).toContain(FACTORY_PRESETS[2].name.toUpperCase())
+    expect(after).toContain(XD_DEF.factoryPresets[2].name.toUpperCase())
   })
 
   it("program loads while the menu is open keep the page and don't spawn overlays", () => {

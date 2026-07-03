@@ -127,6 +127,7 @@ export class DebugPanel {
   private histW = 0
   private histFill = 0
   private shownVoice = 0
+  private modLabelsAll = false
   private readonly modLabels: HTMLElement[] = []
   private readonly lanes: Lane[] = []
   private loadFill!: HTMLElement
@@ -558,7 +559,7 @@ export class DebugPanel {
         // Voice-path cell: overlay all four voices, 4-channel-scope style.
         const datas = [0, 1, 2, 3].map((v) => m.vtaps![v * 6 + t.l])
         if (this.fftOn[i]) this.drawSpectrumVoices(i, datas)
-        else this.drawScopeVoices(i, datas, m.tapped)
+        else this.drawScopeVoices(i, datas)
         continue
       }
       const dataL = m.taps[t.l]
@@ -579,11 +580,15 @@ export class DebugPanel {
     }
     this.histW = (w + 1) % HISTORY
     if (this.histFill < HISTORY) this.histFill++
+    // In 4V mode the last-triggered mechanism is fully disabled: sparklines
+    // show all voices and no lane is highlighted as "tapped".
+    const allMode = this.voicesMode === 'all'
     const shown = Math.max(0, Math.min(this.modHist.length - 1, m.tapped))
-    if (shown !== this.shownVoice) {
+    if (shown !== this.shownVoice || allMode !== this.modLabelsAll) {
       this.shownVoice = shown
+      this.modLabelsAll = allMode
       for (let s = 0; s < MOD_SIGS.length; s++) {
-        this.modLabels[s].textContent = MOD_SIGS[s].label + ' · V' + (shown + 1)
+        this.modLabels[s].textContent = MOD_SIGS[s].label + (allMode ? '' : ' · V' + (shown + 1))
       }
     }
     for (let s = 0; s < MOD_SIGS.length; s++) this.drawSparkline(s)
@@ -594,7 +599,7 @@ export class DebugPanel {
       const v = m.voices[i]
       if (v.on) activeCount++
       lane.led.classList.toggle('is-on', v.on)
-      lane.row.classList.toggle('is-tapped', i === m.tapped)
+      lane.row.classList.toggle('is-tapped', i === m.tapped && !allMode)
       lane.note.textContent = v.on ? noteName(v.note) : '--'
       lane.freq.textContent = v.on ? fmtHzCents(v.hz, v.note) : '--'
       const amp = Math.max(0, Math.min(1, v.amp))
@@ -665,9 +670,9 @@ export class DebugPanel {
    * 4-channel-scope overlay for a voice-path cell. Each voice locks to its
    * OWN trigger (voices sit at unrelated pitches, so a shared trigger would
    * just scramble three of the four traces); silent voices are skipped.
-   * The tapped voice draws last, on top.
+   * Fixed V1..V4 draw order — 4V mode has no last-triggered priority.
    */
-  private drawScopeVoices(i: number, datas: Float32Array[], tapped: number): void {
+  private drawScopeVoices(i: number, datas: Float32Array[]): void {
     const ctx = this.ctxs[i]
     const cv = this.canvases[i]
     if (!ctx) return
@@ -684,11 +689,8 @@ export class DebugPanel {
     ctx.lineTo(w, h / 2)
     ctx.stroke()
     ctx.globalAlpha = 1
-    const order: number[] = []
-    for (let v = 0; v < datas.length; v++) if (v !== tapped) order.push(v)
-    order.push(Math.max(0, Math.min(datas.length - 1, tapped)))
     let drewAny = false
-    for (const v of order) {
+    for (let v = 0; v < datas.length; v++) {
       const data = datas[v]
       if (!data) continue
       let peak = 0
@@ -785,10 +787,31 @@ export class DebugPanel {
       ctx.stroke()
       ctx.globalAlpha = 1
     }
-    const hist = this.modHist[this.shownVoice][s]
     const n = this.histFill
     if (n < 2) return
-    ctx.strokeStyle = sig.color
+    if (this.voicesMode === 'all') {
+      // 4-voice overlay: voice colors, fixed draw order, no tapped priority.
+      for (let v = 0; v < this.modHist.length; v++) {
+        this.traceSparkline(ctx, this.modHist[v][s], n, w, h, sig.bipolar, VOICE_COLORS[v], 0.85)
+      }
+      this.drawVoiceLegend(ctx, w)
+    } else {
+      this.traceSparkline(ctx, this.modHist[this.shownVoice][s], n, w, h, sig.bipolar, sig.color, 1)
+    }
+  }
+
+  private traceSparkline(
+    ctx: CanvasRenderingContext2D,
+    hist: Float32Array,
+    n: number,
+    w: number,
+    h: number,
+    bipolar: boolean,
+    color: string,
+    alpha: number,
+  ): void {
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha
     ctx.lineWidth = 1.3
     ctx.beginPath()
     for (let k = 0; k < n; k++) {
@@ -797,13 +820,14 @@ export class DebugPanel {
       let v = hist[idx]
       if (!Number.isFinite(v)) v = 0
       const x = w - 1 - ((n - 1 - k) / (HISTORY - 1)) * w
-      const y = sig.bipolar
+      const y = bipolar
         ? h / 2 - Math.max(-1, Math.min(1, v)) * (h / 2 - 2)
         : h - 2 - Math.max(0, Math.min(1, v)) * (h - 4)
       if (k === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     }
     ctx.stroke()
+    ctx.globalAlpha = 1
   }
 
   private drawScope(i: number, dataL: Float32Array, dataR?: Float32Array): void {

@@ -1332,25 +1332,30 @@ export class Engine {
       outL[s] = sum
       outR[s] = sum
       if (this.dbgOn) {
+        // Idle voices write zeros: their tick() is skipped, so the tap fields
+        // would otherwise freeze at the last computed sample and draw as a
+        // flat line at an arbitrary height.
         const tv = vs[this.dbgVoice]
+        const tOn = tv.active
         const w = this.dbgW
-        this.dbgRings[0][w] = tv.tapV1
-        this.dbgRings[1][w] = tv.tapV2
-        this.dbgRings[2][w] = tv.tapM
-        this.dbgRings[3][w] = tv.tapMix
-        this.dbgRings[4][w] = tv.tapFilt
-        this.dbgRings[5][w] = tv.tapVca
+        this.dbgRings[0][w] = tOn ? tv.tapV1 : 0
+        this.dbgRings[1][w] = tOn ? tv.tapV2 : 0
+        this.dbgRings[2][w] = tOn ? tv.tapM : 0
+        this.dbgRings[3][w] = tOn ? tv.tapMix : 0
+        this.dbgRings[4][w] = tOn ? tv.tapFilt : 0
+        this.dbgRings[5][w] = tOn ? tv.tapVca : 0
         if (this.dbgAll) {
           const vr = this.dbgVRings
           for (let v = 0; v < NV; v++) {
             const b = v * 6
             const vv = vs[v]
-            vr[b][w] = vv.tapV1
-            vr[b + 1][w] = vv.tapV2
-            vr[b + 2][w] = vv.tapM
-            vr[b + 3][w] = vv.tapMix
-            vr[b + 4][w] = vv.tapFilt
-            vr[b + 5][w] = vv.tapVca
+            const on = vv.active
+            vr[b][w] = on ? vv.tapV1 : 0
+            vr[b + 1][w] = on ? vv.tapV2 : 0
+            vr[b + 2][w] = on ? vv.tapM : 0
+            vr[b + 3][w] = on ? vv.tapMix : 0
+            vr[b + 4][w] = on ? vv.tapFilt : 0
+            vr[b + 5][w] = on ? vv.tapVca : 0
           }
         }
         this.dbgW = (w + 1) % DBG_TAP_SIZE

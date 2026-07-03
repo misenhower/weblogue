@@ -62,6 +62,11 @@ describe('engine SERVICE MODE taps', () => {
     expect(Math.sqrt(diff / DBG_TAP_SIZE)).toBeGreaterThan(0.01)
     e.noteOff(48)
     e.noteOff(72)
+    render(e, 0.5) // release tails die -> voices idle
+    e.copyDebugVoiceTaps(v)
+    // Idle voices write zeros, not frozen last samples (no phantom flat lines).
+    expect(rms(v[0])).toBeLessThan(1e-6)
+    expect(rms(v[6])).toBeLessThan(1e-6)
     e.setDebugAll(false)
     e.setDebug(false)
   })
@@ -312,6 +317,16 @@ describe('DebugPanel', () => {
       return a
     })
     expect(() => p.update(m)).not.toThrow()
+    // 4V disables the last-triggered mechanism: no lane highlight, plain labels.
+    expect(p.el.querySelectorAll('.xd-svc-lane.is-tapped').length).toBe(0)
+    const labels = [...p.el.querySelectorAll('.xd-svc-mod .xd-svc-label')].map((n) => n.textContent)
+    expect(labels).toEqual(['AMP EG', 'MOD EG', 'LFO'])
+    // back to 1V: highlight and voice suffix return
+    const btn1v = btns.find((b) => b.textContent === '1V')!
+    btn1v.click()
+    p.update(fakeMsg())
+    expect(p.el.querySelectorAll('.xd-svc-lane.is-tapped').length).toBe(1)
+    expect(p.el.querySelector('.xd-svc-mod .xd-svc-label')!.textContent).toBe('AMP EG · V2')
     localStorage.removeItem('xd-svc-voices')
   })
 

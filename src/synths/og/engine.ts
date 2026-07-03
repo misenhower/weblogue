@@ -861,17 +861,7 @@ export class Engine {
     v.setVoiceGain(this.curMode === VM_SIDECHAIN ? this.duck[i] * gain : gain)
     if (this.curMode === VM_SIDECHAIN) this.duck[i] = 1 // new strike plays full
     if (glide && !v.active && this.lastStartHz > 0) v.setGlideStart(this.lastStartHz)
-    let syncP = -1
-    if (this.params[P.LFO_VOICE_SYNC] >= 0.5) {
-      for (let k = 0; k < NV; k++) {
-        if (k !== i && this.voices[k].active) {
-          syncP = this.voices[k].lfoPhase
-          break
-        }
-      }
-    }
     v.noteOn(soundNote, hz, vel, retrig, glide)
-    if (syncP >= 0) v.setLfoPhase(syncP)
     this.bank.started(i, key, soundNote, stacked)
     this.lastStartHz = hz
   }
@@ -939,6 +929,15 @@ export class Engine {
     this.bank.drainPend(this.pendCb)
     if (this.eCount > 0) this.fireEchoes(frames)
     this.tickDucks(frames)
+
+    // LFO Voice Sync: "phase shared across voices" (og-spec §8) — follow
+    // voice 0's free-running phase at block rate, so per-voice EG-MOD=RATE
+    // sweeps can't scatter a synced chord. (Voice 0 always ticks, idle or
+    // active, so its phase is the shared clock.)
+    if (this.params[P.LFO_VOICE_SYNC] >= 0.5) {
+      const ph = this.voices[0].lfoPhase
+      for (let i = 1; i < NV; i++) this.voices[i].setLfoPhase(ph)
+    }
 
     // Sequencer/arp first: their hooks fire notes/motion into the engine.
     this.stepSeq.process(frames)

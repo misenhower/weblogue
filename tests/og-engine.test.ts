@@ -241,3 +241,48 @@ describe('OG modulation', () => {
     expect(spectralMotion(900)).toBeGreaterThan(spectralMotion(512) * 1.5)
   })
 })
+
+describe('OG LFO rate + voice sync', () => {
+  /** Max |lfo(v0) - lfo(v1)| sampled at block boundaries over `seconds`. */
+  function maxLfoDiff(e: Engine, seconds: number): number {
+    let worst = 0
+    const l = new Float32Array(128)
+    const r = new Float32Array(128)
+    const blocks = Math.floor((seconds * SR) / 128)
+    for (let b = 0; b < blocks; b++) {
+      e.process(l, r, 128)
+      const d = Math.abs(e.debugVoiceInfo(0).lfo - e.debugVoiceInfo(1).lfo)
+      if (d > worst) worst = d
+    }
+    return worst
+  }
+
+  it('RATE knob changes reach idle voices immediately (phases stay locked)', () => {
+    // Regression: setLfoFreq used to defer to tick(), so idle voices kept the
+    // old rate until their next note and voice phases scattered permanently.
+    const e = makeEngine()
+    e.setDebug(true)
+    render(e, 0.2) // all idle, free-running in phase at the default rate
+    e.setParam(P.LFO_RATE, 950) // big rate jump while idle
+    e.noteOn(60, 100) // voice 0 becomes active; voices 1-3 stay idle
+    const worst = maxLfoDiff(e, 0.6)
+    expect(worst).toBeLessThan(0.05) // same rate + same phase on all voices
+  })
+
+  it('LFO Voice Sync holds a chord together under per-voice EG-MOD=RATE', () => {
+    function run(sync: 0 | 1): number {
+      const e = makeEngine()
+      e.setDebug(true)
+      e.setParam(P.LFO_VOICE_SYNC, sync)
+      e.setParam(P.LFO_EG_MOD, 1) // RATE: each voice's EG sweeps its own LFO
+      e.setParam(P.EG_ATTACK, 0)
+      e.setParam(P.EG_SUSTAIN, 1023) // hold the sweep at full
+      e.noteOn(60, 100)
+      render(e, 0.3) // voice 0 sweeps fast; the others free-run at base rate
+      e.noteOn(64, 100) // voice 1 starts from a wildly different phase...
+      return maxLfoDiff(e, 0.4)
+    }
+    expect(run(1)).toBeLessThan(0.2) // ...but voice sync re-shares the phase
+    expect(run(0)).toBeGreaterThan(0.3) // independent LFOs keep their offset
+  })
+})

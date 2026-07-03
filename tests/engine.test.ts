@@ -443,3 +443,34 @@ describe('sequencer roundtrip', () => {
     expect(e.effectiveParam(pid)).toBe(rawKnob)
   })
 })
+
+describe('LFO voice sync (continuous phase share)', () => {
+  it('key-synced staggered notes stay phase-locked when Voice Sync is on', () => {
+    function maxDiff(sync: 0 | 1): number {
+      const e = new Engine(48000)
+      e.loadProgram(initProgram())
+      e.setDebug(true)
+      e.setParam(P.LFO_KEY_SYNC, 1) // per-note phase resets = the desync source
+      e.setParam(P.LFO_VOICE_SYNC, sync)
+      const l = new Float32Array(128)
+      const r = new Float32Array(128)
+      const run = (blocks: number, measure: boolean): number => {
+        let worst = 0
+        for (let b = 0; b < blocks; b++) {
+          e.process(l, r, 128)
+          if (measure) {
+            const d = Math.abs(e.debugVoiceInfo(0).lfo - e.debugVoiceInfo(1).lfo)
+            if (d > worst) worst = d
+          }
+        }
+        return worst
+      }
+      e.noteOn(60, 100)
+      run(60, false) // ~0.16 s: voice 0's LFO advances past the reset phase
+      e.noteOn(64, 100) // key sync resets voice 1's phase to 0
+      return run(150, true)
+    }
+    expect(maxDiff(1)).toBeLessThan(0.2)
+    expect(maxDiff(0)).toBeGreaterThan(0.3)
+  })
+})

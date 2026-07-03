@@ -949,18 +949,7 @@ export class Engine {
     v.setDetuneCents(det)
     v.setVoiceGain(gain)
     if (glide && !v.active && this.lastStartHz > 0) v.setGlideStart(this.lastStartHz)
-    // LFO voice sync: copy phase from the lowest-indexed active voice.
-    let syncP = -1
-    if (this.params[P.LFO_VOICE_SYNC] >= 0.5) {
-      for (let k = 0; k < NV; k++) {
-        if (k !== i && this.voices[k].active) {
-          syncP = this.voices[k].lfoPhase
-          break
-        }
-      }
-    }
     v.noteOn(semis, hz, vel, retrig, glide)
-    if (syncP >= 0) v.setLfoPhase(syncP)
     this.bank.started(i, key, soundNote, stacked)
     this.lastStartHz = hz
   }
@@ -1037,6 +1026,14 @@ export class Engine {
     // faded the old note (live steals arrive between blocks, before the ramp
     // has run — restarting immediately would skip the fade and click).
     this.bank.drainPend(this.pendCb)
+
+    // LFO Voice Sync: "phase shared across voices" (xd-spec §9) — follow
+    // voice 0's free-running phase at block rate. Skipped in 1-SHOT mode,
+    // where each voice's half-cycle freeze is the point.
+    if (this.params[P.LFO_VOICE_SYNC] >= 0.5 && Math.round(this.params[P.LFO_MODE]) !== 0) {
+      const ph = this.voices[0].lfoPhase
+      for (let i = 1; i < NV; i++) this.voices[i].setLfoPhase(ph)
+    }
 
     // Sequencer/arp first: their hooks fire noteOn/noteOff/motion into the
     // engine. The arp runs at the engine's transport bpm (same value the

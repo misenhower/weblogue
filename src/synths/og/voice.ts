@@ -333,10 +333,13 @@ export class Voice {
     this.lfo.setWave(w)
   }
 
-  /** Base LFO rate in Hz (engine maps knob / BPM sync). */
+  /** Base LFO rate in Hz (engine maps knob / BPM sync). Applied immediately
+   *  so idle, free-running voices track the RATE knob too (the EG-MOD=RATE
+   *  sweep re-derives from this base per-tick while the voice is active). */
   setLfoFreq(hz: number): void {
     this.lfoBaseHz = Number.isFinite(hz) && hz > 0 ? hz : 0
-    this.lastRateEg = NaN // force re-push on the next tick
+    this.lfo.setFreq(this.lfoBaseHz)
+    this.lastRateEg = NaN // force re-push on the next active tick
   }
 
   /** LFO INT 0..1 (unipolar on the OG; curves.lfoIntTo01). */
@@ -386,6 +389,12 @@ export class Voice {
    * the voice is silent (family behavior; see xd voice).
    */
   tickIdle(): void {
+    // An idle voice's EG sits at ~0: normalize an EG-MOD=RATE sweep back to
+    // the base rate so the free-running LFO doesn't freeze at a swept speed.
+    if (this.lastRateEg !== -1) {
+      this.lastRateEg = -1
+      this.lfo.setFreq(this.lfoBaseHz)
+    }
     const d1 = this.drift1.tick()
     const d2 = this.drift2.tick()
     const lv = this.lfo.tick()

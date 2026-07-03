@@ -72,6 +72,10 @@ These are deliberate choices, not oversights. Marked UNCONFIRMED in code where a
   notes.
 - **Realtime-rec gate capture** measures wall-clock hold time against the step duration and writes
   TIE chains across boundaries; hardware precision unknown but behavior matches its description.
+- **LFO Voice Sync** = continuous phase share: every process block, voices 1-3 adopt voice 0's
+  free-running LFO phase (both synths; the xd skips it in 1-SHOT mode where per-voice half-cycle
+  freezes are the point). The manuals only say "phase shared across voices"; a copy-at-note-start
+  approximation proved too weak once the OG's per-voice EG-MOD=RATE could sweep rates apart.
 - **EG retrigger**: envelopes restart from the *current level* (click-free); voice stealing uses a
   ~1.5 ms kill ramp with the restart pended until the ramp finishes (`pendFlag` in engine.process).
   The family's reported restart-from-zero quirk is approximated by steal-kill, not by hard resets.

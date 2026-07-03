@@ -30,6 +30,10 @@ const CELL_TAPS: ReadonlyArray<{ l: number; r?: number }> = [
   { l: 10, r: 11 },
 ]
 const R_COLOR = '#8fb8e0'
+/** Per-voice trace colors (4-channel-scope mode); V1 matches the mono green. */
+const VOICE_COLORS = ['#8fe0a0', '#8fb8e0', '#e0c98f', '#e08fa0'] as const
+/** Silent-trace cutoff: skip drawing voices with no signal to reduce clutter. */
+const SILENT_PEAK = 0.001
 /** Cell positions in the 796x306 diagram (see the wire paths below). */
 const CELLS = [
   { x: 8, y: 4 },
@@ -97,7 +101,12 @@ export class DebugPanel {
   private badgeRing!: HTMLElement
   private badgeXmod!: HTMLElement
 
+  /** 4-voice overlay mode; the app re-arms telemetry when this changes. */
+  onVoicesMode?: (all: boolean) => void
+
   /* two flow views sharing the same scope cells */
+  private voicesMode: 'tap' | 'all' = 'tap'
+  private voiceBtns!: { tap: HTMLButtonElement; all: HTMLButtonElement }
   private view: 'diagram' | 'compact' = 'diagram'
   private diagramEl!: HTMLElement
   private compactEl!: HTMLElement
@@ -147,6 +156,18 @@ export class DebugPanel {
       return b
     }
     this.viewBtns = { compact: mkView('compact', 'COMPACT'), diagram: mkView('diagram', 'DIAGRAM') }
+    const vseg = document.createElement('div')
+    vseg.className = 'xd-svc-seg'
+    vseg.title = 'voice scopes: tapped voice only, or all four overlaid'
+    const mkVoices = (m: 'tap' | 'all', label: string): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.className = 'xd-svc-seg-btn'
+      b.textContent = label
+      b.addEventListener('click', () => this.setVoicesMode(m))
+      vseg.appendChild(b)
+      return b
+    }
+    this.voiceBtns = { tap: mkVoices('tap', '1V'), all: mkVoices('all', '4V') }
     const close = document.createElement('button')
     close.className = 'xd-svc-close'
     close.textContent = '✕'
@@ -154,9 +175,16 @@ export class DebugPanel {
     close.addEventListener('click', () => this.onClose?.())
     const right = document.createElement('div')
     right.className = 'xd-svc-head-right'
-    right.append(seg, close)
+    right.append(vseg, seg, close)
     head.append(title, right)
     this.makeDraggable(head)
+    try {
+      if (localStorage.getItem('xd-svc-voices') === 'all') this.voicesMode = 'all'
+    } catch {
+      /* no storage */
+    }
+    this.voiceBtns.tap.classList.toggle('is-active', this.voicesMode === 'tap')
+    this.voiceBtns.all.classList.toggle('is-active', this.voicesMode === 'all')
 
     /* --- signal-flow block diagram -------------------------------------
      * Generators stack on the left and sum into MIX -> VCF; the FX chain
@@ -308,6 +336,7 @@ export class DebugPanel {
       const name = document.createElement('span')
       name.className = 'xd-svc-vname'
       name.textContent = 'V' + (i + 1)
+      name.style.color = VOICE_COLORS[i] // matches the 4V trace colors
       const note = document.createElement('span')
       note.className = 'xd-svc-note'
       note.textContent = '--'
@@ -355,6 +384,24 @@ export class DebugPanel {
 
     this.el.append(head, diagram, compact, modRow, lanes, health)
     this.applyView()
+  }
+
+  /** Switch the voice scopes between tapped-only and 4-voice overlay. */
+  setVoicesMode(m: 'tap' | 'all'): void {
+    if (m === this.voicesMode) return
+    this.voicesMode = m
+    try {
+      localStorage.setItem('xd-svc-voices', m)
+    } catch {
+      /* no storage */
+    }
+    this.voiceBtns.tap.classList.toggle('is-active', m === 'tap')
+    this.voiceBtns.all.classList.toggle('is-active', m === 'all')
+    this.onVoicesMode?.(m === 'all')
+  }
+
+  get voicesAll(): boolean {
+    return this.voicesMode === 'all'
   }
 
   /** Switch between the block diagram and the compact view. */
@@ -504,8 +551,16 @@ export class DebugPanel {
 
   /** Apply one telemetry frame. */
   update(m: DbgMsg): void {
+    const multi = this.voicesMode === 'all' && m.vtaps && m.vtaps.length >= 24
     for (let i = 0; i < CELL_TAPS.length; i++) {
       const t = CELL_TAPS[i]
+      if (multi && t.r === undefined) {
+        // Voice-path cell: overlay all four voices, 4-channel-scope style.
+        const datas = [0, 1, 2, 3].map((v) => m.vtaps![v * 6 + t.l])
+        if (this.fftOn[i]) this.drawSpectrumVoices(i, datas)
+        else this.drawScopeVoices(i, datas, m.tapped)
+        continue
+      }
       const dataL = m.taps[t.l]
       if (!dataL) continue
       const dataR = t.r !== undefined ? m.taps[t.r] : undefined
@@ -603,6 +658,96 @@ export class DebugPanel {
       else ctx.lineTo(px, py)
     }
     ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+
+  /**
+   * 4-channel-scope overlay for a voice-path cell. Each voice locks to its
+   * OWN trigger (voices sit at unrelated pitches, so a shared trigger would
+   * just scramble three of the four traces); silent voices are skipped.
+   * The tapped voice draws last, on top.
+   */
+  private drawScopeVoices(i: number, datas: Float32Array[], tapped: number): void {
+    const ctx = this.ctxs[i]
+    const cv = this.canvases[i]
+    if (!ctx) return
+    const dpr = window.devicePixelRatio || 1
+    const w = cv.width / dpr
+    const h = cv.height / dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    ctx.globalAlpha = 0.25
+    ctx.strokeStyle = this.fg
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, h / 2)
+    ctx.lineTo(w, h / 2)
+    ctx.stroke()
+    ctx.globalAlpha = 1
+    const order: number[] = []
+    for (let v = 0; v < datas.length; v++) if (v !== tapped) order.push(v)
+    order.push(Math.max(0, Math.min(datas.length - 1, tapped)))
+    let drewAny = false
+    for (const v of order) {
+      const data = datas[v]
+      if (!data) continue
+      let peak = 0
+      for (let s = 0; s < data.length; s++) {
+        const a = data[s] > -data[s] ? data[s] : -data[s]
+        if (a > peak) peak = a
+      }
+      if (peak < SILENT_PEAK) continue
+      const n = data.length
+      const win = n > 768 ? 512 : n - Math.floor(n / 3)
+      const half = Math.floor(win / 2)
+      let trig = Math.floor(n / 2)
+      for (let x = half + 1; x <= n - (win - half); x++) {
+        if (data[x - 1] <= 0 && data[x] > 0) {
+          trig = x
+          break
+        }
+      }
+      this.traceWave(ctx, data, trig, half, win, w, h, VOICE_COLORS[v], 0.85)
+      drewAny = true
+    }
+    if (drewAny) this.drawVoiceLegend(ctx, w)
+  }
+
+  private drawSpectrumVoices(i: number, datas: Float32Array[]): void {
+    const ctx = this.ctxs[i]
+    const cv = this.canvases[i]
+    if (!ctx) return
+    const dpr = window.devicePixelRatio || 1
+    const w = cv.width / dpr
+    const h = cv.height / dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    let drewAny = false
+    for (let v = 0; v < datas.length; v++) {
+      const data = datas[v]
+      if (!data) continue
+      let peak = 0
+      for (let s = 0; s < data.length; s++) {
+        const a = data[s] > -data[s] ? data[s] : -data[s]
+        if (a > peak) peak = a
+      }
+      if (peak < SILENT_PEAK) continue
+      this.traceSpectrum(ctx, data, w, h, VOICE_COLORS[v], 0.85)
+      drewAny = true
+    }
+    if (drewAny) this.drawVoiceLegend(ctx, w)
+  }
+
+  /** Corner legend for the 4-voice overlay: colored 1 2 3 4. */
+  private drawVoiceLegend(ctx: CanvasRenderingContext2D, w: number): void {
+    ctx.font = '700 7px monospace'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.globalAlpha = 0.9
+    for (let v = 0; v < 4; v++) {
+      ctx.fillStyle = VOICE_COLORS[v]
+      ctx.fillText(String(v + 1), w - 33 + v * 8, 3)
+    }
     ctx.globalAlpha = 1
   }
 

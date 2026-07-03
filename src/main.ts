@@ -150,6 +150,9 @@ function toggleDebug(on = !debugOpen): void {
     if (!debugPanel) {
       debugPanel = new DebugPanel({ store })
       debugPanel.onClose = () => toggleDebug(false)
+      debugPanel.onVoicesMode = (all) => {
+        if (debugOpen) send({ t: 'debug', on: true, all })
+      }
     }
     if (ctx) debugPanel.sampleRate = ctx.sampleRate
     app.appendChild(debugPanel.el)
@@ -158,7 +161,7 @@ function toggleDebug(on = !debugOpen): void {
     debugPanel.el.remove()
     svcChip.style.display = ''
   }
-  send({ t: 'debug', on })
+  send({ t: 'debug', on, all: debugPanel?.voicesAll ?? false })
 }
 
 window.addEventListener('keydown', (e) => {

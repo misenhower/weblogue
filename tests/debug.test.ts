@@ -43,6 +43,29 @@ describe('engine SERVICE MODE taps', () => {
     e.noteOff(60)
   })
 
+  it('4-voice taps record every voice separately in debugAll mode', () => {
+    const e = new Engine(SR)
+    e.setDebug(true)
+    e.setDebugAll(true)
+    e.noteOn(48, 100) // voice 0
+    e.noteOn(72, 100) // voice 1, two octaves up
+    render(e, 0.1)
+    const v = Array.from({ length: 24 }, () => new Float32Array(DBG_TAP_SIZE))
+    e.copyDebugVoiceTaps(v)
+    const rms = (a: Float32Array) => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length)
+    expect(rms(v[0])).toBeGreaterThan(0.001) // v0 vco1
+    expect(rms(v[6])).toBeGreaterThan(0.001) // v1 vco1
+    expect(rms(v[12])).toBeLessThan(1e-6) // v2 idle -> silent ring
+    // different pitches -> different waveform periods
+    let diff = 0
+    for (let i = 0; i < DBG_TAP_SIZE; i++) diff += (v[0][i] - v[6][i]) ** 2
+    expect(Math.sqrt(diff / DBG_TAP_SIZE)).toBeGreaterThan(0.01)
+    e.noteOff(48)
+    e.noteOff(72)
+    e.setDebugAll(false)
+    e.setDebug(false)
+  })
+
   it('stereo FX taps diverge with a ping-pong delay', () => {
     const e = new Engine(SR)
     e.setDebug(true)
@@ -255,7 +278,8 @@ describe('DebugPanel', () => {
     const compact = p.el.querySelector('.xd-svc-compact') as HTMLElement
     expect(compact.style.display).toBe('none')
     const btns = [...p.el.querySelectorAll('.xd-svc-seg-btn')] as HTMLButtonElement[]
-    btns[0].click() // COMPACT
+    const byLabel = (l: string): HTMLButtonElement => btns.find((b) => b.textContent === l)!
+    byLabel('COMPACT').click()
     expect(p.currentView).toBe('compact')
     expect(diagram.style.display).toBe('none')
     expect(compact.style.display).toBe('')
@@ -263,9 +287,32 @@ describe('DebugPanel', () => {
     expect(compact.querySelectorAll('.xd-svc-tap').length).toBe(6)
     expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(3)
     expect(() => p.update(fakeMsg())).not.toThrow()
-    btns[1].click() // DIAGRAM
+    byLabel('DIAGRAM').click()
     expect(diagram.querySelectorAll('.xd-svc-tap').length).toBe(9)
     expect(localStorage.getItem('xd-svc-view')).toBe('diagram')
+  })
+
+  it('1V/4V toggle fires onVoicesMode and persists', () => {
+    localStorage.removeItem('xd-svc-voices')
+    const p = new DebugPanel()
+    expect(p.voicesAll).toBe(false)
+    let last: boolean | null = null
+    p.onVoicesMode = (all) => (last = all)
+    const btns = [...p.el.querySelectorAll('.xd-svc-seg .xd-svc-seg-btn')] as HTMLButtonElement[]
+    const btn4v = btns.find((b) => b.textContent === '4V')!
+    btn4v.click()
+    expect(p.voicesAll).toBe(true)
+    expect(last).toBe(true)
+    expect(localStorage.getItem('xd-svc-voices')).toBe('all')
+    // 4-voice frame renders without throwing (two distinct voices)
+    const m = fakeMsg()
+    m.vtaps = Array.from({ length: 24 }, (_, k) => {
+      const a = new Float32Array(DBG_TAP_SIZE)
+      if (k < 12) for (let i = 0; i < a.length; i++) a[i] = Math.sin((i / a.length) * Math.PI * (4 + k))
+      return a
+    })
+    expect(() => p.update(m)).not.toThrow()
+    localStorage.removeItem('xd-svc-voices')
   })
 
   it('dragging the header repositions the drawer and persists', () => {

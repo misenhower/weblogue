@@ -203,6 +203,9 @@ export class Engine {
   // Rings 6-11: FX chain stages, stereo pairs (mod L/R, delay L/R, out L/R —
   // the signal is genuinely stereo from the mod effects onward).
   private readonly dbgRings = Array.from({ length: 12 }, () => new Float32Array(DBG_TAP_SIZE))
+  // 4-voice mode: per-voice rings, voice-major [v*6 + (vco1..vca)].
+  private dbgAll = false
+  private readonly dbgVRings = Array.from({ length: NV * 6 }, () => new Float32Array(DBG_TAP_SIZE))
   private dbgW = 0
   private dbgFxW = 0
 
@@ -1337,6 +1340,19 @@ export class Engine {
         this.dbgRings[3][w] = tv.tapMix
         this.dbgRings[4][w] = tv.tapFilt
         this.dbgRings[5][w] = tv.tapVca
+        if (this.dbgAll) {
+          const vr = this.dbgVRings
+          for (let v = 0; v < NV; v++) {
+            const b = v * 6
+            const vv = vs[v]
+            vr[b][w] = vv.tapV1
+            vr[b + 1][w] = vv.tapV2
+            vr[b + 2][w] = vv.tapM
+            vr[b + 3][w] = vv.tapMix
+            vr[b + 4][w] = vv.tapFilt
+            vr[b + 5][w] = vv.tapVca
+          }
+        }
         this.dbgW = (w + 1) % DBG_TAP_SIZE
       }
     }
@@ -1377,6 +1393,27 @@ export class Engine {
 
   get debugOn(): boolean {
     return this.dbgOn
+  }
+
+  /** 4-voice tap mode (SERVICE MODE '4V'): record every voice's stages. */
+  setDebugAll(all: boolean): void {
+    this.dbgAll = all
+  }
+
+  get debugAll(): boolean {
+    return this.dbgAll
+  }
+
+  /** Copy the 24 per-voice tap rings (voice-major) into dst[0..23]. */
+  copyDebugVoiceTaps(dst: Float32Array[]): void {
+    const w = this.dbgW
+    const tail = DBG_TAP_SIZE - w
+    for (let t = 0; t < this.dbgVRings.length && t < dst.length; t++) {
+      const ring = this.dbgVRings[t]
+      const d = dst[t]
+      d.set(ring.subarray(w), 0)
+      d.set(ring.subarray(0, w), tail)
+    }
   }
 
   get debugVoice(): number {

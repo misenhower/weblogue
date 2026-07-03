@@ -43,6 +43,7 @@ import {
   microTuneCents,
 } from './curves'
 import type { Program, SeqData } from '../../shared/program'
+import { VoiceBank, NoteStack } from '../../dsp/voicebank'
 import { StepSeq } from '../../dsp/stepseq'
 import { Arp } from '../../dsp/arp'
 import { Voice } from './voice'
@@ -100,7 +101,6 @@ const MODFX_SUB_PARAM = [
   P.MODFX_SUB_FLANGER, P.MODFX_SUB_USER,
 ]
 
-const STACK_CAP = 64
 
 /** Transparent soft limiter: identity below |0.7|, tanh knee, bounded at 1. */
 function softLimit(x: number): number {
@@ -136,35 +136,17 @@ export class Engine {
   private atOffset = 0
   private atGateOff = 0
 
-  // Voices + allocator bookkeeping.
+  // Voices + allocation mechanics (dsp/voicebank.ts) + gated-key model.
   private readonly voices: Voice[] = []
-  private readonly vKey = new Int32Array(NV).fill(-1) // external key identity
-  private readonly vNote = new Int32Array(NV) // sounding note (pre-tuning)
-  private readonly vGen = new Float64Array(NV)
-  private readonly vReleased = new Uint8Array(NV)
-  private readonly vSustained = new Uint8Array(NV)
-  private readonly vStacked = new Uint8Array(NV) // DUO stacked-voice marker
-  private gen = 0
-  // Pending restarts after a steal (applied at the next process block).
-  private readonly pendFlag = new Uint8Array(NV)
-  private readonly pendKey = new Int32Array(NV)
-  private readonly pendNote = new Int32Array(NV)
-  private readonly pendVel = new Int32Array(NV)
-  private readonly pendDet = new Float64Array(NV)
-  private readonly pendGain = new Float64Array(NV)
-  private readonly pendStk = new Uint8Array(NV)
-  private readonly pendGlide = new Uint8Array(NV)
-
-  // Gated-note stack (all modes): legato detection + mono last-note priority.
-  private readonly stackNote = new Int32Array(STACK_CAP)
-  private readonly stackVel = new Int32Array(STACK_CAP)
-  private stackCount = 0
+  private readonly bank: VoiceBank<Voice>
+  private readonly stack = new NoteStack()
   private curMonoNote = -1
-
-  private readonly physHeld = new Uint8Array(128)
-  /** UNISON/CHORD keys released while the damper is down (deferred). */
-  private readonly monoSustained = new Uint8Array(128)
   private sustainOn = false
+  /** Pended-restart callback (hoisted: no closure allocation in process()). */
+  private readonly pendCb = (
+    i: number, key: number, note: number, vel: number,
+    glide: boolean, det: number, gain: number, stacked: boolean,
+  ): void => this.startVoice(i, key, note, vel, true, glide, det, gain, stacked)
   private curMode = VM_POLY
   private glideSec = 0
   private lastStartHz = 0
@@ -190,9 +172,7 @@ export class Engine {
   private readonly gainCoef: number
   private peak = 0
 
-  // --- round-robin allocation state (hardware cycles voices) -------------
-  private rotor = 0
-  private pairRotor = 0
+  // --- CHORD-mode voice set (rotated via the bank's rotor) ----------------
   private readonly chordMap = new Int8Array(NV).fill(-1)
   private chordTones = 0
 
@@ -214,6 +194,7 @@ export class Engine {
     this.sr = sr
     this.gainCoef = 1 - Math.exp(-1 / (0.005 * sr))
     for (let i = 0; i < NV; i++) this.voices.push(new Voice(sr, i))
+    this.bank = new VoiceBank(this.voices)
     this.modfx = new ModFx(sr)
     this.delay = new DelayFx(sr)
     this.reverb = new ReverbFx(sr)
@@ -610,10 +591,10 @@ export class Engine {
         const m = Math.round(e)
         if (m !== this.curMode) {
           this.curMode = m
-          this.releaseAllVoices()
-          this.stackCount = 0
+          this.bank.releaseAll(this.sustainOn)
+          this.stack.clear()
           this.curMonoNote = -1
-          this.monoSustained.fill(0)
+          this.stack.clearMonoSustained()
         }
         this.syncArp()
         break
@@ -629,7 +610,7 @@ export class Engine {
           const pd = polyDuo(e)
           if (pd.duo) {
             for (let i = 0; i < NV; i++) {
-              if (this.vStacked[i] && vs[i].active) {
+              if (this.bank.isStacked(i) && vs[i].active) {
                 vs[i].setDetuneCents(pd.amount * DUO_DETUNE_CENTS)
                 vs[i].setVoiceGain(pd.amount)
               }
@@ -819,8 +800,8 @@ export class Engine {
 
   private retuneSounding(): void {
     for (let i = 0; i < NV; i++) {
-      if (this.voices[i].active && this.vKey[i] >= 0) {
-        const hz = this.noteHz(this.vNote[i])
+      if (this.voices[i].active && this.bank.keyOf(i) >= 0) {
+        const hz = this.noteHz(this.bank.noteOf(i))
         this.voices[i].setPitch(this.calcSemis, hz, false)
       }
     }
@@ -832,7 +813,7 @@ export class Engine {
     if (!Number.isFinite(note) || !Number.isFinite(vel)) return
     const n = Math.max(0, Math.min(127, Math.round(note)))
     const v = Math.max(1, Math.min(127, Math.round(vel)))
-    this.physHeld[n] = 1
+    this.stack.setHeld(n, true)
     if (this.curMode === VM_ARP) {
       this.arp.keyDown(n, v)
       return
@@ -843,7 +824,7 @@ export class Engine {
   noteOff(note: number): void {
     if (!Number.isFinite(note)) return
     const n = Math.max(0, Math.min(127, Math.round(note)))
-    this.physHeld[n] = 0
+    this.stack.setHeld(n, false)
     // Always release the arp key buffer: a key registered in ARP mode may be
     // let go after a voice-mode switch and would otherwise linger forever.
     this.arp.keyUp(n)
@@ -852,20 +833,11 @@ export class Engine {
   }
 
   allNotesOff(): void {
-    for (let i = 0; i < NV; i++) {
-      this.pendFlag[i] = 0
-      this.vSustained[i] = 0
-      if (this.voices[i].active && !this.vReleased[i]) this.gateOffVoice(i)
-    }
-    this.stackCount = 0
+    this.bank.hardReleaseAll()
+    this.stack.clear()
     this.curMonoNote = -1
-    this.monoSustained.fill(0)
-    for (let n = 0; n < 128; n++) {
-      if (this.physHeld[n]) {
-        this.physHeld[n] = 0
-        this.arp.keyUp(n)
-      }
-    }
+    this.stack.clearMonoSustained()
+    this.stack.clearHeld((n) => this.arp.keyUp(n))
     // Drop latched arp keys: momentary latch-off flush, then restore config.
     this.arp.setConfig({
       enabled: false,
@@ -881,25 +853,10 @@ export class Engine {
   sustain(on: boolean): void {
     this.sustainOn = on === true
     if (!this.sustainOn) {
-      // Mono modes: flush key releases deferred while the damper was down.
-      // The current note goes last so the legato fall-back never retriggers
-      // a note that is itself being released.
-      let cur = -1
-      for (let n = 0; n < 128; n++) {
-        if (this.monoSustained[n]) {
-          this.monoSustained[n] = 0
-          if (this.physHeld[n]) continue
-          if (n === this.curMonoNote) cur = n
-          else this.noteOffInternal(n, false)
-        }
-      }
-      if (cur >= 0) this.noteOffInternal(cur, false)
-      for (let i = 0; i < NV; i++) {
-        if (this.vSustained[i]) {
-          this.vSustained[i] = 0
-          if (!this.stackContains(this.vKey[i])) this.gateOffVoice(i)
-        }
-      }
+      // Mono modes: flush key releases deferred while the damper was down
+      // (current note last so the legato fall-back never retriggers it).
+      this.stack.flushMonoSustained(this.curMonoNote, (n) => this.noteOffInternal(n, false))
+      this.bank.flushSustained((key) => this.stack.contains(key))
     }
   }
 
@@ -916,13 +873,13 @@ export class Engine {
   }
 
   private noteOnInternal(note: number, vel: number, forcePoly: boolean): void {
-    if (this.monoSustained[note]) {
+    if (this.stack.isMonoSustained(note)) {
       // Re-press of a pedal-sustained key: drop the stale stack entry first.
-      this.monoSustained[note] = 0
-      this.stackRemove(note)
+      this.stack.setMonoSustained(note, false)
+      this.stack.remove(note)
     }
-    const legato = this.stackCount > 0
-    this.stackPush(note, vel)
+    const legato = this.stack.count > 0
+    this.stack.push(note, vel)
     const mode = forcePoly ? VM_POLY : this.curMode
     if (mode === VM_UNISON || mode === VM_CHORD) {
       this.monoStart(note, vel, legato)
@@ -940,33 +897,21 @@ export class Engine {
       if (this.sustainOn) {
         // Damper down: defer the release entirely (CC64 semantics) — the key
         // stays on the stack so the pitch does not fall back mid-pedal.
-        this.monoSustained[note] = 1
+        this.stack.setMonoSustained(note, true)
         return
       }
-      this.stackRemove(note)
-      if (this.stackCount === 0) {
-        this.releaseAllVoices()
+      this.stack.remove(note)
+      if (this.stack.count === 0) {
+        this.bank.releaseAll(this.sustainOn)
         this.curMonoNote = -1
       } else if (note === this.curMonoNote) {
         // Return to the previous held note (legato).
-        const top = this.stackCount - 1
-        this.monoStart(this.stackNote[top], this.stackVel[top], true)
+        this.monoStart(this.stack.topNote(), this.stack.topVel(), true)
       }
       return
     }
-    this.stackRemove(note)
-    for (let i = 0; i < NV; i++) {
-      if (this.vKey[i] === note && !this.vReleased[i]) {
-        if (this.pendFlag[i]) {
-          this.pendFlag[i] = 0 // key released before the stolen restart fired
-          this.vKey[i] = -1
-        } else if (this.sustainOn) {
-          this.vSustained[i] = 1
-        } else if (this.voices[i].active) {
-          this.gateOffVoice(i)
-        }
-      }
-    }
+    this.stack.remove(note)
+    this.bank.releaseKey(note, this.sustainOn)
   }
 
   /** UNISON / CHORD mono start (last-note priority, EG legato rules). */
@@ -987,9 +932,9 @@ export class Engine {
       // transition re-pitches the SAME voices so glide/EGs stay continuous.
       const reuse = !retrig && this.chordTones === tones && this.chordMap[0] >= 0
       if (!reuse) {
-        for (let t = 0; t < tones; t++) this.chordMap[t] = (this.rotor + t) % NV
+        const base = this.bank.takeRotor(tones)
+        for (let t = 0; t < tones; t++) this.chordMap[t] = (base + t) % NV
         for (let t = tones; t < NV; t++) this.chordMap[t] = -1
-        this.rotor = (this.rotor + tones) % NV
         this.chordTones = tones
       }
       for (let t = 0; t < tones; t++) {
@@ -998,129 +943,36 @@ export class Engine {
       for (let i = 0; i < NV; i++) {
         let used = false
         for (let t = 0; t < tones; t++) if (this.chordMap[t] === i) used = true
-        if (!used && this.voices[i].active && !this.vReleased[i]) this.gateOffVoice(i)
+        if (!used && this.voices[i].active && !this.bank.isReleased(i)) this.bank.gateOff(i)
       }
     }
   }
 
   private polyNoteOn(note: number, vel: number, legato: boolean): void {
     const glide = this.glideFor(legato)
-    const i = this.allocVoice()
+    const i = this.bank.alloc()
     if (i >= 0) {
       this.startVoice(i, note, note, vel, true, glide, 0, 1, false)
       return
     }
     // Steal the oldest: kill now, restart at the next block.
-    const s = this.oldestVoice()
-    this.stealVoice(s, note, note, vel, glide, 0, 1, false)
+    this.bank.steal(this.bank.oldest(), note, note, vel, glide, 0, 1, false)
   }
 
   private duoNoteOn(note: number, vel: number, legato: boolean, amount: number): void {
     const glide = this.glideFor(legato)
     const det = amount * DUO_DETUNE_CENTS
-    // Pairs (0,1) and (2,3): main + stacked voice; rotate between the pairs
-    // like the hardware rotates voices.
-    let pair = -1
-    for (let q = 0; q < 2; q++) {
-      const p = (this.pairRotor + q) % 2
-      const a = p * 2
-      if (!this.voices[a].active && !this.voices[a + 1].active && !this.pendFlag[a] && !this.pendFlag[a + 1]) {
-        pair = p
-        this.pairRotor = (p + 1) % 2
-        break
-      }
-    }
-    if (pair < 0) {
-      // Prefer a fully-released pair, else steal the oldest pair.
-      let bestGen = Infinity
-      let released = -1
-      let relGen = Infinity
-      for (let p = 0; p < 2; p++) {
-        const a = p * 2
-        const g = Math.max(this.vGen[a], this.vGen[a + 1])
-        const rel =
-          (this.vReleased[a] || !this.voices[a].active) &&
-          (this.vReleased[a + 1] || !this.voices[a + 1].active)
-        if (rel && g < relGen) {
-          relGen = g
-          released = p
-        }
-        if (g < bestGen) {
-          bestGen = g
-          pair = p
-        }
-      }
-      if (released >= 0) {
-        const a = released * 2
-        this.startVoice(a, note, note, vel, true, glide, 0, 1, false)
-        this.startVoice(a + 1, note, note, vel, true, glide, det, amount, true)
-        return
-      }
-      const a = pair * 2
-      this.stealVoice(a, note, note, vel, glide, 0, 1, false)
-      this.stealVoice(a + 1, note, note, vel, glide, det, amount, true)
+    // Pairs (0,1)/(2,3): main + stacked voice; the bank rotates pairs like
+    // the hardware rotates voices.
+    const { pair, kind } = this.bank.allocPair()
+    const a = pair * 2
+    if (kind === 'steal') {
+      this.bank.steal(a, note, note, vel, glide, 0, 1, false)
+      this.bank.steal(a + 1, note, note, vel, glide, det, amount, true)
       return
     }
-    const a = pair * 2
     this.startVoice(a, note, note, vel, true, glide, 0, 1, false)
     this.startVoice(a + 1, note, note, vel, true, glide, det, amount, true)
-  }
-
-  /** Idle voice, else oldest gate-released voice; -1 = must steal. */
-  private allocVoice(): number {
-    // Round-robin like the hardware: scan idle voices starting after the
-    // last allocation, so repeated presses cycle 1-2-3-4 and each previous
-    // press's release tail keeps ringing on its own voice.
-    for (let j = 0; j < NV; j++) {
-      const i = (this.rotor + j) % NV
-      if (!this.voices[i].active && !this.pendFlag[i]) {
-        this.rotor = (i + 1) % NV
-        return i
-      }
-    }
-    let best = -1
-    let bestGen = Infinity
-    for (let i = 0; i < NV; i++) {
-      if (this.vReleased[i] && !this.pendFlag[i] && this.vGen[i] < bestGen) {
-        bestGen = this.vGen[i]
-        best = i
-      }
-    }
-    if (best >= 0) this.rotor = (best + 1) % NV
-    return best
-  }
-
-  private oldestVoice(): number {
-    let best = 0
-    let bestGen = Infinity
-    for (let i = 0; i < NV; i++) {
-      if (this.vGen[i] < bestGen) {
-        bestGen = this.vGen[i]
-        best = i
-      }
-    }
-    return best
-  }
-
-  private stealVoice(
-    i: number, key: number, soundNote: number, vel: number,
-    glide: boolean, det: number, gain: number, stacked: boolean,
-  ): void {
-    this.voices[i].kill()
-    this.pendFlag[i] = 1
-    this.pendKey[i] = key
-    this.pendNote[i] = soundNote
-    this.pendVel[i] = vel
-    this.pendDet[i] = det
-    this.pendGain[i] = gain
-    this.pendStk[i] = stacked ? 1 : 0
-    this.pendGlide[i] = glide ? 1 : 0
-    this.vKey[i] = key
-    this.vNote[i] = soundNote
-    this.vGen[i] = ++this.gen
-    this.vReleased[i] = 0
-    this.vSustained[i] = 0
-    this.vStacked[i] = stacked ? 1 : 0
   }
 
   private startVoice(
@@ -1146,68 +998,14 @@ export class Engine {
     }
     v.noteOn(semis, hz, vel, retrig, glide)
     if (syncP >= 0) v.setLfoPhase(syncP)
-    this.vKey[i] = key
-    this.vNote[i] = soundNote
-    this.vGen[i] = ++this.gen
-    this.vReleased[i] = 0
-    this.vSustained[i] = 0
-    this.vStacked[i] = stacked ? 1 : 0
-    this.pendFlag[i] = 0
+    this.bank.started(i, key, soundNote, stacked)
     this.lastStartHz = hz
-  }
-
-  private gateOffVoice(i: number): void {
-    this.voices[i].noteOff()
-    this.vReleased[i] = 1
-  }
-
-  private releaseAllVoices(): void {
-    for (let i = 0; i < NV; i++) {
-      this.pendFlag[i] = 0
-      if (this.voices[i].active && !this.vReleased[i]) {
-        if (this.sustainOn) this.vSustained[i] = 1
-        else this.gateOffVoice(i)
-      }
-    }
   }
 
   private glideFor(legato: boolean): boolean {
     if (this.glideSec <= 0) return false
     // Portamento Mode: Auto = only when played legato, On = always.
     return this.params[P.PORTAMENTO_MODE] >= 0.5 || legato
-  }
-
-  /* ------------------------------------------------------- note stack ---- */
-
-  private stackPush(note: number, vel: number): void {
-    if (this.stackCount >= STACK_CAP) {
-      for (let k = 1; k < STACK_CAP; k++) {
-        this.stackNote[k - 1] = this.stackNote[k]
-        this.stackVel[k - 1] = this.stackVel[k]
-      }
-      this.stackCount = STACK_CAP - 1
-    }
-    this.stackNote[this.stackCount] = note
-    this.stackVel[this.stackCount] = vel
-    this.stackCount++
-  }
-
-  private stackRemove(note: number): void {
-    for (let k = this.stackCount - 1; k >= 0; k--) {
-      if (this.stackNote[k] === note) {
-        for (let j = k + 1; j < this.stackCount; j++) {
-          this.stackNote[j - 1] = this.stackNote[j]
-          this.stackVel[j - 1] = this.stackVel[j]
-        }
-        this.stackCount--
-        return
-      }
-    }
-  }
-
-  private stackContains(note: number): boolean {
-    for (let k = 0; k < this.stackCount; k++) if (this.stackNote[k] === note) return true
-    return false
   }
 
   /* -------------------------------------------------- transport / data --- */
@@ -1312,14 +1110,7 @@ export class Engine {
     // Stolen-voice restarts: fire only once the ~1.5 ms kill ramp has fully
     // faded the old note (live steals arrive between blocks, before the ramp
     // has run — restarting immediately would skip the fade and click).
-    for (let i = 0; i < NV; i++) {
-      if (this.pendFlag[i] && !this.voices[i].active) {
-        this.startVoice(
-          i, this.pendKey[i], this.pendNote[i], this.pendVel[i], true,
-          this.pendGlide[i] === 1, this.pendDet[i], this.pendGain[i], this.pendStk[i] === 1,
-        )
-      }
-    }
+    this.bank.drainPend(this.pendCb)
 
     // Sequencer/arp first: their hooks fire noteOn/noteOff/motion into the
     // engine. The arp runs at the engine's transport bpm (same value the
@@ -1495,27 +1286,11 @@ export class Engine {
   }
 
   activeVoiceCount(): number {
-    let c = 0
-    for (let i = 0; i < NV; i++) if (this.voices[i].active) c++
-    return c
+    return this.bank.activeCount()
   }
 
   /** Gated (non-released) note keys, deduped, for key/LED feedback. */
   collectActiveNotes(dst: number[]): number {
-    dst.length = 0
-    for (let i = 0; i < NV; i++) {
-      if (this.voices[i].active && !this.vReleased[i] && this.vKey[i] >= 0 && !this.vStacked[i]) {
-        const k = this.vKey[i]
-        let dup = false
-        for (let j = 0; j < dst.length; j++) {
-          if (dst[j] === k) {
-            dup = true
-            break
-          }
-        }
-        if (!dup) dst.push(k)
-      }
-    }
-    return dst.length
+    return this.bank.collectActiveNotes(dst)
   }
 }

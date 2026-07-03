@@ -311,6 +311,106 @@
 }
 
 /* ---------------------------------------------------------------- */
+/* horizontal bend slider (original minilogue pitch/mod bender)      */
+/* ---------------------------------------------------------------- */
+
+.xd-hslider {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 180px;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.xd-hslider:focus-visible {
+  outline: 1px solid var(--xd-legend-dim);
+  outline-offset: 2px;
+}
+
+.xd-hslider-track {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #08080a, #131316 60%, #0d0d10);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+  cursor: grab;
+}
+
+.xd-hslider.is-dragging .xd-hslider-track {
+  cursor: grabbing;
+}
+
+/* engraved center detent mark */
+.xd-hslider-track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.7) 0%,
+    rgba(0, 0, 0, 0.7) 50%,
+    rgba(255, 255, 255, 0.06) 50%
+  );
+}
+
+/* Dark metal cap, same material as the knobs. Positioned via inline left. */
+.xd-hslider-cap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border-radius: 4px;
+  background: linear-gradient(
+    180deg,
+    var(--xd-knob-hi, #3a3a40) 0%,
+    var(--xd-knob, #141416) 55%,
+    #060607 100%
+  );
+  border: 1px solid #000;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    inset 0 1px 1px rgba(255, 255, 255, 0.22),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.55);
+  pointer-events: none; /* the track owns the pointer; cap is chrome */
+}
+
+/* grip ridge, echoing the knob pointer line */
+.xd-hslider-cap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--xd-legend);
+  opacity: 0.85;
+}
+
+/* etched silkscreen label under the track */
+.xd-hslider-label {
+  color: var(--xd-legend-dim);
+  font-size: 8px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* ---------------------------------------------------------------- */
 /* LED behaviors: step-rec blink + WRITE flash + SHIFT hint          */
 /* ---------------------------------------------------------------- */
 

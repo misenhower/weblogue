@@ -231,6 +231,53 @@ describe('VoiceBank pair + rotor claiming', () => {
   })
 })
 
+describe('VoiceBank aux tag', () => {
+  it('defaults to 0 and is settable per voice', () => {
+    const { bank, voices } = makeBank()
+    for (let i = 0; i < 4; i++) expect(bank.auxOf(i)).toBe(0)
+    startNote(bank, voices, 60)
+    expect(bank.auxOf(0)).toBe(0)
+    bank.setAux(0, 1)
+    bank.setAux(2, 7)
+    expect(bank.auxOf(0)).toBe(1)
+    expect(bank.auxOf(1)).toBe(0)
+    expect(bank.auxOf(2)).toBe(7)
+  })
+
+  it('started() leaves the tag untouched (survives restarts)', () => {
+    const { bank, voices } = makeBank()
+    startNote(bank, voices, 60)
+    bank.setAux(0, 1)
+    bank.started(0, 72, 72, false) // re-gen the voice: tag persists
+    expect(bank.auxOf(0)).toBe(1)
+  })
+
+  it('steal commits the new tag immediately and drainPend carries it', () => {
+    const { bank, voices } = makeBank()
+    for (let k = 0; k < 4; k++) startNote(bank, voices, 60 + k)
+    bank.setAux(1, 9) // stale tag from the old note
+    bank.steal(1, 72, 72, 100, false, 0, 1, false, 1)
+    expect(bank.auxOf(1)).toBe(1) // identity flips with key/note
+    voices[1].stop() // kill ramp done
+    const fired: number[][] = []
+    bank.drainPend((i, _key, _note, _vel, _glide, _det, _gain, _stacked, aux) => {
+      fired.push([i, aux])
+      voices[i].start()
+      bank.started(i, 72, 72, false)
+    })
+    expect(fired).toEqual([[1, 1]])
+    expect(bank.auxOf(1)).toBe(1) // started() kept the steal's tag
+  })
+
+  it('steal without a tag resets it to the default 0', () => {
+    const { bank, voices } = makeBank()
+    for (let k = 0; k < 4; k++) startNote(bank, voices, 60 + k)
+    bank.setAux(2, 5)
+    bank.steal(2, 72, 72, 100, false, 0, 1, false)
+    expect(bank.auxOf(2)).toBe(0)
+  })
+})
+
 describe('NoteStack', () => {
   it('push/top/remove/count keep last-note priority order', () => {
     const s = new NoteStack()

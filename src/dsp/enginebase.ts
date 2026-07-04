@@ -44,7 +44,8 @@ export const DBG_TAP_SIZE = 1280
 /** Unison detune spread per voice index, x detune cents. */
 export const UNI_OFF = [-1, -1 / 3, 1 / 3, 1]
 
-/** Per-voice headroom into the mono sum (4 voices stay mostly linear). */
+/** Per-voice headroom into the mono sum (4 voices stay mostly linear).
+ *  Default for EngineBaseConfig.voiceMix (higher-polyphony synths shrink it). */
 const VOICE_MIX = 0.35
 
 /** PORTAMENTO BPM quantization grid, in beats. */
@@ -140,6 +141,8 @@ export interface EngineBaseConfig<V extends EngineVoice> {
   /** Arpeggiator wiring, if the synth has one (the monologue has none):
    *  `voiceMode` is the VOICE MODE value that routes live keys to the arp. */
   arp?: { voiceMode: number }
+  /** Per-voice headroom into the voice sum (default VOICE_MIX = 0.35). */
+  voiceMix?: number
 }
 
 export abstract class EngineBase<V extends EngineVoice> {
@@ -168,10 +171,12 @@ export abstract class EngineBase<V extends EngineVoice> {
   protected readonly stack = new NoteStack()
   protected curMonoNote = -1
   protected sustainOn = false
-  /** Pended-restart callback (hoisted: no closure allocation in process()). */
+  /** Pended-restart callback (hoisted: no closure allocation in process()).
+   *  The bank's aux tag rides along unused — startVoice overrides that need
+   *  it read bank.auxOf(i) (committed at steal time). */
   private readonly pendCb = (
     i: number, key: number, note: number, vel: number,
-    glide: boolean, det: number, gain: number, stacked: boolean,
+    glide: boolean, det: number, gain: number, stacked: boolean, _aux?: number,
   ): void => this.startVoice(i, key, note, vel, true, glide, det, gain, stacked)
   protected curMode: number
   protected glideSec = 0
@@ -187,10 +192,13 @@ export abstract class EngineBase<V extends EngineVoice> {
   protected bpm = 120
   protected swing = 0
 
-  // Output stage.
+  // Output stage (gainSm/gainCoef protected: sumVoices overrides advance the
+  // same smoother the default loop uses).
   protected gainT = 1
-  private gainSm = 1
-  private readonly gainCoef: number
+  protected gainSm = 1
+  protected readonly gainCoef: number
+  /** Per-voice headroom into the voice sum (EngineBaseConfig.voiceMix). */
+  protected readonly voiceMix: number
 
   // --- CHORD-mode voice set (rotated via the bank's rotor) ----------------
   private readonly chordMap: Int8Array
@@ -204,6 +212,7 @@ export abstract class EngineBase<V extends EngineVoice> {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
     this.sr = sr
     this.gainCoef = 1 - Math.exp(-1 / (0.005 * sr))
+    this.voiceMix = cfg.voiceMix ?? VOICE_MIX
     this.nv = cfg.numVoices
     this.paramTable = cfg.params
     this.ids = cfg.ids
@@ -648,22 +657,7 @@ export abstract class EngineBase<V extends EngineVoice> {
     this.stepSeq.process(frames)
     if (this.arp) this.arp.process(frames, this.bpm)
 
-    const vs = this.voices
-    const nv = this.nv
-    const gc = this.gainCoef
-    for (let s = 0; s < frames; s++) {
-      this.gainSm += gc * (this.gainT - this.gainSm)
-      let sum = 0
-      for (let i = 0; i < nv; i++) {
-        if (vs[i].active) sum += vs[i].tick()
-        else vs[i].tickIdle()
-      }
-      sum *= VOICE_MIX * this.gainSm
-      if (!Number.isFinite(sum)) sum = 0
-      outL[s] = sum
-      outR[s] = sum
-      if (this.taps.on) this.taps.writeVoiceSample(vs[this.dbgVoice], vs)
-    }
+    this.sumVoices(outL, outR, frames)
 
     this.processFx(outL, outR, frames)
 
@@ -677,6 +671,47 @@ export abstract class EngineBase<V extends EngineVoice> {
       outR[s] = softLimit(r)
     }
     if (this.taps.on) this.taps.writeFxTap(10, outL, outR, frames, true) // final output
+  }
+
+  /**
+   * The voice-sum stage: tick every voice for `frames` samples and write the
+   * mix into outL/outR (overwriting — outL/outR arrive dirty). The default is
+   * the family mono sum: every active voice accumulates equally, scaled by
+   * voiceMix and the smoothed master gain, written identically to L and R,
+   * with the per-sample SERVICE-MODE voice-tap write.
+   *
+   * Override contract (a stereo/multi-bus engine — the prologue — replaces
+   * the WHOLE loop; there is deliberately no per-voice virtual hook, so the
+   * shipped mono synths pay zero extra dispatch):
+   *   - every voice must tick exactly once per sample: vs[i].tick() when
+   *     active, vs[i].tickIdle() when not (idle ticks keep free-running LFO
+   *     phase honest for Voice Sync);
+   *   - advance the master-gain smoother per sample exactly as below
+   *     (this.gainSm += this.gainCoef * (this.gainT - this.gainSm)) and scale
+   *     each voice's contribution by this.voiceMix * this.gainSm — per-voice
+   *     gain/pan and any engine-owned bus-pair accumulation (per-timbre FX
+   *     sends) stack multiplicatively on top;
+   *   - guard non-finite sums to 0 before writing outL/outR;
+   *   - when this.taps.on, call this.taps.writeVoiceSample(vs[this.dbgVoice],
+   *     vs) once per sample after the voices ticked.
+   */
+  protected sumVoices(outL: Float32Array, outR: Float32Array, frames: number): void {
+    const vs = this.voices
+    const nv = this.nv
+    const gc = this.gainCoef
+    for (let s = 0; s < frames; s++) {
+      this.gainSm += gc * (this.gainT - this.gainSm)
+      let sum = 0
+      for (let i = 0; i < nv; i++) {
+        if (vs[i].active) sum += vs[i].tick()
+        else vs[i].tickIdle()
+      }
+      sum *= this.voiceMix * this.gainSm
+      if (!Number.isFinite(sum)) sum = 0
+      outL[s] = sum
+      outR[s] = sum
+      if (this.taps.on) this.taps.writeVoiceSample(vs[this.dbgVoice], vs)
+    }
   }
 
   /** Pre-voice work after pended restarts (og: echo queue + duck recovery). */

@@ -7,8 +7,9 @@ import type { SynthEntry } from './def'
 import { XD_ENTRY } from './xd/app'
 import { OG_ENTRY } from './og/app'
 import { MONO_ENTRY } from './mono/app'
+import { PROLOGUE8_ENTRY, PROLOGUE16_ENTRY } from './prologue/app'
 
-export const SYNTHS: readonly SynthEntry[] = [XD_ENTRY, OG_ENTRY, MONO_ENTRY]
+export const SYNTHS: readonly SynthEntry[] = [XD_ENTRY, OG_ENTRY, MONO_ENTRY, PROLOGUE8_ENTRY, PROLOGUE16_ENTRY]
 
 const LS_KEY = 'weblogue-synth'
 

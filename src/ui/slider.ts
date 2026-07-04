@@ -1,6 +1,8 @@
 /**
- * Horizontal pitch/mod slider — the original minilogue's bender, which sits
- * left of the keybed where the xd has its joystick. Value is -1..1, 0 = center.
+ * Pitch/mod slider — the original minilogue's horizontal bender (left of the
+ * keybed where the xd has its joystick) and, rotated vertical, the prologue's
+ * pitch-bend + mod wheels. Value is -1..1, 0 = center (or 0..1 with
+ * `unipolar`, 0 = released/bottom).
  *
  * Two modes, chosen at construction:
  *   { spring: true }  pitch-bend style — on release the cap springs back to 0
@@ -8,18 +10,28 @@
  *                     (same return pattern as joystick.ts)
  *   { spring: false } assignable-mod style — the cap stays where you leave it
  *
- * Interaction: pointer-capture drag, wheel, keyboard (arrows adjust, Home
- * centers) and double-click to center. setValue() is a silent resync (no
- * onChange) — e.g. to reflect incoming MIDI pitch bend.
+ * Orientation: 'horizontal' (default; right = +) or 'vertical' (up = +,
+ * unipolar bottom = 0). Unipolar models a mod wheel: value 0..1.
  *
- * Framework-free DOM/CSS; styles live in src/ui/panel.css (`.xd-hslider`).
+ * Interaction: pointer-capture drag, wheel, keyboard (arrows adjust, Home
+ * resets) and double-click to reset (0 in both models). setValue() is a
+ * silent resync (no onChange) — e.g. to reflect incoming MIDI pitch bend.
+ *
+ * Framework-free DOM/CSS; styles live in src/ui/panel.css (`.xd-hslider`,
+ * vertical variant `.xd-hslider--v`).
  */
 
 export interface SliderOptions {
   /** true = pitch-bend (spring-return to 0); false = mod (holds position). */
   spring: boolean;
+  /** Track direction (default 'horizontal'); 'vertical' reads up = +. */
+  orientation?: 'horizontal' | 'vertical';
+  /** 0..1 value model (mod wheel: bottom = 0); default bipolar -1..1. */
+  unipolar?: boolean;
   /** Overall width in logical px (default 180 via CSS). */
   width?: number;
+  /** Overall height in logical px (vertical variant; default 130 via CSS). */
+  height?: number;
   /** Etched label under the track (e.g. 'PITCH' / 'MOD'). */
   label?: string;
   onChange?: (v: number) => void;
@@ -50,6 +62,8 @@ export class Slider {
   private readonly track: HTMLElement;
   private readonly cap: HTMLElement;
   private readonly spring: boolean;
+  private readonly vertical: boolean;
+  private readonly unipolar: boolean;
   private readonly onChange: ((v: number) => void) | undefined;
 
   private value = 0;
@@ -65,18 +79,23 @@ export class Slider {
 
   constructor(opts: SliderOptions) {
     this.spring = opts.spring;
+    this.vertical = opts.orientation === 'vertical';
+    this.unipolar = opts.unipolar === true;
     this.onChange = opts.onChange;
 
     this.el = document.createElement('div');
-    this.el.className = 'xd-hslider';
+    this.el.className = this.vertical ? 'xd-hslider xd-hslider--v' : 'xd-hslider';
     this.el.tabIndex = 0;
     this.el.setAttribute('role', 'slider');
     this.el.setAttribute('aria-label', opts.label ?? 'Bend');
-    this.el.setAttribute('aria-orientation', 'horizontal');
-    this.el.setAttribute('aria-valuemin', '-1');
+    this.el.setAttribute('aria-orientation', this.vertical ? 'vertical' : 'horizontal');
+    this.el.setAttribute('aria-valuemin', this.unipolar ? '0' : '-1');
     this.el.setAttribute('aria-valuemax', '1');
     if (opts.width !== undefined && Number.isFinite(opts.width) && opts.width > 0) {
       this.el.style.width = `${opts.width}px`;
+    }
+    if (opts.height !== undefined && Number.isFinite(opts.height) && opts.height > 0) {
+      this.el.style.height = `${opts.height}px`;
     }
 
     this.track = document.createElement('div');
@@ -108,14 +127,21 @@ export class Slider {
     return this.value;
   }
 
-  /** Programmatic, silent resync (no onChange). Clamps to -1..1; NaN -> 0. */
+  /** Programmatic, silent resync (no onChange). Clamps to the value model
+   *  (-1..1, or 0..1 when unipolar); NaN -> 0. */
   setValue(v: number): void {
     this.cancelSpring();
-    this.value = clamp1(v);
+    this.value = this.clampV(v);
     this.render();
   }
 
   // ------------------------------------------------------------------ private
+
+  /** Model clamp: -1..1 bipolar, 0..1 unipolar; NaN -> 0. */
+  private clampV(v: number): number {
+    const c = clamp1(v);
+    return this.unipolar && c < 0 ? 0 : c;
+  }
 
   private emit(v: number): void {
     this.onChange?.(v);
@@ -124,7 +150,7 @@ export class Slider {
   /** Wheel / keyboard / dblclick path: fire onChange only when it changed. */
   private apply(v: number): void {
     // kill float noise from repeated 0.05 steps (e.g. 0.15000000000000002)
-    const c = Math.round(clamp1(v) * 1e9) / 1e9;
+    const c = Math.round(this.clampV(v) * 1e9) / 1e9;
     if (c === this.value) return;
     this.value = c;
     this.render();
@@ -138,11 +164,17 @@ export class Slider {
 
   private valueFromEvent(e: PointerEvent): number {
     const r = this.track.getBoundingClientRect();
-    const hw = r.width / 2;
-    let v = 0;
+    let d = 0;
     // Guard division for degenerate (0-size) rects — detached DOM / happy-dom.
-    if (hw > 0) v = (e.clientX - (r.left + hw)) / (hw * USABLE);
-    return clamp1(v);
+    if (this.vertical) {
+      const hh = r.height / 2;
+      if (hh > 0) d = -(e.clientY - (r.top + hh)) / (hh * USABLE); // up = +
+    } else {
+      const hw = r.width / 2;
+      if (hw > 0) d = (e.clientX - (r.left + hw)) / (hw * USABLE);
+    }
+    // Unipolar: full down-travel = 0, full up-travel = 1.
+    return this.clampV(this.unipolar ? (clamp1(d) + 1) / 2 : d);
   }
 
   private applyDrag(e: PointerEvent): void {
@@ -315,7 +347,13 @@ export class Slider {
   }
 
   private render(): void {
-    this.cap.style.left = `calc(50% + ${(this.value * RENDER_PCT).toFixed(3)}%)`;
+    // Cap deflection is always -1..1: unipolar maps 0..1 across the travel.
+    const d = this.unipolar ? this.value * 2 - 1 : this.value;
+    if (this.vertical) {
+      this.cap.style.top = `calc(50% - ${(d * RENDER_PCT).toFixed(3)}%)`; // up = +
+    } else {
+      this.cap.style.left = `calc(50% + ${(d * RENDER_PCT).toFixed(3)}%)`;
+    }
     this.el.setAttribute('aria-valuenow', String(Math.round(this.value * 1000) / 1000));
   }
 }

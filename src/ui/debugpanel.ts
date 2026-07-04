@@ -104,8 +104,9 @@ export interface DebugDef {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const R_COLOR = '#8fb8e0'
-/** Per-voice trace colors (multi-channel-scope mode), sliced to numVoices;
- *  V1 matches the mono green. 8 entries so an 8-voice def (prologue) fits. */
+/** Per-voice trace colors (multi-channel-scope mode), cycled over numVoices
+ *  (a 16-voice def — the prologue-16 — repeats the palette: V9 shares V1's
+ *  color, disambiguated by the legend digits); V1 matches the mono green. */
 const VOICE_COLORS = [
   '#8fe0a0', '#8fb8e0', '#e0c98f', '#e08fa0',
   '#b39fe0', '#8fdfe0', '#c8e08f', '#e0a08f',
@@ -235,7 +236,7 @@ export class DebugPanel {
     this.def = opts.def
     const def = this.def
     this.nv = Math.max(1, Math.round(def.numVoices))
-    this.voiceColors = VOICE_COLORS.slice(0, this.nv)
+    this.voiceColors = Array.from({ length: this.nv }, (_, i) => VOICE_COLORS[i % VOICE_COLORS.length])
     this.modHist = Array.from({ length: this.nv }, () => [
       new Float32Array(HISTORY),
       new Float32Array(HISTORY),
@@ -421,7 +422,8 @@ export class DebugPanel {
 
     /* --- voice lanes ---------------------------------------------------- */
     const lanes = document.createElement('div')
-    lanes.className = 'xd-svc-lanes'
+    // >8 voices: two lane columns so the drawer height stays reasonable.
+    lanes.className = 'xd-svc-lanes' + (this.nv > 8 ? ' xd-svc-lanes--2col' : '')
     for (let i = 0; i < this.nv; i++) {
       const row = document.createElement('div')
       row.className = 'xd-svc-lane'
@@ -843,15 +845,22 @@ export class DebugPanel {
     if (drewAny) this.drawVoiceLegend(ctx, w)
   }
 
-  /** Corner legend for the voice overlay: colored 1..n, dimmed when idle. */
+  /** Corner legend for the voice overlay: colored 1..n, dimmed when idle.
+   *  Wraps in right-aligned rows of 8 so 16-voice defs stay on-canvas
+   *  (rows past the first carry two-digit labels, so they space wider). */
   private drawVoiceLegend(ctx: CanvasRenderingContext2D, w: number): void {
     ctx.font = '700 7px monospace'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
+    const perRow = 8
     for (let v = 0; v < this.nv; v++) {
+      const row = (v / perRow) | 0
+      const col = v % perRow
+      const rowN = Math.min(perRow, this.nv - row * perRow)
+      const sp = row === 0 ? 8 : 11
       ctx.globalAlpha = this.voiceOn[v] ? 0.9 : 0.28
       ctx.fillStyle = this.voiceColors[v]
-      ctx.fillText(String(v + 1), w - (this.nv * 8 + 1) + v * 8, 3)
+      ctx.fillText(String(v + 1), w - (rowN * sp + 1) + col * sp, 3 + row * 8)
     }
     ctx.globalAlpha = 1
   }

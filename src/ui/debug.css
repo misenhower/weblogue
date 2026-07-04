@@ -209,6 +209,10 @@
   gap: 4px;
   margin-bottom: 10px;
 }
+/* >8-voice defs (prologue-16): two columns keep the drawer height sane */
+.xd-svc-lanes--2col {
+  grid-template-columns: 1fr 1fr;
+}
 .xd-svc-lane {
   display: flex;
   align-items: center;

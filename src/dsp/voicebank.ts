@@ -31,6 +31,7 @@ export class VoiceBank<V extends BankVoice> {
   private readonly vReleased: Uint8Array
   private readonly vSustained: Uint8Array
   private readonly vStacked: Uint8Array // stacked-voice marker (e.g. DUO)
+  private readonly vAux: Int32Array // engine-defined tag (e.g. prologue timbre)
   private gen = 0
   private rotor = 0
   private pairRotor = 0
@@ -44,6 +45,7 @@ export class VoiceBank<V extends BankVoice> {
   private readonly pendGain: Float64Array
   private readonly pendStk: Uint8Array
   private readonly pendGlide: Uint8Array
+  private readonly pendAux: Int32Array
 
   constructor(voices: readonly V[]) {
     this.voices = voices
@@ -55,6 +57,7 @@ export class VoiceBank<V extends BankVoice> {
     this.vReleased = new Uint8Array(nv)
     this.vSustained = new Uint8Array(nv)
     this.vStacked = new Uint8Array(nv)
+    this.vAux = new Int32Array(nv)
     this.pendFlag = new Uint8Array(nv)
     this.pendKey = new Int32Array(nv)
     this.pendNote = new Int32Array(nv)
@@ -63,6 +66,7 @@ export class VoiceBank<V extends BankVoice> {
     this.pendGain = new Float64Array(nv)
     this.pendStk = new Uint8Array(nv)
     this.pendGlide = new Uint8Array(nv)
+    this.pendAux = new Int32Array(nv)
   }
 
   get size(): number {
@@ -90,39 +94,98 @@ export class VoiceBank<V extends BankVoice> {
     return this.vStacked[i] === 1
   }
 
+  /** Engine-defined per-voice tag (e.g. prologue timbre 0=main/1=sub). */
+  auxOf(i: number): number {
+    return this.vAux[i]
+  }
+
+  setAux(i: number, v: number): void {
+    this.vAux[i] = v
+  }
+
   /** Idle voice via hardware-style round-robin, else oldest gate-released
    *  voice; -1 = all busy (caller must steal). */
   alloc(): number {
-    for (let j = 0; j < this.nv; j++) {
-      const i = (this.rotor + j) % this.nv
+    return this.allocLimit(this.nv)
+  }
+
+  /**
+   * alloc() bounded to voice indices < limit — for engines whose usable pool
+   * is smaller than the constructed bank (the prologue's replica-only VOICE
+   * CAP: the worklet always builds 16 voices, the 8-voice variant allocates
+   * from the first 8). Same policy: idle round-robin, else oldest released.
+   */
+  allocLimit(limit: number): number {
+    const n = limit < this.nv ? (limit < 1 ? 1 : limit | 0) : this.nv
+    for (let j = 0; j < n; j++) {
+      const i = (this.rotor + j) % n
       if (!this.voices[i].active && !this.pendFlag[i]) {
-        this.rotor = (i + 1) % this.nv
+        this.rotor = (i + 1) % n
         return i
       }
     }
     let best = -1
     let bestGen = Infinity
-    for (let i = 0; i < this.nv; i++) {
+    for (let i = 0; i < n; i++) {
       if (this.vReleased[i] && !this.pendFlag[i] && this.vGen[i] < bestGen) {
         bestGen = this.vGen[i]
         best = i
       }
     }
-    if (best >= 0) this.rotor = (best + 1) % this.nv
+    if (best >= 0) this.rotor = (best + 1) % n
     return best
   }
 
   /** Oldest voice by generation (steal target when alloc() fails). */
   oldest(): number {
-    let best = 0
+    return this.oldestLimit(this.nv)
+  }
+
+  /** Oldest voice by generation among indices < limit, optionally filtered
+   *  by aux tag (aux >= 0); -1 when no voice matches the filter. */
+  oldestLimit(limit: number, aux = -1): number {
+    const n = limit < this.nv ? (limit < 1 ? 1 : limit | 0) : this.nv
+    let best = -1
     let bestGen = Infinity
-    for (let i = 0; i < this.nv; i++) {
+    for (let i = 0; i < n; i++) {
+      if (aux >= 0 && this.vAux[i] !== aux) continue
       if (this.vGen[i] < bestGen) {
         bestGen = this.vGen[i]
         best = i
       }
     }
     return best
+  }
+
+  /** Oldest gate-released, non-pending voice among indices < limit (retake a
+   *  ringing tail without a steal kill), optionally aux-filtered; -1 = none. */
+  oldestReleasedLimit(limit: number, aux = -1): number {
+    const n = limit < this.nv ? (limit < 1 ? 1 : limit | 0) : this.nv
+    let best = -1
+    let bestGen = Infinity
+    for (let i = 0; i < n; i++) {
+      if (aux >= 0 && this.vAux[i] !== aux) continue
+      if (this.vReleased[i] && !this.pendFlag[i] && this.vGen[i] < bestGen) {
+        bestGen = this.vGen[i]
+        best = i
+      }
+    }
+    return best
+  }
+
+  /** Voice i is sounding or waiting on a pended (post-steal) restart —
+   *  i.e. it counts against an engine-level polyphony budget. */
+  inUse(i: number): boolean {
+    return this.voices[i].active || this.pendFlag[i] === 1
+  }
+
+  /** Cancel a pended (post-steal) restart: the stolen voice finishes its kill
+   *  ramp and stays silent (engine-level cap/flush paths). */
+  cancelPend(i: number): void {
+    if (this.pendFlag[i]) {
+      this.pendFlag[i] = 0
+      this.vKey[i] = -1
+    }
   }
 
   /** Claim `count` consecutive round-robin voice indices (chord-style voice
@@ -172,10 +235,11 @@ export class VoiceBank<V extends BankVoice> {
     return { pair: best, kind: 'steal' }
   }
 
-  /** Steal: kill the voice now, remember the restart for drainPend(). */
+  /** Steal: kill the voice now, remember the restart for drainPend().
+   *  `aux` is the new note's engine tag (kept through the pended restart). */
   steal(
     i: number, key: number, soundNote: number, vel: number,
-    glide: boolean, det: number, gain: number, stacked: boolean,
+    glide: boolean, det: number, gain: number, stacked: boolean, aux = 0,
   ): void {
     this.voices[i].kill()
     this.pendFlag[i] = 1
@@ -186,15 +250,18 @@ export class VoiceBank<V extends BankVoice> {
     this.pendGain[i] = gain
     this.pendStk[i] = stacked ? 1 : 0
     this.pendGlide[i] = glide ? 1 : 0
+    this.pendAux[i] = aux
     this.vKey[i] = key
     this.vNote[i] = soundNote
     this.vGen[i] = ++this.gen
     this.vReleased[i] = 0
     this.vSustained[i] = 0
     this.vStacked[i] = stacked ? 1 : 0
+    this.vAux[i] = aux
   }
 
-  /** Bookkeeping after the engine actually (re)starts voice i. */
+  /** Bookkeeping after the engine actually (re)starts voice i. The aux tag
+   *  is left untouched (set it via setAux, or through steal for restarts). */
   started(i: number, key: number, soundNote: number, stacked: boolean): void {
     this.vKey[i] = key
     this.vNote[i] = soundNote
@@ -208,16 +275,18 @@ export class VoiceBank<V extends BankVoice> {
   /**
    * Fire pended (post-steal) restarts whose kill ramp has finished. The
    * callback performs the synth-specific voice start and must end by calling
-   * started(i, ...) (which clears the pend flag).
+   * started(i, ...) (which clears the pend flag). `aux` is the tag the steal
+   * carried (already committed to auxOf(i)); callers may ignore it.
    */
   drainPend(
-    cb: (i: number, key: number, note: number, vel: number, glide: boolean, det: number, gain: number, stacked: boolean) => void,
+    cb: (i: number, key: number, note: number, vel: number, glide: boolean, det: number, gain: number, stacked: boolean, aux: number) => void,
   ): void {
     for (let i = 0; i < this.nv; i++) {
       if (this.pendFlag[i] && !this.voices[i].active) {
         cb(
           i, this.pendKey[i], this.pendNote[i], this.pendVel[i],
           this.pendGlide[i] === 1, this.pendDet[i], this.pendGain[i], this.pendStk[i] === 1,
+          this.pendAux[i],
         )
       }
     }
@@ -232,10 +301,12 @@ export class VoiceBank<V extends BankVoice> {
   /**
    * Generic poly key release: releases (or defers, damper down) every voice
    * holding `key`; a pended restart whose key is released before it fired is
-   * simply cancelled.
+   * simply cancelled. `aux` >= 0 restricts the release to voices carrying
+   * that tag (the prologue releases one timbre's voices at a time).
    */
-  releaseKey(key: number, sustain: boolean): void {
+  releaseKey(key: number, sustain: boolean, aux = -1): void {
     for (let i = 0; i < this.nv; i++) {
+      if (aux >= 0 && this.vAux[i] !== aux) continue
       if (this.vKey[i] === key && !this.vReleased[i]) {
         if (this.pendFlag[i]) {
           this.pendFlag[i] = 0 // key released before the stolen restart fired
@@ -249,9 +320,11 @@ export class VoiceBank<V extends BankVoice> {
     }
   }
 
-  /** Release all gated voices (deferring while the damper is down). */
-  releaseAll(sustain: boolean): void {
+  /** Release all gated voices (deferring while the damper is down).
+   *  `aux` >= 0 restricts the flush to voices carrying that tag. */
+  releaseAll(sustain: boolean, aux = -1): void {
     for (let i = 0; i < this.nv; i++) {
+      if (aux >= 0 && this.vAux[i] !== aux) continue
       this.pendFlag[i] = 0
       if (this.voices[i].active && !this.vReleased[i]) {
         if (sustain) this.vSustained[i] = 1
@@ -361,6 +434,17 @@ export class NoteStack {
 
   topVel(): number {
     return this._count > 0 ? this.stackVel[this._count - 1] : 0
+  }
+
+  /** Stack entry access (0 = oldest .. count-1 = newest) — engines with
+   *  filtered last-note priority (the prologue's per-timbre mono modes over
+   *  one shared stack) scan for their own top note. */
+  noteAt(k: number): number {
+    return k >= 0 && k < this._count ? this.stackNote[k] : -1
+  }
+
+  velAt(k: number): number {
+    return k >= 0 && k < this._count ? this.stackVel[k] : 0
   }
 
   clear(): void {

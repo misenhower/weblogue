@@ -26,4 +26,5 @@ export const MONO_DISPLAY_DEF: DisplayDef = {
   menuParams: PARAMS.filter((p) => p.kind === 'menu' && !MENU_EXCLUDED.has(p.id)),
   motionParamIds: MOTION_PARAM_IDS,
   motionParamLabel,
+  transport: 'seq',
 }

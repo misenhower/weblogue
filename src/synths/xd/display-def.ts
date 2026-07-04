@@ -18,5 +18,6 @@ export const XD_DISPLAY_DEF: DisplayDef = {
   menuParams: PARAMS.filter((p) => p.kind === 'menu'),
   motionParamIds: MOTION_PARAM_IDS,
   motionParamLabel,
+  transport: 'seq',
   voiceMode: { id: P.VOICE_MODE, labels: VOICE_SHORT },
 }

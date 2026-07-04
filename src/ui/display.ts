@@ -26,6 +26,13 @@ export interface DisplayDef {
   /** Motion-lane ASSIGN cycle (recordable param ids + virtual targets). */
   motionParamIds: readonly number[]
   motionParamLabel(id: number): string
+  /**
+   * Transport surface. 'seq' = the full step-sequencer menu (SEQ EDIT fields
+   * + motion-lane pages) and the REC status readouts. 'arp' = an arp-only
+   * synth (the prologue has no sequencer): the menu keeps just a TEMPO
+   * (seq.bpm) page and the REC affordances are hidden.
+   */
+  transport: 'seq' | 'arp'
   /** Status-line voice-mode readout (param id + short labels); optional. */
   voiceMode?: { id: number; labels: readonly string[] }
 }
@@ -104,11 +111,18 @@ export class Display {
   private bg = ''
 
   private menuParams: readonly ParamMeta[]
+  /** SEQ EDIT fields shown ('arp' transport: TEMPO/bpm only). */
+  private readonly seqFields: readonly SeqFieldDef[]
+  /** Motion-lane pages shown ('arp' transport: none). */
+  private readonly motionLanes: number
 
   constructor(opts: { store: Store; def: DisplayDef }) {
     this.store = opts.store
     this.def = opts.def
     this.menuParams = opts.def.menuParams
+    const arpOnly = opts.def.transport === 'arp'
+    this.seqFields = arpOnly ? SEQ_FIELDS.filter((f) => f.field === 'bpm') : SEQ_FIELDS
+    this.motionLanes = arpOnly ? 0 : NUM_MOTION_LANES
 
     /* ---- DOM ------------------------------------------------------ */
     this.el = document.createElement('div')
@@ -277,7 +291,7 @@ export class Display {
   /* ---------------------------------------------------------------- */
 
   private get totalPages(): number {
-    return this.menuParams.length + SEQ_FIELDS.length + NUM_MOTION_LANES
+    return this.menuParams.length + this.seqFields.length + this.motionLanes
   }
 
   private clampPages(): void {
@@ -291,11 +305,13 @@ export class Display {
   private pageAt(n: number): Page {
     const pc = this.menuParams.length
     if (n < pc) return { kind: 'prog', i: n, meta: this.menuParams[n] }
-    if (n < pc + SEQ_FIELDS.length) {
+    const sf = this.seqFields
+    if (n < pc + sf.length) {
       const i = n - pc
-      return { kind: 'seq', i, def: SEQ_FIELDS[i] }
+      return { kind: 'seq', i, def: sf[i] }
     }
-    const lane = Math.min(NUM_MOTION_LANES - 1, n - pc - SEQ_FIELDS.length)
+    // Unreachable with motionLanes = 0: clampPages keeps n < totalPages.
+    const lane = Math.min(NUM_MOTION_LANES - 1, n - pc - sf.length)
     return { kind: 'motion', i: n - pc, lane }
   }
 
@@ -588,12 +604,15 @@ export class Display {
       this.text(ctx, '▶PLAY', x, y, 10)
       x += 46
     }
-    const rec = store.recMode
-    if (rec === 'realtime') {
-      this.text(ctx, '●REC', x, y, 10)
-    } else if (rec === 'step' && this.blinkOn) {
-      const cur = store.stepRecCursor
-      this.text(ctx, '●REC' + (cur >= 0 ? ' S' + (cur + 1) : ''), x, y, 10)
+    // 'arp' transport: no sequencer, so no REC affordances on the display.
+    if (this.def.transport !== 'arp') {
+      const rec = store.recMode
+      if (rec === 'realtime') {
+        this.text(ctx, '●REC', x, y, 10)
+      } else if (rec === 'step' && this.blinkOn) {
+        const cur = store.stepRecCursor
+        this.text(ctx, '●REC' + (cur >= 0 ? ' S' + (cur + 1) : ''), x, y, 10)
+      }
     }
 
     /* MIDI dot, right end of the status line */
@@ -675,12 +694,13 @@ export class Display {
     this.clampPages()
     const p = this.pageAt(this.page)
     const pc = this.menuParams.length
-    const seqTotal = SEQ_FIELDS.length + NUM_MOTION_LANES
+    const seqTotal = this.seqFields.length + this.motionLanes
+    const arpOnly = this.def.transport === 'arp'
 
     /* inverse header strip */
     let header: string
     if (p.kind === 'prog') header = `PROG EDIT  ${p.i + 1}/${pc}`
-    else if (p.kind === 'seq') header = `SEQ EDIT  ${p.i + 1}/${seqTotal}`
+    else if (p.kind === 'seq') header = arpOnly ? 'TEMPO' : `SEQ EDIT  ${p.i + 1}/${seqTotal}`
     else header = `SEQ EDIT  ${p.i + 1}/${seqTotal}  MOTION ${p.lane + 1}`
     ctx.fillStyle = fg
     ctx.fillRect(0, 0, SCREEN_W, 16)

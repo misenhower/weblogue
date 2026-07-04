@@ -410,6 +410,55 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
 }
 
+/* vertical variant (prologue-style pitch/mod wheels): the long axis turns
+   upright, up = +; the cap rides the Y axis via inline `top` (left stays the
+   CSS-centered 50%). Label remains under the track. */
+.xd-hslider--v {
+  width: 34px;
+  height: 130px;
+}
+
+.xd-hslider--v .xd-hslider-track {
+  width: 14px;
+  flex: 1 1 auto;
+  height: auto;
+}
+
+/* engraved center detent mark, rotated */
+.xd-hslider--v .xd-hslider-track::before {
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  bottom: auto;
+  width: auto;
+  height: 2px;
+  margin-left: 0;
+  margin-top: -1px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.7) 0%,
+    rgba(0, 0, 0, 0.7) 50%,
+    rgba(255, 255, 255, 0.06) 50%
+  );
+}
+
+.xd-hslider--v .xd-hslider-cap {
+  width: 26px;
+  height: 22px;
+}
+
+/* grip ridge, rotated with the cap */
+.xd-hslider--v .xd-hslider-cap::after {
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  bottom: auto;
+  width: auto;
+  height: 2px;
+  margin-left: 0;
+  margin-top: -1px;
+}
+
 /* ---------------------------------------------------------------- */
 /* LED behaviors: step-rec blink + WRITE flash + SHIFT hint          */
 /* ---------------------------------------------------------------- */
@@ -695,5 +744,145 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  padding-bottom: 14px;
+}
+
+/* ==================================================================
+   Korg prologue panel — layout under the .prologue- prefix.
+   ONE definition, TWO variants (prologue-8 / prologue-16): the widths
+   (1550 / 1750) are set inline by the Panel per variant; everything
+   else is shared. Reuses the xd chrome (sections, legends, OLED wells,
+   LED anims, FX/multi readouts) from theme.css and the rules above.
+   ================================================================== */
+
+.prologue-panel-scale {
+  --prologue-scale: 1;
+  /* width set inline per variant (1550 / 1750) */
+  transform: scale(var(--prologue-scale));
+  transform-origin: top left;
+}
+
+.prologue-panel-root {
+  /* width set inline per variant (1550 / 1750) */
+  box-sizing: border-box;
+  padding: 16px 18px 18px;
+  border-radius: 8px;
+}
+
+.prologue-panel-root *,
+.prologue-panel-root *::before,
+.prologue-panel-root *::after {
+  box-sizing: border-box;
+}
+
+.prologue-row-a > .xd-section,
+.prologue-row-b > .xd-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+/* keep silkscreen labels compact so sections pack tight */
+.prologue-panel-root .xd-knob-label {
+  max-width: 68px;
+}
+
+.prologue-panel-root .xd-selector-pos {
+  font-size: 8px;
+}
+
+/* ---------------------------------------------------------------- */
+/* VOICE MODE (4 dedicated LED buttons in a 2x2 block + DEPTH)       */
+/* ---------------------------------------------------------------- */
+
+.prologue-vm-btns {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 4px 6px;
+  justify-content: center;
+  align-items: end;
+}
+
+.prologue-vm-btns .xd-ledbtn-label {
+  font-size: 7px;
+  max-width: 46px;
+}
+
+/* ---------------------------------------------------------------- */
+/* FILTER                                                            */
+/* ---------------------------------------------------------------- */
+
+.prologue-filter-row {
+  align-items: center;
+}
+
+.prologue-filter-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+/* the multi TYPE encoder is a small thumb wheel on hardware */
+.prologue-sec-multi .xd-encoder-svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* ---------------------------------------------------------------- */
+/* PROGRAM block (encoder + WRITE/EXIT/EDIT/SHIFT beside the OLED)   */
+/* ---------------------------------------------------------------- */
+
+.prologue-sec-prog {
+  min-width: 442px;
+  flex: 0 0 auto;
+}
+
+.prologue-prog-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 140px;
+}
+
+.prologue-prog-btns {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* subtle full-panel hint while SHIFT is active (xd rule, prologue prog) */
+.xd-shift-on .prologue-sec-prog .xd-section-title {
+  color: var(--xd-led-white);
+}
+
+/* ---------------------------------------------------------------- */
+/* L.F. COMP (16 only): GAIN + ON + the static GR meter face         */
+/* ---------------------------------------------------------------- */
+
+.prologue-lfcomp-meter {
+  width: 90px;
+  height: 40px;
+  background: var(--xd-oled);
+  border: 1px solid #000;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.9),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ---------------------------------------------------------------- */
+/* keybed row: wheels COLUMN (pitch + mod) left of the keys          */
+/* ---------------------------------------------------------------- */
+
+.prologue-wheels {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
   padding-bottom: 14px;
 }

@@ -54,6 +54,18 @@ into a synth-agnostic core and a per-synth definition. Rules and residue a maint
   voice-mode semantics (`modeNoteOn`/`modeNoteOff`/`monoStart`/`startVoice`) and per-synth hooks
   (`preProcess`, `onAllNotesOff`, `onTimingChanged`, `lfoVoiceSyncOn`, `syncArp`). The monologue
   omits the arp config and gets sequencer SLIDE via the `hookNoteOn(note, vel, slide)` override.
+- **Prologue core prep (2026-07-04, prologue-spec.md):** `VoiceBank` carries a generic per-voice
+  aux int (`auxOf`/`setAux`, default 0; `steal` takes it as a trailing param and `drainPend`
+  hands it back) — the prologue's timbre tag (0=main, 1=sub). `EngineBase.process()`'s voice sum
+  is a protected overridable `sumVoices(outL, outR, frames)` (default = the historical mono sum,
+  monolithic on purpose: no per-voice virtual hook, so shipped synths pay zero dispatch; a
+  stereo/per-timbre-bus engine overrides the whole loop — the contract is documented on the
+  method), with `voiceMix` per-synth via `EngineBaseConfig` (default 0.35). `ui/slider.ts` grew
+  `orientation: 'vertical'` (up = +) + `unipolar` (0..1 mod-wheel model); `DisplayDef.transport`
+  ('seq' | 'arp') lets an arp-only synth drop the sequencer/motion pages + REC readouts while
+  keeping a TEMPO (seq.bpm) page; `dsp/fx/lfcomp.ts` is the prologue-16 L.F. COMP (UNCONFIRMED
+  voicing, flagged in-file); the SERVICE MODE drawer cycles voice colors and wraps its legend/
+  lanes so `numVoices: 16` degrades cleanly.
 - **Known residue in generic dirs, acceptable for now:** the CC1/CC2 joyY handlers in
   `src/midi/midi.ts` (the xd's joystick Y+/Y-; the og stubs them out), the xd-shaped
   `DbgVoice` telemetry frame in `src/shared/messages.ts`, the family voice/motion dimensions

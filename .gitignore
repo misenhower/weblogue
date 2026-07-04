@@ -3,3 +3,6 @@ dist/
 *.log
 .DS_Store
 .claude/*.lock
+
+# Vendor reference docs (Korg copyright) — keep local, cite URLs in specs
+docs/hardware/

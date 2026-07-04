@@ -1,9 +1,11 @@
 /*
  * Engine — the minilogue xd replica's synth core (worklet-side, DOM-free).
  *
- * Owns the raw parameter store, 4 Voices, the FX chain (MOD FX -> DELAY ->
- * REVERB, spec §1), a StepSeq and an Arp (whose hooks feed notes/motion
- * back in).
+ * The family-shared machinery (param store + layered parameter model, note
+ * skeleton, transport, process() skeleton, SERVICE MODE plumbing) lives in
+ * dsp/enginebase.ts; this file is the xd binding: the applyParam switch, the
+ * FX chain (MOD FX -> DELAY -> REVERB, spec §1), tuning/transpose, the
+ * joystick-Y + aftertouch offset layers and the xd voice modes.
  *
  * Layered parameter model (all mapping through shared/maps.ts):
  *   effective raw = (motion override ?? knob raw) + joystick-Y offset
@@ -16,7 +18,7 @@
  * live keys are fed to the arpeggiator and its hook noteOns come back into
  * the poly allocator.
  */
-import { P, PARAMS, PARAM_COUNT, MOTION_META } from './params'
+import { P, PARAMS, MOTION_META } from './params'
 import { clamp, dbToGain } from '../../shared/maps'
 import {
   pitchToCents,
@@ -41,24 +43,22 @@ import {
   ARP_RATES,
   microTuneCents,
 } from './curves'
-import type { Program, SeqData } from '../../shared/program'
-import { VoiceBank, NoteStack } from '../../dsp/voicebank'
-import { StepSeq } from '../../dsp/stepseq'
-import { Arp } from '../../dsp/arp'
-import { ServiceTaps } from '../../dsp/servicetaps'
-import { MotionOverlay } from '../../dsp/motionoverlay'
+import {
+  EngineBase,
+  DBG_TAP_SIZE,
+  UNI_OFF,
+  type EngineBaseConfig,
+  type OffsetLayer,
+  type OffsetResolution,
+} from '../../dsp/enginebase'
+import type { Arp } from '../../dsp/arp'
 import { Voice } from './voice'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
 import { ReverbFx } from '../../dsp/fx/reverb'
 
 const NV = 4
-/**
- * Samples per SERVICE-MODE tap frame: the panel shows a 512-sample window
- * center-triggered within the frame, so the trigger search span is
- * DBG_TAP_SIZE - 512 ≈ 16 ms at 48 kHz — a guaranteed lock down to ~C2.
- */
-export const DBG_TAP_SIZE = 1280
+export { DBG_TAP_SIZE }
 
 /** Voice modes (params.ts order). */
 const VM_ARP = 0
@@ -66,17 +66,8 @@ const VM_CHORD = 1
 const VM_UNISON = 2
 const VM_POLY = 3
 
-/** Unison detune spread per voice index, x detune cents. */
-const UNI_OFF = [-1, -1 / 3, 1 / 3, 1]
-
 /** DUO: stacked-voice detune at amount = 1, in cents. */
 const DUO_DETUNE_CENTS = 30
-
-/** Per-voice headroom into the mono sum (4 voices stay mostly linear). */
-const VOICE_MIX = 0.35
-
-/** PORTAMENTO BPM quantization grid, in beats. */
-const PORTA_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1]
 
 /** Pentatonic pitch-class sets (nearest-below snapping). */
 const PENTA_MAJOR = [0, 2, 4, 7, 9]
@@ -102,240 +93,102 @@ const MODFX_SUB_PARAM = [
   P.MODFX_SUB_FLANGER, P.MODFX_SUB_USER,
 ]
 
-
-/** Transparent soft limiter: identity below |0.7|, tanh knee, bounded at 1. */
-function softLimit(x: number): number {
-  if (x > 0.7) return 0.7 + 0.3 * Math.tanh((x - 0.7) / 0.3)
-  if (x < -0.7) return -0.7 - 0.3 * Math.tanh((-x - 0.7) / 0.3)
-  return x
+/** Family-shared engine wiring (dsp/enginebase.ts), bound to the xd tables. */
+const BASE_CFG: EngineBaseConfig<Voice> = {
+  params: PARAMS,
+  motionMeta: MOTION_META,
+  numVoices: NV,
+  createVoice: (sr, i) => new Voice(sr, i),
+  ids: {
+    voiceMode: P.VOICE_MODE,
+    bendRangePlus: P.BEND_RANGE_PLUS,
+    bendRangeMinus: P.BEND_RANGE_MINUS,
+    portamento: P.PORTAMENTO,
+    portamentoBpm: P.PORTAMENTO_BPM,
+    portamentoMode: P.PORTAMENTO_MODE,
+  },
+  portamentoToSec,
+  arp: { voiceMode: VM_ARP },
 }
 
-export class Engine {
-  private readonly sr: number
+export class Engine extends EngineBase<Voice> {
+  /** The xd always has an arpeggiator (BASE_CFG.arp). */
+  declare readonly arp: Arp
 
-  /** Raw knob/menu values, indexed by param id. */
-  private readonly params = new Float64Array(PARAM_COUNT)
+  // Joystick-Y + channel-aftertouch offset layers (enginebase machinery;
+  // the aftertouch layer reuses the joystick destination table).
+  private readonly joyLayer: OffsetLayer
+  private readonly atLayer: OffsetLayer
 
-  // Motion-sequence override layer (dsp/motionoverlay.ts).
-  private readonly motion = new MotionOverlay(PARAMS, {
-    applyParam: (id) => this.applyParam(id),
-    refreshBend: () => this.refreshBend(),
-  })
-
-  // Joystick.
-  private bendX = 0
-  private joyY = 0
-  private joyDirty = false
-  private joyDest = -1
-  private joyOffset = 0
-  private joyGateOff = 0
-
-  // Channel aftertouch (MIDI_AT_ASSIGN destination, same offset machinery).
-  private pressure = 0
-  private pressureDirty = false
-  private atDest = -1
-  private atOffset = 0
-  private atGateOff = 0
-
-  // Voices + allocation mechanics (dsp/voicebank.ts) + gated-key model.
-  private readonly voices: Voice[] = []
-  private readonly bank: VoiceBank<Voice>
-  private readonly stack = new NoteStack()
-  private curMonoNote = -1
-  private sustainOn = false
-  /** Pended-restart callback (hoisted: no closure allocation in process()). */
-  private readonly pendCb = (
-    i: number, key: number, note: number, vel: number,
-    glide: boolean, det: number, gain: number, stacked: boolean,
-  ): void => this.startVoice(i, key, note, vel, true, glide, det, gain, stacked)
-  private curMode = VM_POLY
-  private glideSec = 0
-  private lastStartHz = 0
   private calcSemis = 60 // scratch: semitone of the last noteHz() call
 
-  // FX + sequencer/arp.
+  // FX chain in processing order (spec §1: MOD FX -> DELAY -> REVERB).
   private readonly modfx: ModFx
   private readonly delay: DelayFx
   private readonly reverb: ReverbFx
-  /** Serial FX chain in processing order (spec §1: MOD FX -> DELAY -> REVERB). */
   private readonly fxChain: ReadonlyArray<{ process(l: Float32Array, r: Float32Array, n: number): void }>
-  readonly stepSeq: StepSeq
-  readonly arp: Arp
-  /** Playhead callback for the processor ({t:'step'} messages). */
-  onStep: ((i: number) => void) | null = null
-
-  private bpm = 120
-  private swing = 0
-
-  // Output stage.
-  private gainT = 1
-  private gainSm = 1
-  private readonly gainCoef: number
-
-  // --- CHORD-mode voice set (rotated via the bank's rotor) ----------------
-  private readonly chordMap = new Int8Array(NV).fill(-1)
-  private chordTones = 0
-
-  // --- SERVICE MODE (debug panel) taps (dsp/servicetaps.ts): FX pairs are
-  // mod L/R, delay L/R, out L/R — genuinely stereo from the mod fx onward.
-  private dbgVoice = 0 // most recently triggered voice index
-  private readonly taps = new ServiceTaps(NV, DBG_TAP_SIZE)
 
   constructor(sampleRate: number) {
-    const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
-    this.sr = sr
-    this.gainCoef = 1 - Math.exp(-1 / (0.005 * sr))
-    for (let i = 0; i < NV; i++) this.voices.push(new Voice(sr, i))
-    this.bank = new VoiceBank(this.voices)
-    this.modfx = new ModFx(sr)
-    this.delay = new DelayFx(sr)
-    this.reverb = new ReverbFx(sr)
+    super(sampleRate, BASE_CFG)
+    this.modfx = new ModFx(this.sr)
+    this.delay = new DelayFx(this.sr)
+    this.reverb = new ReverbFx(this.sr)
     this.fxChain = [this.modfx, this.delay, this.reverb]
-    this.stepSeq = new StepSeq(
-      sr,
-      {
-        noteOn: (note, vel) => this.hookNoteOn(note, vel),
-        noteOff: (note) => this.hookNoteOff(note),
-        motionValue: (id, v) => this.applyMotion(id, v),
-        stepChanged: (i) => {
-          if (this.onStep) this.onStep(i)
-        },
-      },
-      MOTION_META,
-    )
-    this.arp = new Arp(sr, {
-      noteOn: (note, vel) => this.hookNoteOn(note, vel),
-      noteOff: (note) => this.hookNoteOff(note),
-    })
-    for (const m of PARAMS) this.params[m.id] = m.def
-    this.curMode = Math.round(this.params[P.VOICE_MODE])
+    this.joyLayer = this.addOffsetLayer((v, out) => this.resolveJoy(v, out))
+    this.atLayer = this.addOffsetLayer((v, out) => this.resolvePressure(v, out))
     this.delay.setBpm(this.bpm)
-    this.applyAllParams()
-    this.syncArp()
-  }
-
-  /* --------------------------------------------------------- parameters -- */
-
-  /** Store a raw knob/menu value and push its mapped physical value(s). */
-  setParam(id: number, v: number): void {
-    if (!Number.isFinite(v)) return
-    const m = PARAMS[id]
-    if (!m) return
-    this.params[id] = clamp(v, m.min, m.max)
-    this.applyParam(id)
-  }
-
-  /** Raw knob value (no overrides). */
-  getParam(id: number): number {
-    return id >= 0 && id < PARAM_COUNT ? this.params[id] : 0
-  }
-
-  /** Effective raw value including motion override + joystick offset. */
-  effectiveParam(id: number): number {
-    const m = PARAMS[id]
-    if (!m) return 0
-    let v = this.motion.effective(id, this.params[id])
-    if (this.joyDest === id) v += this.joyOffset
-    if (this.atDest === id) v += this.atOffset
-    return clamp(v, m.min, m.max)
-  }
-
-  /** Motion-lane value into the non-destructive override layer. */
-  applyMotion(paramId: number, v: number): void {
-    this.motion.applyMotion(paramId, v)
+    this.finishInit()
   }
 
   /* ----------------------------------------------------------- joystick -- */
 
-  /** Joystick X / pitch bend, -1..1 (BEND_RANGE_PLUS/MINUS semitones). */
-  setBend(v: number): void {
-    if (!Number.isFinite(v)) return
-    this.bendX = clamp(v, -1, 1)
-    this.refreshBend()
-  }
-
   /** Joystick Y, -1..1; offsets the assigned destination (block-rate). */
   setJoyY(v: number): void {
     if (!Number.isFinite(v)) return
-    this.joyY = clamp(v, -1, 1)
-    this.joyDirty = true
+    this.joyLayer.value = clamp(v, -1, 1)
+    this.joyLayer.dirty = true
   }
 
   /** Channel aftertouch, 0..1; offsets the MIDI_AT_ASSIGN destination
    *  (block-rate, unipolar: +100% of the param's span at full pressure). */
   setPressure(v: number): void {
     if (!Number.isFinite(v)) return
-    this.pressure = clamp(v, 0, 1)
-    this.pressureDirty = true
+    this.atLayer.value = clamp(v, 0, 1)
+    this.atLayer.dirty = true
   }
 
-  private refreshBend(): void {
-    const v = this.motion.bendOn ? this.motion.bend : this.bendX
-    const range = v >= 0 ? this.params[P.BEND_RANGE_PLUS] : this.params[P.BEND_RANGE_MINUS]
-    const mult = Math.pow(2, (v * range) / 12) // range 0 = Off
-    for (let i = 0; i < NV; i++) this.voices[i].setBendMult(mult)
-  }
-
-  private applyJoy(): void {
-    this.joyDirty = false
-    const v = this.joyY
-    let dest = -1
-    let offset = 0
-    let gateOffset = 0
-    if (v > 1e-3 || v < -1e-3) {
-      const idx = Math.round(this.params[v > 0 ? P.JOY_ASSIGN_PLUS : P.JOY_ASSIGN_MINUS])
-      // Deflection magnitude only: the signed range alone sets the direction
-      // (Y- deflections are negative; multiplying by them would flip it).
-      const amt = Math.abs(v)
-      const rangePct = (this.params[v > 0 ? P.JOY_RANGE_PLUS : P.JOY_RANGE_MINUS] - 100) / 100
-      if (JOY_DEST_IDS[idx] === -1) {
-        // GATE TIME: offsets the sequencer's step gates (raw units 0..72).
-        gateOffset = amt * rangePct * 72
-      } else {
-        dest = this.joyDestParam(idx)
-        if (dest >= 0) {
-          const meta = PARAMS[dest]
-          offset = amt * rangePct * (meta.max - meta.min)
-        }
-      }
+  private resolveJoy(v: number, out: OffsetResolution): void {
+    const idx = Math.round(this.params[v > 0 ? P.JOY_ASSIGN_PLUS : P.JOY_ASSIGN_MINUS])
+    // Deflection magnitude only: the signed range alone sets the direction
+    // (Y- deflections are negative; multiplying by them would flip it).
+    const amt = Math.abs(v)
+    const rangePct = (this.params[v > 0 ? P.JOY_RANGE_PLUS : P.JOY_RANGE_MINUS] - 100) / 100
+    if (JOY_DEST_IDS[idx] === -1) {
+      // GATE TIME: offsets the sequencer's step gates (raw units 0..72).
+      out.gateOffset = amt * rangePct * 72
+      return
     }
-    this.joyGateOff = gateOffset
-    this.stepSeq.setGateTimeOffset(gateOffset + this.atGateOff)
-    if (dest === this.joyDest && offset === this.joyOffset) return
-    const prev = this.joyDest
-    this.joyDest = dest
-    this.joyOffset = offset
-    if (prev >= 0 && prev !== dest) this.applyParam(prev)
-    if (dest >= 0) this.applyParam(dest)
+    const dest = this.joyDestParam(idx)
+    if (dest >= 0) {
+      const meta = PARAMS[dest]
+      out.dest = dest
+      out.offset = amt * rangePct * (meta.max - meta.min)
+    }
   }
 
-  private applyPressure(): void {
-    this.pressureDirty = false
-    const v = this.pressure
-    let dest = -1
-    let offset = 0
-    let gateOffset = 0
-    if (v > 1e-3) {
-      const idx = Math.round(this.params[P.MIDI_AT_ASSIGN])
-      if (JOY_DEST_IDS[idx] === -1) {
-        // GATE TIME: offsets the sequencer's step gates (raw units 0..72).
-        gateOffset = v * 72
-      } else {
-        dest = this.joyDestParam(idx)
-        if (dest >= 0) {
-          const meta = PARAMS[dest]
-          offset = v * (meta.max - meta.min)
-        }
-      }
+  private resolvePressure(v: number, out: OffsetResolution): void {
+    const idx = Math.round(this.params[P.MIDI_AT_ASSIGN])
+    if (JOY_DEST_IDS[idx] === -1) {
+      // GATE TIME: offsets the sequencer's step gates (raw units 0..72).
+      out.gateOffset = v * 72
+      return
     }
-    this.atGateOff = gateOffset
-    this.stepSeq.setGateTimeOffset(this.joyGateOff + gateOffset)
-    if (dest === this.atDest && offset === this.atOffset) return
-    const prev = this.atDest
-    this.atDest = dest
-    this.atOffset = offset
-    if (prev >= 0 && prev !== dest) this.applyParam(prev)
-    if (dest >= 0) this.applyParam(dest)
+    const dest = this.joyDestParam(idx)
+    if (dest >= 0) {
+      const meta = PARAMS[dest]
+      out.dest = dest
+      out.offset = v * (meta.max - meta.min)
+    }
   }
 
   private joyDestParam(destIndex: number): number {
@@ -351,11 +204,7 @@ export class Engine {
 
   /* ----------------------------------------------- raw -> physical push -- */
 
-  private applyAllParams(): void {
-    for (let id = 0; id < PARAM_COUNT; id++) this.applyParam(id)
-  }
-
-  private applyParam(id: number): void {
+  protected applyParam(id: number): void {
     const meta = PARAMS[id]
     if (!meta) return
     const e = this.effectiveParam(id)
@@ -403,8 +252,8 @@ export class Engine {
         for (let i = 0; i < NV; i++) vs[i].setMultiType(t)
         // Sub/shape/shift are stored per type: re-push the active set.
         this.refreshMultiSelect()
-        this.joyDirty = true // MULTI SHAPE joystick/aftertouch dest may re-resolve
-        this.pressureDirty = true
+        this.joyLayer.dirty = true // MULTI SHAPE joystick/aftertouch dest may re-resolve
+        this.atLayer.dirty = true
         break
       }
       case P.SELECT_NOISE:
@@ -550,18 +399,10 @@ export class Engine {
       case P.REVERB_DRYWET:
         this.reverb.setDryWet(e / 1024)
         break
-      case P.VOICE_MODE: {
-        const m = Math.round(e)
-        if (m !== this.curMode) {
-          this.curMode = m
-          this.bank.releaseAll(this.sustainOn)
-          this.stack.clear()
-          this.curMonoNote = -1
-          this.stack.clearMonoSustained()
-        }
+      case P.VOICE_MODE:
+        this.changeVoiceMode(Math.round(e))
         this.syncArp()
         break
-      }
       case P.VM_DEPTH: {
         // Live knob: unison detune spread / duo stack level+detune.
         if (this.curMode === VM_UNISON) {
@@ -615,16 +456,16 @@ export class Engine {
       case P.JOY_RANGE_PLUS:
       case P.JOY_ASSIGN_MINUS:
       case P.JOY_RANGE_MINUS:
-        this.joyDirty = true
+        this.joyLayer.dirty = true
         break
       case P.MIDI_AT_ASSIGN:
-        this.pressureDirty = true
+        this.atLayer.dirty = true
         break
       case P.LFO_KEY_SYNC:
         for (let i = 0; i < NV; i++) vs[i].setLfoKeySync(e >= 0.5)
         break
       case P.LFO_VOICE_SYNC:
-        break // read at noteOn time
+        break // read at block rate (lfoVoiceSyncOn)
       case P.LFO_TARGET_OSC:
         for (let i = 0; i < NV; i++) vs[i].setLfoTargetOsc(Math.round(e))
         break
@@ -697,28 +538,7 @@ export class Engine {
     for (let i = 0; i < NV; i++) this.voices[i].setLfoFreq(hz)
   }
 
-  private refreshGlide(): void {
-    let sec = portamentoToSec(this.effectiveParam(P.PORTAMENTO))
-    if (sec > 0 && this.params[P.PORTAMENTO_BPM] >= 0.5) {
-      // Quantize to the nearest of [1/16,1/8,1/4,1/2,1] beats at the seq bpm.
-      const beat = 60 / this.bpm
-      let best = PORTA_BEATS[0] * beat
-      let bd = Infinity
-      for (let k = 0; k < PORTA_BEATS.length; k++) {
-        const t = PORTA_BEATS[k] * beat
-        const d = Math.abs(t - sec)
-        if (d < bd) {
-          bd = d
-          best = t
-        }
-      }
-      sec = best
-    }
-    this.glideSec = sec
-    for (let i = 0; i < NV; i++) this.voices[i].setGlideTime(sec)
-  }
-
-  private syncArp(): void {
+  protected override syncArp(): void {
     const rate = ARP_RATES[Math.round(this.effectiveParam(P.ARP_RATE))] ?? ARP_RATES[4]
     this.arp.setConfig({
       enabled: this.curMode === VM_ARP,
@@ -728,6 +548,11 @@ export class Engine {
       gate01: this.effectiveParam(P.ARP_GATE) / 72,
       swing: this.swing,
     })
+  }
+
+  protected override onTimingChanged(): void {
+    this.delay.setBpm(this.bpm)
+    this.refreshLfoFreq()
   }
 
   /* --------------------------------------------------- pitch / tuning ---- */
@@ -770,79 +595,9 @@ export class Engine {
     }
   }
 
-  /* ---------------------------------------------------------- notes ------ */
+  /* ------------------------------------------------ mode implementations - */
 
-  noteOn(note: number, vel: number): void {
-    if (!Number.isFinite(note) || !Number.isFinite(vel)) return
-    const n = Math.max(0, Math.min(127, Math.round(note)))
-    const v = Math.max(1, Math.min(127, Math.round(vel)))
-    this.stack.setHeld(n, true)
-    if (this.curMode === VM_ARP) {
-      this.arp.keyDown(n, v)
-      return
-    }
-    this.noteOnInternal(n, v, false)
-  }
-
-  noteOff(note: number): void {
-    if (!Number.isFinite(note)) return
-    const n = Math.max(0, Math.min(127, Math.round(note)))
-    this.stack.setHeld(n, false)
-    // Always release the arp key buffer: a key registered in ARP mode may be
-    // let go after a voice-mode switch and would otherwise linger forever.
-    this.arp.keyUp(n)
-    if (this.curMode === VM_ARP) return
-    this.noteOffInternal(n, false)
-  }
-
-  allNotesOff(): void {
-    this.bank.hardReleaseAll()
-    this.stack.clear()
-    this.curMonoNote = -1
-    this.stack.clearMonoSustained()
-    this.stack.clearHeld((n) => this.arp.keyUp(n))
-    // Drop latched arp keys: momentary latch-off flush, then restore config.
-    this.arp.setConfig({
-      enabled: false,
-      typeIndex: 0,
-      latch: false,
-      rateBeats: 0.25,
-      gate01: 0.75,
-      swing: this.swing,
-    })
-    this.syncArp()
-  }
-
-  sustain(on: boolean): void {
-    this.sustainOn = on === true
-    if (!this.sustainOn) {
-      // Mono modes: flush key releases deferred while the damper was down
-      // (current note last so the legato fall-back never retriggers it).
-      this.stack.flushMonoSustained(this.curMonoNote, (n) => this.noteOffInternal(n, false))
-      this.bank.flushSustained((key) => this.stack.contains(key))
-    }
-  }
-
-  /** Sequencer / arpeggiator hook notes re-enter the allocator here. */
-  private hookNoteOn(note: number, vel: number): void {
-    const n = Math.max(0, Math.min(127, Math.round(note)))
-    const v = Math.max(1, Math.min(127, Math.round(vel)))
-    this.noteOnInternal(n, v, this.curMode === VM_ARP)
-  }
-
-  private hookNoteOff(note: number): void {
-    const n = Math.max(0, Math.min(127, Math.round(note)))
-    this.noteOffInternal(n, this.curMode === VM_ARP)
-  }
-
-  private noteOnInternal(note: number, vel: number, forcePoly: boolean): void {
-    if (this.stack.isMonoSustained(note)) {
-      // Re-press of a pedal-sustained key: drop the stale stack entry first.
-      this.stack.setMonoSustained(note, false)
-      this.stack.remove(note)
-    }
-    const legato = this.stack.count > 0
-    this.stack.push(note, vel)
+  protected modeNoteOn(note: number, vel: number, legato: boolean, forcePoly: boolean): void {
     const mode = forcePoly ? VM_POLY : this.curMode
     if (mode === VM_UNISON || mode === VM_CHORD) {
       this.monoStart(note, vel, legato)
@@ -850,27 +605,17 @@ export class Engine {
     }
     // POLY (or DUO zone of POLY).
     const pd = polyDuo(this.effectiveParam(P.VM_DEPTH))
-    if (mode === VM_POLY && !forcePoly && pd.duo) this.duoNoteOn(note, vel, legato, pd.amount)
-    else this.polyNoteOn(note, vel, legato)
+    if (mode === VM_POLY && !forcePoly && pd.duo) {
+      this.duoStart(note, vel, legato, pd.amount * DUO_DETUNE_CENTS, pd.amount)
+    } else {
+      this.polyStart(note, note, vel, legato)
+    }
   }
 
-  private noteOffInternal(note: number, forcePoly: boolean): void {
+  protected modeNoteOff(note: number, forcePoly: boolean): void {
     const mode = forcePoly ? VM_POLY : this.curMode
     if (mode === VM_UNISON || mode === VM_CHORD) {
-      if (this.sustainOn) {
-        // Damper down: defer the release entirely (CC64 semantics) — the key
-        // stays on the stack so the pitch does not fall back mid-pedal.
-        this.stack.setMonoSustained(note, true)
-        return
-      }
-      this.stack.remove(note)
-      if (this.stack.count === 0) {
-        this.bank.releaseAll(this.sustainOn)
-        this.curMonoNote = -1
-      } else if (note === this.curMonoNote) {
-        // Return to the previous held note (legato).
-        this.monoStart(this.stack.topNote(), this.stack.topVel(), true)
-      }
+      this.monoNoteOff(note)
       return
     }
     this.stack.remove(note)
@@ -878,7 +623,7 @@ export class Engine {
   }
 
   /** UNISON / CHORD mono start (last-note priority, EG legato rules). */
-  private monoStart(note: number, vel: number, legato: boolean): void {
+  protected monoStart(note: number, vel: number, legato: boolean): void {
     const retrig = !(this.params[P.EG_LEGATO] >= 0.5 && legato)
     const glide = this.glideFor(legato)
     this.curMonoNote = note
@@ -889,56 +634,11 @@ export class Engine {
       }
     } else {
       const chord = CHORDS[chordIndex(this.effectiveParam(P.VM_DEPTH))]
-      const tones = Math.min(chord.notes.length, NV)
-      // Rotate the chord's voice set on each fresh strike (family behavior:
-      // voices cycle even in mono-style modes, letting tails ring); a legato
-      // transition re-pitches the SAME voices so glide/EGs stay continuous.
-      const reuse = !retrig && this.chordTones === tones && this.chordMap[0] >= 0
-      if (!reuse) {
-        const base = this.bank.takeRotor(tones)
-        for (let t = 0; t < tones; t++) this.chordMap[t] = (base + t) % NV
-        for (let t = tones; t < NV; t++) this.chordMap[t] = -1
-        this.chordTones = tones
-      }
-      for (let t = 0; t < tones; t++) {
-        this.startVoice(this.chordMap[t], note, note + chord.notes[t], vel, retrig, glide, 0, 1, false)
-      }
-      for (let i = 0; i < NV; i++) {
-        let used = false
-        for (let t = 0; t < tones; t++) if (this.chordMap[t] === i) used = true
-        if (!used && this.voices[i].active && !this.bank.isReleased(i)) this.bank.gateOff(i)
-      }
+      this.chordStart(chord.notes, note, vel, retrig, glide)
     }
   }
 
-  private polyNoteOn(note: number, vel: number, legato: boolean): void {
-    const glide = this.glideFor(legato)
-    const i = this.bank.alloc()
-    if (i >= 0) {
-      this.startVoice(i, note, note, vel, true, glide, 0, 1, false)
-      return
-    }
-    // Steal the oldest: kill now, restart at the next block.
-    this.bank.steal(this.bank.oldest(), note, note, vel, glide, 0, 1, false)
-  }
-
-  private duoNoteOn(note: number, vel: number, legato: boolean, amount: number): void {
-    const glide = this.glideFor(legato)
-    const det = amount * DUO_DETUNE_CENTS
-    // Pairs (0,1)/(2,3): main + stacked voice; the bank rotates pairs like
-    // the hardware rotates voices.
-    const { pair, kind } = this.bank.allocPair()
-    const a = pair * 2
-    if (kind === 'steal') {
-      this.bank.steal(a, note, note, vel, glide, 0, 1, false)
-      this.bank.steal(a + 1, note, note, vel, glide, det, amount, true)
-      return
-    }
-    this.startVoice(a, note, note, vel, true, glide, 0, 1, false)
-    this.startVoice(a + 1, note, note, vel, true, glide, det, amount, true)
-  }
-
-  private startVoice(
+  protected startVoice(
     i: number, key: number, soundNote: number, vel: number,
     retrig: boolean, glide: boolean, det: number, gain: number, stacked: boolean,
   ): void {
@@ -954,196 +654,20 @@ export class Engine {
     this.lastStartHz = hz
   }
 
-  private glideFor(legato: boolean): boolean {
-    if (this.glideSec <= 0) return false
-    // Portamento Mode: Auto = only when played legato, On = always.
-    return this.params[P.PORTAMENTO_MODE] >= 0.5 || legato
-  }
-
-  /* -------------------------------------------------- transport / data --- */
-
-  setPlaying(on: boolean): void {
-    this.stepSeq.setPlaying(on === true)
-    if (!on) this.motion.clearOverrides()
-  }
-
-  setSeqData(seq: SeqData): void {
-    this.stepSeq.setSeq(seq)
-    this.updateTiming(seq.bpm, seq.swing)
-    this.motion.releaseStale(seq.motion ?? [])
-  }
-
-  loadProgram(p: Program): void {
-    this.allNotesOff()
-    this.motion.reset()
-    this.joyDest = -1
-    this.joyOffset = 0
-    this.joyY = 0
-    this.joyDirty = false
-    this.joyGateOff = 0
-    this.atDest = -1
-    this.atOffset = 0
-    this.pressure = 0
-    this.pressureDirty = false
-    this.atGateOff = 0
-    this.stepSeq.setGateTimeOffset(0)
-    for (const meta of PARAMS) {
-      const v = p.params[meta.id]
-      this.params[meta.id] = clamp(Number.isFinite(v) ? v : meta.def, meta.min, meta.max)
-    }
-    this.curMode = Math.round(this.params[P.VOICE_MODE])
-    this.stepSeq.setSeq(p.seq)
-    this.updateTiming(p.seq.bpm, p.seq.swing, true)
-    this.applyAllParams()
-    this.refreshBend()
-    this.syncArp()
-  }
-
-  private updateTiming(bpm: number, swing: number, force = false): void {
-    const b = clamp(Number.isFinite(bpm) ? bpm : 120, 10, 300)
-    const sw = clamp(Number.isFinite(swing) ? swing : 0, -75, 75)
-    if (!force && b === this.bpm && sw === this.swing) return
-    this.bpm = b
-    this.swing = sw
-    this.delay.setBpm(b)
-    this.refreshLfoFreq()
-    this.refreshGlide()
-    this.syncArp()
-  }
-
   /* ------------------------------------------------------------ audio ---- */
 
-  process(outL: Float32Array, outR: Float32Array, n: number): void {
-    let frames = n | 0
-    if (frames > outL.length) frames = outL.length
-    if (frames > outR.length) frames = outR.length
-    if (frames <= 0) return
+  /** LFO Voice Sync (xd-spec §9). Skipped in 1-SHOT mode, where each
+   *  voice's half-cycle freeze is the point. */
+  protected override lfoVoiceSyncOn(): boolean {
+    return this.params[P.LFO_VOICE_SYNC] >= 0.5 && Math.round(this.params[P.LFO_MODE]) !== 0
+  }
 
-    if (this.joyDirty) this.applyJoy()
-    if (this.pressureDirty) this.applyPressure()
-
-    // Stolen-voice restarts: fire only once the ~1.5 ms kill ramp has fully
-    // faded the old note (live steals arrive between blocks, before the ramp
-    // has run — restarting immediately would skip the fade and click).
-    this.bank.drainPend(this.pendCb)
-
-    // LFO Voice Sync: "phase shared across voices" (xd-spec §9) — follow
-    // voice 0's free-running phase at block rate. Skipped in 1-SHOT mode,
-    // where each voice's half-cycle freeze is the point.
-    if (this.params[P.LFO_VOICE_SYNC] >= 0.5 && Math.round(this.params[P.LFO_MODE]) !== 0) {
-      const ph = this.voices[0].lfoPhase
-      for (let i = 1; i < NV; i++) this.voices[i].setLfoPhase(ph)
-    }
-
-    // Sequencer/arp first: their hooks fire noteOn/noteOff/motion into the
-    // engine. The arp runs at the engine's transport bpm (same value the
-    // sequence carries; hardware shares one tempo).
-    this.stepSeq.process(frames)
-    this.arp.process(frames, this.bpm)
-
-    const vs = this.voices
-    const gc = this.gainCoef
-    for (let s = 0; s < frames; s++) {
-      this.gainSm += gc * (this.gainT - this.gainSm)
-      let sum = 0
-      if (vs[0].active) sum += vs[0].tick()
-      else vs[0].tickIdle()
-      if (vs[1].active) sum += vs[1].tick()
-      else vs[1].tickIdle()
-      if (vs[2].active) sum += vs[2].tick()
-      else vs[2].tickIdle()
-      if (vs[3].active) sum += vs[3].tick()
-      else vs[3].tickIdle()
-      sum *= VOICE_MIX * this.gainSm
-      if (!Number.isFinite(sum)) sum = 0
-      outL[s] = sum
-      outR[s] = sum
-      if (this.taps.on) this.taps.writeVoiceSample(vs[this.dbgVoice], vs)
-    }
-
-    // Serial FX chain; SERVICE MODE taps the signal between stages.
+  /** Serial FX chain; SERVICE MODE taps the signal between stages (the FX
+   *  pairs are mod L/R, delay L/R — genuinely stereo from the mod fx on). */
+  protected processFx(outL: Float32Array, outR: Float32Array, frames: number): void {
     for (let f = 0; f < this.fxChain.length; f++) {
       this.fxChain[f].process(outL, outR, frames)
       if (this.taps.on && f + 1 < this.fxChain.length) this.taps.writeFxTap(6 + 2 * f, outL, outR, frames, false)
     }
-
-    // Final transparent safety limiter.
-    for (let s = 0; s < frames; s++) {
-      let l = outL[s]
-      let r = outR[s]
-      if (!Number.isFinite(l)) l = 0
-      if (!Number.isFinite(r)) r = 0
-      outL[s] = softLimit(l)
-      outR[s] = softLimit(r)
-    }
-    if (this.taps.on) this.taps.writeFxTap(10, outL, outR, frames, true) // final output
-  }
-
-  /* -------------------------------------------------------- telemetry ---- */
-
-  /** Enable/disable SERVICE MODE taps (all voices record their stages). */
-  setDebug(on: boolean): void {
-    this.taps.on = on
-    for (let i = 0; i < NV; i++) this.voices[i].tapOn = on
-  }
-
-  get debugOn(): boolean {
-    return this.taps.on
-  }
-
-  /** 4-voice tap mode (SERVICE MODE '4V'): record every voice's stages. */
-  setDebugAll(all: boolean): void {
-    this.taps.all = all
-  }
-
-  get debugAll(): boolean {
-    return this.taps.all
-  }
-
-  /** Copy the 24 per-voice tap rings (voice-major) into dst[0..23]. */
-  copyDebugVoiceTaps(dst: Float32Array[]): void {
-    this.taps.copyDebugVoiceTaps(dst)
-  }
-
-  get debugVoice(): number {
-    return this.dbgVoice
-  }
-
-  /** Copy the twelve tap rings (chronological order) into dst[0..11]. */
-  copyDebugTaps(dst: Float32Array[]): void {
-    this.taps.copyDebugTaps(dst)
-  }
-
-  /** Per-voice state for the debug panel's voice lanes. */
-  debugVoiceInfo(i: number): {
-    note: number
-    on: boolean
-    amp: number
-    drift1: number
-    drift2: number
-    modEg: number
-    lfo: number
-    hz: number
-  } {
-    const v = this.voices[i]
-    return {
-      note: v.note,
-      on: v.active,
-      amp: v.lastAmp,
-      drift1: v.lastDrift1,
-      drift2: v.lastDrift2,
-      modEg: v.lastModEg,
-      lfo: v.lastLfo,
-      hz: v.lastHz,
-    }
-  }
-
-  activeVoiceCount(): number {
-    return this.bank.activeCount()
-  }
-
-  /** Gated (non-released) note keys, deduped, for key/LED feedback. */
-  collectActiveNotes(dst: number[]): number {
-    return this.bank.collectActiveNotes(dst)
   }
 }

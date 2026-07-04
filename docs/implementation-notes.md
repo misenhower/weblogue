@@ -45,6 +45,15 @@ into a synth-agnostic core and a per-synth definition. Rules and residue a maint
   a `SynthAppConfig`), `ui/parambinder.ts` (panel param-id -> control bindings + silent resync),
   and `makeProgramCodec` in `shared/program.ts` (defensive program init/serialization bound to a
   param table; each synths/<id>/program.ts is a ~15-line binding).
+- **Engine base extracted (2026-07-04):** `dsp/enginebase.ts` (`EngineBase`) owns the family engine
+  skeleton — param store + layered model (motion overlay + registered offset layers), the shared
+  noteOn/noteOff machinery over VoiceBank/NoteStack (poly/duo/chord start helpers), StepSeq +
+  optional Arp transport, and the process() skeleton (voice sum, per-synth `processFx`, soft
+  limiter, SERVICE MODE taps). A synth engine is now: an `EngineBaseConfig` (param table, ids,
+  portamento curve, voice factory, arp wiring), the `applyParam` switch, offset-layer resolvers,
+  voice-mode semantics (`modeNoteOn`/`modeNoteOff`/`monoStart`/`startVoice`) and per-synth hooks
+  (`preProcess`, `onAllNotesOff`, `onTimingChanged`, `lfoVoiceSyncOn`, `syncArp`). The monologue
+  omits the arp config and gets sequencer SLIDE via the `hookNoteOn(note, vel, slide)` override.
 - **Known residue in generic dirs, acceptable for now:** the CC1/CC2 joyY handlers in
   `src/midi/midi.ts` (the xd's joystick Y+/Y-; the og stubs them out), the xd-shaped
   `DbgVoice` telemetry frame in `src/shared/messages.ts`, the family voice/motion dimensions

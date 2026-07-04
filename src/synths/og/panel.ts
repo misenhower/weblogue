@@ -327,7 +327,7 @@ export class Panel {
       this.store.recKnob(MOTION_GATE_TIME, v)
     } else if (dest >= 0) {
       // Record the effective absolute value the engine plays back for this
-      // param (knob raw + slider offset, engine applySlider mapping).
+      // param (knob raw + slider offset, the engine's slider-layer mapping).
       const m = PARAMS[dest]
       const rangePct = (this.store.getParam(P.SLIDER_RANGE) - 100) / 100
       this.store.recKnob(dest, this.store.getParam(dest) + v * rangePct * (m.max - m.min))

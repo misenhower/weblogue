@@ -289,6 +289,19 @@ export class Store {
     this.touchSeq()
   }
 
+  /** Monologue per-step SLIDE flag: step i glides into the next step's note
+   *  (shared/program.ts SeqStep.slide; monologue-spec.md §8). Off deletes the
+   *  key rather than storing false so slide-less programs keep round-tripping
+   *  byte-identically (the codec only writes `slide` when true). */
+  setStepSlide(i: number, on: boolean): void {
+    if (!this.validStep(i)) return
+    const st = this.prog.seq.steps[i]
+    if ((st.slide === true) === (on === true)) return
+    if (on === true) st.slide = true
+    else delete st.slide
+    this.touchSeq()
+  }
+
   /** Clears notes, active-step mask and motion; keeps bpm/length/res/swing/gate. */
   clearSequence(): void {
     const s = this.prog.seq

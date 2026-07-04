@@ -92,9 +92,15 @@ export class AdsrEg {
    * level (no reset to zero, no click). retrigger=false: legato — if the
    * envelope is still in attack/decay/sustain it just keeps going; if it was
    * releasing (or idle/killed) it re-enters attack from the current level.
+   *
+   * fromZero=true (with retrigger): HARD-RESET the level to zero before the
+   * attack — the monologue's multi-trigger behavior (monologue-spec.md §5/§14:
+   * "the envelope is reset to zero — an uncomfortable silence with a slow
+   * attack"). The xd/og keep the default restart-from-current-level.
    */
-  gateOn(retrigger: boolean = true): void {
+  gateOn(retrigger: boolean = true, fromZero: boolean = false): void {
     if (retrigger) {
+      if (fromZero) this.lvl = 0
       this.stage = S_ATTACK
     } else if (this.stage === S_IDLE || this.stage === S_RELEASE || this.stage === S_KILL) {
       this.stage = S_ATTACK

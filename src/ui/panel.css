@@ -594,3 +594,106 @@
   gap: 6px;
   padding-bottom: 14px;
 }
+
+/* ==================================================================
+   Korg monologue panel — layout under the .mono- prefix.
+   Reuses the xd chrome (sections, legends, OLED wells, LED anims)
+   from theme.css and the shared rules above; only mono layout here.
+   ================================================================== */
+
+.mono-panel-scale {
+  --mono-scale: 1;
+  width: 1160px;
+  transform: scale(var(--mono-scale));
+  transform-origin: top left;
+}
+
+.mono-panel-root {
+  width: 1160px;
+  box-sizing: border-box;
+  padding: 16px 18px 18px;
+  border-radius: 8px;
+}
+
+.mono-panel-root *,
+.mono-panel-root *::before,
+.mono-panel-root *::after {
+  box-sizing: border-box;
+}
+
+.mono-row-a > .xd-section,
+.mono-row-b > .xd-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+/* keep silkscreen labels compact so sections pack tight */
+.mono-panel-root .xd-knob-label {
+  max-width: 68px;
+}
+
+.mono-panel-root .xd-selector-pos {
+  font-size: 8px;
+}
+
+/* ---------------------------------------------------------------- */
+/* FILTER: just CUTOFF + RESONANCE (spec §4) — center the knob pair  */
+/* ---------------------------------------------------------------- */
+
+.mono-filter-row {
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------- */
+/* PROGRAM block (encoder + WRITE/EXIT/EDIT beside the OLED well)    */
+/* ---------------------------------------------------------------- */
+
+.mono-sec-prog {
+  min-width: 442px;
+  flex: 0 0 auto;
+}
+
+.mono-prog-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 140px;
+}
+
+.mono-prog-btns {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- */
+/* sequencer strip: KEY TRG/HOLD + MOTION/SLIDE/NOTE switch + the    */
+/* 16 step buttons (always visible — the hardware has them, spec §2) */
+/* ---------------------------------------------------------------- */
+
+.mono-seq-ctl {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.mono-seq-ctl .xd-ledbtn-label {
+  max-width: 52px;
+}
+
+/* ---------------------------------------------------------------- */
+/* keybed row: assignable SLIDER left of the 25 keys (like the OG)   */
+/* ---------------------------------------------------------------- */
+
+.mono-slider-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 14px;
+}

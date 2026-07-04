@@ -62,8 +62,9 @@ const STAGE2_K = 2
  * Fast tanh: 3rd/2nd-order Padé approximant, input clamped to +-3 where the
  * approximant hits exactly +-1 with zero slope (C1-continuous). Monotonic,
  * odd, max error < 1% over the audio range — plenty for an OTA model.
+ * Exported for the family's other tanh-shaper stages (dsp/drive.ts).
  */
-function fastTanh(x: number): number {
+export function fastTanh(x: number): number {
   const t = x < -3 ? -3 : x > 3 ? 3 : x
   const t2 = t * t
   return (t * (27 + t2)) / (27 + 9 * t2)

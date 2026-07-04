@@ -6,4 +6,4 @@ import { Engine, DBG_TAP_SIZE } from './engine'
 import { OG_PROCESSOR_NAME } from './ids'
 import { registerSynthProcessor } from '../../dsp/procshell'
 
-registerSynthProcessor(OG_PROCESSOR_NAME, DBG_TAP_SIZE, (sr) => new Engine(sr))
+registerSynthProcessor(OG_PROCESSOR_NAME, DBG_TAP_SIZE, (sr) => new Engine(sr), 4)

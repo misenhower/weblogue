@@ -29,7 +29,10 @@ import { MOTION_PITCH_BEND, MOTION_GATE_TIME, type MotionTargetMeta } from '../s
 import { clamp, fin, clampInt } from '../shared/maps'
 
 export interface StepSeqHooks {
-  noteOn(note: number, vel: number): void
+  /** `slide` (monologue spec §8): the previous played step had its SLIDE
+   *  flag set, so this note starts with a glide INTO it. Engines without
+   *  slide simply omit the parameter. */
+  noteOn(note: number, vel: number, slide?: boolean): void
   noteOff(note: number): void
   motionValue(paramId: number, value: number): void // raw param units; MOTION_PITCH_BEND value is -1..1 (MOTION_GATE_TIME never emits: consumed internally as a gate override)
   stepChanged(i: number): void // playhead for UI (-1 when stopped)
@@ -65,6 +68,11 @@ export class StepSeq {
   // GATE TIME modifiers (spec §11/§12): per-step lane override + live joystick offset.
   private gateOverride = -1 // this step's GATE TIME lane value (0..127), -1 = none
   private gateOffset = 0 // joystick GATE TIME offset, raw gate units -72..72
+
+  // SLIDE (monologue spec §8): a flagged step glides INTO the next step, so
+  // this holds the flag of the step just left (skips/wrap respected) and is
+  // passed to the entered step's noteOns. Sequence start = no slide.
+  private slideIn = false
 
   // Motion lane playback state (points reference our owned deep copy).
   private readonly mPts: (number[] | null)[]
@@ -109,7 +117,7 @@ export class StepSeq {
           gates.push(clampInt(Array.isArray(st.gates) ? st.gates[j] : defaultGate, 0, 127, defaultGate))
         }
       }
-      steps.push({ on: !!st && st.on === true && notes.length > 0, notes, vels, gates })
+      steps.push({ on: !!st && st.on === true && notes.length > 0, notes, vels, gates, slide: !!st && st.slide === true })
     }
     const motion: SeqData['motion'] = []
     for (let l = 0; l < NUM_MOTION_LANES; l++) {
@@ -277,6 +285,7 @@ export class StepSeq {
       if (this.activeMask[i]) {
         this.playedCount = 0
         this.phase = 0
+        this.slideIn = false // no previous step to glide from
         this.enterStep(i)
         return true
       }
@@ -306,6 +315,7 @@ export class StepSeq {
       return
     }
     this.playedCount = wrapped ? 0 : this.playedCount + 1
+    this.slideIn = this.seq.steps[this.stepIdx]?.slide === true // step just left
     this.enterStep(next)
   }
 
@@ -348,7 +358,8 @@ export class StepSeq {
       for (let j = 0; j < n; j++) {
         if (this.contMask[j]) continue
         const gate = this.effGate(st.gates[j])
-        this.hooks.noteOn(st.notes[j], st.vels[j])
+        // TIE continuations above never retrigger, so slide never applies to them.
+        this.hooks.noteOn(st.notes[j], st.vels[j], this.slideIn)
         if (this.sCount < SND_CAP) {
           this.sNote[this.sCount] = st.notes[j]
           this.sTie[this.sCount] = isTie(gate) ? 1 : 0

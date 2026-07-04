@@ -209,6 +209,11 @@ describe('VoiceBank pair + rotor claiming', () => {
     expect(bank.allocPair()).toEqual({ pair: 0, kind: 'steal' }) // oldest pair
   })
 
+  it('allocPair on a single-voice bank returns pair -1 (misuse guard)', () => {
+    const { bank } = makeBank(1)
+    expect(bank.allocPair()).toEqual({ pair: -1, kind: 'steal' })
+  })
+
   it('takeRotor claims consecutive indices and wraps modulo the bank size', () => {
     const { bank } = makeBank()
     expect(bank.takeRotor(3)).toBe(0)

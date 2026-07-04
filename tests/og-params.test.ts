@@ -103,6 +103,15 @@ describe('og program serialization', () => {
     expect(back!.params).toEqual(prog.params)
   })
 
+  it('round-trips the per-step slide flag (absent in old files reads back off)', () => {
+    const prog = ogProgram.initProgram('Slide Trip')
+    prog.seq.steps[0] = { on: true, notes: [60], vels: [100], gates: [54], slide: true }
+    prog.seq.steps[1] = { on: true, notes: [62], vels: [100], gates: [54] } // no flag
+    const back = ogProgram.deserializeProgram(ogProgram.serializeProgram(prog))
+    expect(back!.seq.steps[0].slide).toBe(true)
+    expect(back!.seq.steps[1].slide).toBeUndefined() // pre-slide steps stay keyless
+  })
+
   it('og deserializer refuses xd programs (and v1 no-synthId files)', () => {
     const xdJson = xdProgram.serializeProgram(xdProgram.initProgram('XD Prog'))
     expect(ogProgram.deserializeProgram(xdJson)).toBeNull()

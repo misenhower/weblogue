@@ -82,6 +82,21 @@ describe('Keyboard', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
+  it('lowestNote/highestNote build a 25-key E..E (52..76) keybed; out-of-range presses are ignored', () => {
+    const small = new Keyboard({ onNoteOn, onNoteOff, lowestNote: 52, highestNote: 76 });
+    document.body.appendChild(small.el);
+    expect(small.el.querySelectorAll('.xd-key').length).toBe(25);
+    expect(small.el.querySelector('.xd-key[data-note="52"]')).toBeTruthy();
+    expect(small.el.querySelector('.xd-key[data-note="76"]')).toBeTruthy();
+    expect(small.el.querySelector('.xd-key[data-note="51"]')).toBeNull();
+    expect(small.el.querySelector('.xd-key[data-note="77"]')).toBeNull();
+    small.pressNote(88, 100); // beyond the keybed: no note, no crash
+    expect(onNoteOn).not.toHaveBeenCalled();
+    small.pressNote(76, 100);
+    expect(onNoteOn).toHaveBeenCalledWith(76, 100);
+    small.releaseAll();
+  });
+
   it('setLit highlights in-range keys and ignores out-of-range notes', () => {
     kbd.setLit([60, 200, -3]);
     expect(key(kbd, 60).classList.contains('xd-key--lit')).toBe(true);

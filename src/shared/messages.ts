@@ -42,9 +42,9 @@ export type FromEngine =
       // 0-5 mono voice taps: vco1, vco2, multi, mix, postFilter, postVca;
       // 6-11 stereo FX pairs: modFxL, modFxR, delayL, delayR, outL, outR.
       taps: Float32Array[]
-      // 4-voice mode only: 24 frames, voice-major [v0 vco1..vca, v1 vco1..].
+      // all-voices mode only: numVoices*6 frames, voice-major [v0 vco1..vca, v1 vco1..].
       vtaps?: Float32Array[]
-      voices: DbgVoice[] // 4 lanes
+      voices: DbgVoice[] // numVoices lanes
       load: number // audio-thread load 0..1
       tapped: number // voice index feeding the taps
     }

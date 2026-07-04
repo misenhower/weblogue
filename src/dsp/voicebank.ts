@@ -136,8 +136,10 @@ export class VoiceBank<V extends BankVoice> {
   /**
    * DUO-style pair allocation over pairs (0,1)/(2,3)/...: idle pair via the
    * pair rotor, else oldest fully-released pair, else oldest pair to steal.
+   * Requires nv >= 2; pair -1 signals misuse (a 1-voice bank has no pairs).
    */
   allocPair(): { pair: number; kind: 'idle' | 'released' | 'steal' } {
+    if (this.nv < 2) return { pair: -1, kind: 'steal' }
     const pairs = this.nv >> 1
     for (let q = 0; q < pairs; q++) {
       const p = (this.pairRotor + q) % pairs

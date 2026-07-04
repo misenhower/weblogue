@@ -1,15 +1,20 @@
 /**
- * 37-key slim keyboard (E..E, like the minilogue xd hardware) — framework-free.
+ * Slim on-screen keyboard — framework-free. Defaults to the minilogue xd's
+ * 37 keys (E..E, base MIDI 52..88); lowestNote/highestNote override the
+ * range for other 'logue keybeds (e.g. the monologue's 25-key E..E).
  *
- * Base (unshifted) MIDI range is 52..88. `setOctaveShift` transposes emitted
- * notes by +/-12 per step (-2..+2). Mouse/touch presses derive velocity from
- * the vertical position within the key (top ~45, bottom ~127), dragging across
- * keys glides, and multi-touch plays chords.
+ * `setOctaveShift` transposes emitted notes by +/-12 per step (-2..+2).
+ * Mouse/touch presses derive velocity from the vertical position within the
+ * key (top ~45, bottom ~127), dragging across keys glides, and multi-touch
+ * plays chords.
  */
 
 export interface KeyboardOptions {
   onNoteOn: (note: number, velocity: number) => void;
   onNoteOff: (note: number) => void;
+  /** Base (unshifted) MIDI range; defaults to the xd's 52..88 (37 keys). */
+  lowestNote?: number;
+  highestNote?: number;
 }
 
 const LOWEST_NOTE = 52; // E3
@@ -46,6 +51,8 @@ export class Keyboard {
 
   private readonly noteOnCb: (note: number, velocity: number) => void;
   private readonly noteOffCb: (note: number) => void;
+  private readonly lowest: number;
+  private readonly highest: number;
   private readonly keysEl: HTMLElement;
   private readonly keyEls = new Map<number, HTMLElement>();
   private shift = 0;
@@ -60,6 +67,8 @@ export class Keyboard {
   constructor(opts: KeyboardOptions) {
     this.noteOnCb = opts.onNoteOn;
     this.noteOffCb = opts.onNoteOff;
+    this.lowest = clampInt(opts.lowestNote ?? LOWEST_NOTE, 0, 127);
+    this.highest = clampInt(opts.highestNote ?? HIGHEST_NOTE, this.lowest, 127);
 
     this.el = document.createElement('div');
     this.el.className = 'xd-kbd';
@@ -70,7 +79,7 @@ export class Keyboard {
     const whites: HTMLElement[] = [];
     const blacks: HTMLElement[] = [];
     let whiteIndex = 0;
-    for (let note = LOWEST_NOTE; note <= HIGHEST_NOTE; note++) {
+    for (let note = this.lowest; note <= this.highest; note++) {
       const pc = note % 12;
       const key = document.createElement('div');
       key.dataset.note = String(note);
@@ -141,11 +150,13 @@ export class Keyboard {
 
   /**
    * Programmatic press by base (unshifted) note — used by attachComputerKeyboard.
-   * Repeated presses of an already-held base note are ignored.
+   * Repeated presses of an already-held base note are ignored, as are base
+   * notes outside the keybed range (no key, no note — matching the pointer path).
    */
   pressNote(baseNote: number, velocity: number): void {
     const base = Math.round(baseNote);
     if (!Number.isFinite(base) || this.programmatic.has(base)) return;
+    if (base < this.lowest || base > this.highest) return;
     const emitted = base + this.shift * 12;
     this.programmatic.set(base, emitted);
     this.markDown(base, +1);

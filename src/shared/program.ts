@@ -35,6 +35,9 @@ export interface SeqStep {
   vels: number[]
   /** Per-note gate: 0..72 = 0..100%, 73+ = TIE. */
   gates: number[]
+  /** Monologue SLIDE: this step glides INTO the next step (spec §8).
+   *  Optional for backward compatibility; undefined = off. */
+  slide?: boolean
 }
 
 export interface MotionLane {
@@ -172,6 +175,9 @@ export function makeProgramCodec(cfg: ProgramCodecConfig): ProgramCodec {
               vels: notes.map((_: number, j: number) => (Number.isFinite(vels[j]) ? Math.max(1, Math.min(127, Math.round(vels[j]))) : 100)),
               gates: notes.map((_: number, j: number) => (Number.isFinite(gates[j]) ? Math.max(0, Math.min(127, Math.round(gates[j]))) : -1)).map((g: number) => (g < 0 ? seq.defaultGate : g)),
             }
+            // The key is only present when set, so pre-slide programs (and
+            // slide-less synths) round-trip byte-identically.
+            if (st.slide === true) seq.steps[i].slide = true
           }
         }
         if (Array.isArray(s.motion)) {

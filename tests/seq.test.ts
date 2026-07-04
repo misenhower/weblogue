@@ -17,6 +17,7 @@ interface NoteEv {
   type: 'on' | 'off'
   note: number
   vel: number
+  slide?: boolean
 }
 
 function makeRec() {
@@ -25,7 +26,7 @@ function makeRec() {
   const steps: { t: number; i: number }[] = []
   let now = 0
   const hooks: StepSeqHooks = {
-    noteOn: (note, vel) => events.push({ t: now, type: 'on', note, vel }),
+    noteOn: (note, vel, slide) => events.push({ t: now, type: 'on', note, vel, slide }),
     noteOff: (note) => events.push({ t: now, type: 'off', note, vel: 0 }),
     motionValue: (id, v) => motion.push({ t: now, id, v }),
     stepChanged: (i) => steps.push({ t: now, i }),
@@ -232,6 +233,24 @@ describe('motion lanes', () => {
     const off = offs(rec, 60)
     expect(off.length).toBe(1)
     expect(off[0].t).toBeLessThanOrEqual(600 + 2 * BLOCK)
+  })
+})
+
+describe('slide flag (monologue spec §8)', () => {
+  it('a flagged step glides INTO the next: only that noteOn gets slide=true', () => {
+    const seq = initSeq()
+    seq.stepLength = 4
+    seq.steps[0] = noteStep([60], [36])
+    seq.steps[1] = { ...noteStep([62], [36]), slide: true }
+    seq.steps[2] = noteStep([64], [36])
+    const rec = makeRec()
+    const s = new StepSeq(SR, rec.hooks, MOTION_META)
+    s.setSeq(seq)
+    s.setPlaying(true)
+    run(s, rec, 0.45) // covers steps 0..2, stops before the wrap at 24000
+    expect(ons(rec, 60)[0].slide).toBe(false) // sequence start: no slide
+    expect(ons(rec, 62)[0].slide).toBe(false) // step 0 not flagged
+    expect(ons(rec, 64)[0].slide).toBe(true) // step 1 flagged: glide into step 2
   })
 })
 

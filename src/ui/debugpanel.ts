@@ -2,7 +2,7 @@
  * SERVICE MODE — diagnostic drawer (v1).
  *
  * Renders the engine's debug telemetry: the signal path as a mini block
- * diagram with live scopes at every tap, four voice-activity lanes with
+ * diagram with live scopes at every tap, per-voice activity lanes with
  * drift meters, and an audio-thread health strip. Telemetry only streams
  * while the drawer is open (the app sends {t:'debug', on} on toggle), so it
  * costs nothing when closed.
@@ -83,6 +83,9 @@ export interface DebugModSig {
  * lanes, drift meters, sparkline mechanics, health strip — is synth-agnostic.
  */
 export interface DebugDef {
+  /** Engine polyphony: drives the voice lanes, overlay scopes, sparkline
+   *  histories and the health strip (1 hides the 1V/all-V toggle). */
+  numVoices: number
   /** Scope cells, telemetry-tap order (see shared/messages.ts dbg frame). */
   stages: readonly DebugStage[]
   /** Block-diagram wires; see DebugWire for static vs store-driven entries. */
@@ -101,8 +104,12 @@ export interface DebugDef {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const R_COLOR = '#8fb8e0'
-/** Per-voice trace colors (4-channel-scope mode); V1 matches the mono green. */
-const VOICE_COLORS = ['#8fe0a0', '#8fb8e0', '#e0c98f', '#e08fa0'] as const
+/** Per-voice trace colors (multi-channel-scope mode), sliced to numVoices;
+ *  V1 matches the mono green. 8 entries so an 8-voice def (prologue) fits. */
+const VOICE_COLORS = [
+  '#8fe0a0', '#8fb8e0', '#e0c98f', '#e08fa0',
+  '#b39fe0', '#8fdfe0', '#c8e08f', '#e0a08f',
+] as const
 /** Silent-trace cutoff: skip drawing voices with no signal to reduce clutter. */
 const SILENT_PEAK = 0.001
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -175,6 +182,8 @@ export class DebugPanel {
   sampleRate = 48000
 
   private readonly def: DebugDef
+  private readonly nv: number
+  private readonly voiceColors: readonly string[]
   private readonly canvases: HTMLCanvasElement[] = []
   private readonly ctxs: (CanvasRenderingContext2D | null)[] = []
   private readonly fftOn: boolean[]
@@ -191,7 +200,7 @@ export class DebugPanel {
     amt(store: Store): number
   }> = []
 
-  /** 4-voice overlay mode; the app re-arms telemetry when this changes. */
+  /** All-voices overlay mode; the app re-arms telemetry when this changes. */
   onVoicesMode?: (all: boolean) => void
 
   /* two flow views sharing the same scope cells */
@@ -207,17 +216,13 @@ export class DebugPanel {
   private readonly modCtxs: (CanvasRenderingContext2D | null)[] = []
   /** Per-voice modulator histories [voice][signal] — every voice records
    *  continuously so switching the tap shows THAT voice's real past. */
-  private readonly modHist: Float32Array[][] = [0, 1, 2, 3].map(() => [
-    new Float32Array(HISTORY),
-    new Float32Array(HISTORY),
-    new Float32Array(HISTORY),
-  ])
+  private readonly modHist: Float32Array[][]
   private histW = 0
   private histFill = 0
   private shownVoice = 0
   private modLabelsAll = false
   /** Latest per-voice gate state; dims inactive voices' legend digits. */
-  private readonly voiceOn = [false, false, false, false]
+  private readonly voiceOn: boolean[]
   private readonly modLabels: HTMLElement[] = []
   private readonly lanes: Lane[] = []
   private loadFill!: HTMLElement
@@ -229,6 +234,14 @@ export class DebugPanel {
     this.store = opts.store
     this.def = opts.def
     const def = this.def
+    this.nv = Math.max(1, Math.round(def.numVoices))
+    this.voiceColors = VOICE_COLORS.slice(0, this.nv)
+    this.modHist = Array.from({ length: this.nv }, () => [
+      new Float32Array(HISTORY),
+      new Float32Array(HISTORY),
+      new Float32Array(HISTORY),
+    ])
+    this.voiceOn = Array.from({ length: this.nv }, () => false)
     this.fftOn = def.stages.map(() => false)
     this.el = document.createElement('div')
     this.el.className = 'xd-svc'
@@ -252,7 +265,7 @@ export class DebugPanel {
     this.viewBtns = { compact: mkView('compact', 'COMPACT'), diagram: mkView('diagram', 'DIAGRAM') }
     const vseg = document.createElement('div')
     vseg.className = 'xd-svc-seg'
-    vseg.title = 'voice scopes: tapped voice only, or all four overlaid'
+    vseg.title = `voice scopes: tapped voice only, or all ${this.nv} overlaid`
     const mkVoices = (m: 'tap' | 'all', label: string): HTMLButtonElement => {
       const b = document.createElement('button')
       b.className = 'xd-svc-seg-btn'
@@ -261,7 +274,9 @@ export class DebugPanel {
       vseg.appendChild(b)
       return b
     }
-    this.voiceBtns = { tap: mkVoices('tap', '1V'), all: mkVoices('all', '4V') }
+    this.voiceBtns = { tap: mkVoices('tap', '1V'), all: mkVoices('all', this.nv + 'V') }
+    // Single-voice defs have nothing to overlay: no 1V/NV mode toggle at all.
+    if (this.nv === 1) vseg.style.display = 'none'
     const close = document.createElement('button')
     close.className = 'xd-svc-close'
     close.textContent = '✕'
@@ -273,7 +288,7 @@ export class DebugPanel {
     head.append(title, right)
     this.makeDraggable(head)
     try {
-      if (localStorage.getItem('xd-svc-voices') === 'all') this.voicesMode = 'all'
+      if (this.nv > 1 && localStorage.getItem('xd-svc-voices') === 'all') this.voicesMode = 'all'
     } catch {
       /* no storage */
     }
@@ -407,7 +422,7 @@ export class DebugPanel {
     /* --- voice lanes ---------------------------------------------------- */
     const lanes = document.createElement('div')
     lanes.className = 'xd-svc-lanes'
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.nv; i++) {
       const row = document.createElement('div')
       row.className = 'xd-svc-lane'
       const led = document.createElement('span')
@@ -415,7 +430,7 @@ export class DebugPanel {
       const name = document.createElement('span')
       name.className = 'xd-svc-vname'
       name.textContent = 'V' + (i + 1)
-      name.style.color = VOICE_COLORS[i] // matches the 4V trace colors
+      name.style.color = this.voiceColors[i] // matches the overlay trace colors
       const note = document.createElement('span')
       note.className = 'xd-svc-note'
       note.textContent = '--'
@@ -458,14 +473,14 @@ export class DebugPanel {
     this.loadText.textContent = '--%'
     this.voicesText = document.createElement('span')
     this.voicesText.className = 'xd-svc-htext'
-    this.voicesText.textContent = 'VOICES 0/4'
+    this.voicesText.textContent = 'VOICES 0/' + this.nv
     health.append(loadLabel, loadBar, this.loadText, this.voicesText)
 
     this.el.append(head, diagram, compact, modRow, lanes, health)
     this.applyView()
   }
 
-  /** Switch the voice scopes between tapped-only and 4-voice overlay. */
+  /** Switch the voice scopes between tapped-only and all-voices overlay. */
   setVoicesMode(m: 'tap' | 'all'): void {
     if (m === this.voicesMode) return
     this.voicesMode = m
@@ -625,12 +640,12 @@ export class DebugPanel {
     for (let v = 0; v < this.voiceOn.length; v++) this.voiceOn[v] = m.voices[v]?.on === true
 
     const stages = this.def.stages
-    const multi = this.voicesMode === 'all' && m.vtaps && m.vtaps.length >= 24
+    const multi = this.voicesMode === 'all' && m.vtaps && m.vtaps.length >= this.nv * 6
     for (let i = 0; i < stages.length; i++) {
       const t = stages[i]
       if (multi && t.r === undefined) {
-        // Voice-path cell: overlay all four voices, 4-channel-scope style.
-        const datas = [0, 1, 2, 3].map((v) => m.vtaps![v * 6 + t.l])
+        // Voice-path cell: overlay every voice, multi-channel-scope style.
+        const datas = Array.from({ length: this.nv }, (_, v) => m.vtaps![v * 6 + t.l])
         if (this.fftOn[i]) this.drawSpectrumVoices(i, datas)
         else this.drawScopeVoices(i, datas)
         continue
@@ -690,7 +705,7 @@ export class DebugPanel {
     this.loadFill.style.width = pct + '%'
     this.loadFill.classList.toggle('is-hot', pct > 70)
     this.loadText.textContent = pct + '%'
-    this.voicesText.textContent = 'VOICES ' + activeCount + '/4'
+    this.voicesText.textContent = 'VOICES ' + activeCount + '/' + this.nv
   }
 
   /** Log-frequency, log-magnitude spectrum (30 Hz .. 16 kHz, 0..-80 dB). */
@@ -755,10 +770,10 @@ export class DebugPanel {
   }
 
   /**
-   * 4-channel-scope overlay for a voice-path cell. Each voice locks to its
-   * OWN trigger (voices sit at unrelated pitches, so a shared trigger would
-   * just scramble three of the four traces); silent voices are skipped.
-   * Fixed V1..V4 draw order — 4V mode has no last-triggered priority.
+   * Multi-channel-scope overlay for a voice-path cell. Each voice locks to
+   * its OWN trigger (voices sit at unrelated pitches, so a shared trigger
+   * would just scramble the other traces); silent voices are skipped.
+   * Fixed V1..Vn draw order — all-voices mode has no last-triggered priority.
    */
   private drawScopeVoices(i: number, datas: Float32Array[]): void {
     const ctx = this.ctxs[i]
@@ -797,7 +812,7 @@ export class DebugPanel {
           break
         }
       }
-      this.traceWave(ctx, data, trig, half, win, w, h, VOICE_COLORS[v], 0.85, 0.18)
+      this.traceWave(ctx, data, trig, half, win, w, h, this.voiceColors[v], 0.85, 0.18)
       drewAny = true
     }
     if (drewAny) this.drawVoiceLegend(ctx, w)
@@ -822,21 +837,21 @@ export class DebugPanel {
         if (a > peak) peak = a
       }
       if (peak < SILENT_PEAK) continue
-      this.traceSpectrum(ctx, data, w, h, VOICE_COLORS[v], 0.85, 0.12)
+      this.traceSpectrum(ctx, data, w, h, this.voiceColors[v], 0.85, 0.12)
       drewAny = true
     }
     if (drewAny) this.drawVoiceLegend(ctx, w)
   }
 
-  /** Corner legend for the 4-voice overlay: colored 1 2 3 4, dimmed when idle. */
+  /** Corner legend for the voice overlay: colored 1..n, dimmed when idle. */
   private drawVoiceLegend(ctx: CanvasRenderingContext2D, w: number): void {
     ctx.font = '700 7px monospace'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
-    for (let v = 0; v < 4; v++) {
+    for (let v = 0; v < this.nv; v++) {
       ctx.globalAlpha = this.voiceOn[v] ? 0.9 : 0.28
-      ctx.fillStyle = VOICE_COLORS[v]
-      ctx.fillText(String(v + 1), w - 33 + v * 8, 3)
+      ctx.fillStyle = this.voiceColors[v]
+      ctx.fillText(String(v + 1), w - (this.nv * 8 + 1) + v * 8, 3)
     }
     ctx.globalAlpha = 1
   }
@@ -878,9 +893,9 @@ export class DebugPanel {
     const n = this.histFill
     if (n < 2) return
     if (this.voicesMode === 'all') {
-      // 4-voice overlay: voice colors, fixed draw order, no tapped priority.
+      // All-voices overlay: voice colors, fixed draw order, no tapped priority.
       for (let v = 0; v < this.modHist.length; v++) {
-        this.traceSparkline(ctx, this.modHist[v][s], n, w, h, sig.bipolar, VOICE_COLORS[v], 0.85, 0.12)
+        this.traceSparkline(ctx, this.modHist[v][s], n, w, h, sig.bipolar, this.voiceColors[v], 0.85, 0.12)
       }
       this.drawVoiceLegend(ctx, w)
     } else {

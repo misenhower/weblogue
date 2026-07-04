@@ -51,12 +51,14 @@ const nowMs: () => number =
 /**
  * Register the shared worklet shell under `name`, wrapping the engine the
  * factory builds. `dbgTapSize` is the engine's SERVICE-MODE tap ring length
- * (its exported DBG_TAP_SIZE).
+ * (its exported DBG_TAP_SIZE); `numVoices` the engine's polyphony (sizes the
+ * dbg frame's voice records and per-voice tap rings).
  */
 export function registerSynthProcessor(
   name: string,
   dbgTapSize: number,
   factory: (sampleRate: number) => EngineShell,
+  numVoices = 4,
 ): void {
   class SynthProcessor extends AudioWorkletProcessor {
     private readonly engine = factory(sampleRate)
@@ -230,10 +232,10 @@ export function registerSynthProcessor(
       let vtaps: Float32Array[] | undefined
       if (this.engine.debugAll) {
         vtaps = []
-        for (let t = 0; t < 24; t++) vtaps.push(new Float32Array(dbgTapSize))
+        for (let t = 0; t < numVoices * 6; t++) vtaps.push(new Float32Array(dbgTapSize))
         this.engine.copyDebugVoiceTaps(vtaps)
       }
-      const voices = [0, 1, 2, 3].map((i) => this.engine.debugVoiceInfo(i))
+      const voices = Array.from({ length: numVoices }, (_, i) => this.engine.debugVoiceInfo(i))
       const transfer = taps.map((a) => a.buffer)
       if (vtaps) for (const a of vtaps) transfer.push(a.buffer)
       this.port.postMessage(

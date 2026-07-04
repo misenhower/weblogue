@@ -27,6 +27,7 @@ const pitchEgAmt = (s: Store): number =>
 const lfoAmt = (s: Store): number => lfoIntTo01(s.getParam(P.LFO_INT))
 
 export const OG_DEBUG_DEF: DebugDef = {
+  numVoices: 4,
   stages: [
     { label: 'VCO 1', l: 0, x: 8, y: 4 },
     { label: 'VCO 2', l: 1, x: 8, y: 76 },

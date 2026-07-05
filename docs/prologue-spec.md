@@ -38,7 +38,8 @@ EG velocity/legato?, M.WHEEL ASSIGN (32 dests, note P23) + RANGE ±100%, MIDI AF
 
 MASTER block: bend + mod wheels, OCTAVE ±2 buttons, MASTER, PORTAMENTO [Off, 0..127], **VOICE SPREAD** 0..127
 (16 only; stereo voice placement), VOICE MODE SELECT (4 LEDs) + **VOICE MODE DEPTH**. TIMBRE (16 only):
-SUB ON/PGM FETCH, MAIN/SUB BALANCE, TYPE [LAYER, XFADE, SPLIT], PANEL edit-select [SUB, +, MAIN]. VCO1/VCO2:
+SUB ON/PGM FETCH, MAIN/SUB BALANCE (64 = equal; **turning LEFT increases the MAIN timbre** [OM] — so 0 = full
+main, 127 = full sub), TYPE [LAYER, XFADE, SPLIT], PANEL edit-select [SUB, +, MAIN]. VCO1/VCO2:
 WAVE [SQR, TRI, SAW], OCTAVE [2',4',8',16'], PITCH ±1200¢ (family piecewise), SHAPE. MODULATION: **PITCH EG
 switch [VCO 2, VCO 1+2, ALL(+multi)] + INT ±4800¢**; SYNC/RING 3-way [RING, off, SYNC] (exclusive; CROSS MOD
 knob stacks with either). MULTI ENGINE: NOISE/VPM/USR + OCTAVE + own 7-seg display + TYPE + SHAPE (+SHIFT

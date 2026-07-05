@@ -149,8 +149,8 @@ describe('prologue bitimbral dispatch', () => {
   })
 
   it('BALANCE scales the timbre gains globally (extremes mute a side)', () => {
-    // Sub muted at the source: BALANCE 127 = full MAIN (loud), BALANCE 0 =
-    // full SUB (near-silent since the sub makes no sound).
+    // Manual [OM]: turning LEFT increases the MAIN timbre — so BALANCE 0 =
+    // full MAIN (loud here) and 127 = full SUB (near-silent, sub muted).
     function level(balance: number): number {
       const e = makeEngine()
       e.setParam(P.SUB_ON, 1) // LAYER
@@ -160,8 +160,8 @@ describe('prologue bitimbral dispatch', () => {
       const out = render(e, 0.3)
       return rms(out, SR * 0.1, SR * 0.3)
     }
-    expect(level(127)).toBeGreaterThan(0.003)
-    expect(level(0)).toBeLessThan(level(127) * 0.05)
+    expect(level(0)).toBeGreaterThan(0.003)
+    expect(level(127)).toBeLessThan(level(0) * 0.05)
   })
 
   it('per-timbre modes coexist: main POLY + sub UNISON over the shared pool', () => {

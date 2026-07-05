@@ -53,6 +53,18 @@ export class Keyboard {
   private readonly noteOffCb: (note: number) => void;
   private readonly lowest: number;
   private readonly highest: number;
+
+  /**
+   * Anchor C for the computer-QWERTY map: the highest C whose full a..;
+   * span fits the keybed, clamped into range (72 on the family 37-key
+   * board; 60 on 25-key E..E boards whose top key is 76).
+   */
+  get qwertyAnchor(): number {
+    let a = Math.floor((this.highest - QWERTY_SPAN) / 12) * 12;
+    if (a < this.lowest) a = Math.ceil(this.lowest / 12) * 12;
+    if (a > this.highest) a = this.highest; // degenerate tiny ranges
+    return a;
+  }
   private readonly keysEl: HTMLElement;
   private readonly keyEls = new Map<number, HTMLElement>();
   private shift = 0;
@@ -321,8 +333,10 @@ const QWERTY_MAP: Record<string, number> = {
   ';': 16,
 };
 
-/** One octave above the keyboard's lowest C (base MIDI 60) -> anchor at 72. */
-const QWERTY_ANCHOR = 72;
+/** Widest QWERTY offset (the ';' key), for anchor fitting. */
+const QWERTY_SPAN = Math.max(...Object.values(QWERTY_MAP));
+/** Historical anchor for the family 37-key (52..88) board. */
+const DEFAULT_DEFAULT_QWERTY_ANCHOR = 72;
 const QWERTY_VELOCITY = 100;
 
 /**
@@ -356,7 +370,7 @@ export function attachComputerKeyboard(kbd: Keyboard): () => void {
     }
     const offset = QWERTY_MAP[key];
     if (offset === undefined || held.has(key)) return;
-    const base = QWERTY_ANCHOR + offset;
+    const base = kbd.qwertyAnchor + offset;
     held.set(key, base);
     kbd.pressNote(base, QWERTY_VELOCITY);
     e.preventDefault();

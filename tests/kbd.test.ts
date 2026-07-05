@@ -97,6 +97,21 @@ describe('Keyboard', () => {
     small.releaseAll();
   });
 
+  it('the QWERTY anchor adapts to the keybed so the whole map stays playable', () => {
+    // Family 37-key board (52..88): historical anchor 72 preserved.
+    const std = new Keyboard({ onNoteOn, onNoteOff });
+    expect(std.qwertyAnchor).toBe(72);
+    // 25-key E..E (52..76): anchor drops to 60 — ';' maps to 76, in range.
+    const small = new Keyboard({ onNoteOn, onNoteOff, lowestNote: 52, highestNote: 76 });
+    expect(small.qwertyAnchor).toBe(60);
+    // prologue-8 49-key (28..76): same top key, same anchor.
+    const p8 = new Keyboard({ onNoteOn, onNoteOff, lowestNote: 28, highestNote: 76 });
+    expect(p8.qwertyAnchor).toBe(60);
+    // prologue-16 61-key (36..96): room above, anchor back at 72.
+    const p16 = new Keyboard({ onNoteOn, onNoteOff, lowestNote: 36, highestNote: 96 });
+    expect(p16.qwertyAnchor).toBe(72);
+  });
+
   it('setLit highlights in-range keys and ignores out-of-range notes', () => {
     kbd.setLit([60, 200, -3]);
     expect(key(kbd, 60).classList.contains('xd-key--lit')).toBe(true);

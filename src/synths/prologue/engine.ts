@@ -805,15 +805,18 @@ export class Engine extends EngineBase<Voice> {
   /* ----------------------------------------------------- sum-stage state -- */
 
   /**
-   * Per-voice sum weight for a timbre + played key (spec §2/§15). UNCONFIRMED
-   * laws (spec §17): BALANCE 0..127 reads Sub<>Main (0 = full SUB only,
-   * center = both at full, 127 = full MAIN only); XFADE crossfades linearly
-   * across the full keybed with the low side per POSITION.
+   * Per-voice sum weight for a timbre + played key (spec §2/§15).
+   * BALANCE direction is DOCUMENTED [OM]: "64: the volume for the main
+   * timbre and the sub-timbre will be the same. Turning the knob to the
+   * LEFT will increase the volume of the MAIN timbre" — so 0 = full MAIN
+   * only, center = both at full, 127 = full SUB only. XFADE crossfades
+   * linearly across the full keybed with the low side per POSITION
+   * (UNCONFIRMED, spec §17).
    */
   private timbreWeight(t: number, key: number): number {
     if (this.params[P.SUB_ON] < 0.5) return t === 0 ? 1 : 0
     const b = this.effectiveParam(P.BALANCE) / 127
-    let w = t === 0 ? Math.min(1, 2 * b) : Math.min(1, 2 * (1 - b))
+    let w = t === 0 ? Math.min(1, 2 * (1 - b)) : Math.min(1, 2 * b)
     if (Math.round(this.params[P.TIMBRE_TYPE]) === TT_XFADE && key >= 0) {
       const k = Math.max(0, Math.min(127, key)) / 127
       const mainW = Math.round(this.params[P.POSITION]) === 0 ? k : 1 - k

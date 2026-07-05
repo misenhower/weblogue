@@ -53,6 +53,17 @@
   justify-content: center;
   z-index: 99;
   backdrop-filter: blur(3px);
+  /* Stay invisible for a beat: when auto power-on succeeds (synth switch,
+     autoplay already permitted) the overlay is removed before it fades in,
+     so the gate never flashes. */
+  opacity: 0;
+  animation: xd-power-reveal 0.25s ease 0.25s forwards;
+}
+
+@keyframes xd-power-reveal {
+  to {
+    opacity: 1;
+  }
 }
 
 .xd-power-btn {

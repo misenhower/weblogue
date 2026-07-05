@@ -59,44 +59,70 @@ if (SYNTHS.length > 1) {
   appRoot.appendChild(row)
 }
 
-// --- Power-on overlay (audio needs a user gesture) -----------------------
+// --- Power-on (audio needs a user gesture — but only when the browser
+// says so). The graph is built eagerly at load and resume() is attempted
+// right away: after a synth-switch reload Chrome carries the click's
+// autoplay permission across the same-origin navigation, so the context
+// starts silently and the overlay (which fades in after a beat) is removed
+// before it ever becomes visible. Only when autoplay is actually blocked
+// (typically the first visit) does the POWER ON gate appear.
 const overlay = document.createElement('div')
 overlay.className = 'xd-power-overlay'
 overlay.innerHTML = `<button class="xd-power-btn"><span></span>POWER ON</button>`
 appRoot.appendChild(overlay)
 
-async function powerOn(): Promise<void> {
-  if (ctx) return // already powered on (button + debug hook can race)
+let bootP: Promise<void> | null = null
+function boot(): Promise<void> {
+  bootP ??= (async () => {
+    ctx = new AudioContext({ latencyHint: 'interactive' })
+    ctx.onstatechange = () => {
+      if (ctx!.state === 'running') onRunning()
+    }
+    await ctx.audioWorklet.addModule(entry.processorUrl)
+    node = new AudioWorkletNode(ctx, entry.def.processorName, {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+    })
+    masterGain = ctx.createGain()
+    masterGain.gain.value = masterLevel * masterLevel // squared audio taper
+    analyser = ctx.createAnalyser()
+    analyser.fftSize = 2048
+    node.connect(masterGain)
+    masterGain.connect(analyser)
+    analyser.connect(ctx.destination)
+    app.setSampleRate(ctx.sampleRate)
+
+    node.port.onmessage = (e: MessageEvent) => {
+      app.onEngineMessage(e.data as FromEngine)
+    }
+
+    // Flush everything queued before boot (includes the program load that
+    // store.connect() emitted), then enable the scope stream.
+    for (const m of pending) node.port.postMessage(m)
+    pending.length = 0
+    send({ t: 'scope', on: true })
+  })()
+  return bootP
+}
+
+let poweredOn = false
+function onRunning(): void {
+  if (poweredOn) return
+  poweredOn = true
   overlay.remove()
-  ctx = new AudioContext({ latencyHint: 'interactive' })
-  await ctx.audioWorklet.addModule(entry.processorUrl)
-  node = new AudioWorkletNode(ctx, entry.def.processorName, {
-    numberOfInputs: 0,
-    numberOfOutputs: 1,
-    outputChannelCount: [2],
-  })
-  masterGain = ctx.createGain()
-  masterGain.gain.value = masterLevel * masterLevel // squared audio taper
-  analyser = ctx.createAnalyser()
-  analyser.fftSize = 2048
-  node.connect(masterGain)
-  masterGain.connect(analyser)
-  analyser.connect(ctx.destination)
-  app.setSampleRate(ctx.sampleRate)
-
-  node.port.onmessage = (e: MessageEvent) => {
-    app.onEngineMessage(e.data as FromEngine)
-  }
-
-  // Flush everything queued before power-on (includes the program load that
-  // store.connect() emitted), then enable the scope stream.
-  for (const m of pending) node.port.postMessage(m)
-  pending.length = 0
-  send({ t: 'scope', on: true })
-  await ctx.resume()
   void app.initMidi()
 }
-overlay.querySelector('button')!.addEventListener('click', () => void powerOn())
+
+async function powerOn(): Promise<void> {
+  await boot()
+  await ctx!.resume() // pends/rejects while autoplay-blocked; gesture retries
+  onRunning()
+}
+// Any click on the gate powers on, not just the button — the overlay is
+// transparent for its first 250ms and must not eat that first gesture.
+overlay.addEventListener('click', () => void powerOn())
+void powerOn().catch((err) => console.warn('auto power-on blocked:', err))
 
 // --- Debug hook for automated verification -------------------------------
 const debugHook = {

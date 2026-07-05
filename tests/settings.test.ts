@@ -126,7 +126,7 @@ afterEach(() => {
 
 function make(): { store: Store; drawer: SettingsDrawer } {
   const store = new Store(XD_DEF)
-  const drawer = new SettingsDrawer({ store, displayDef: XD_DISPLAY_DEF, def: XD_SETTINGS_DEF })
+  const drawer = new SettingsDrawer({ store, synthDef: XD_DEF, displayDef: XD_DISPLAY_DEF, def: XD_SETTINGS_DEF })
   document.body.appendChild(drawer.el)
   return { store, drawer }
 }

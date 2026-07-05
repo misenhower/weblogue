@@ -11,9 +11,10 @@
  */
 import type { Store } from '../state/store'
 import type { ParamMeta } from '../shared/paramdef'
+import type { SynthDef } from '../synths/def'
 import type { DisplayDef } from './display'
+import { buildPresetsGroup, stepBtn } from './presets'
 import { showMenu, menuOpen, type MenuItem } from './menu'
-import { bindHold } from './hold'
 import { NUM_MOTION_LANES } from '../shared/program'
 import { SEQ_FIELDS, type SeqFieldDef } from './seqfields'
 import { div, row } from './dom'
@@ -66,7 +67,7 @@ export class SettingsDrawer {
   private updaters: Array<() => void> = []
   private refreshQueued = false
 
-  constructor(opts: { store: Store; displayDef: DisplayDef; def: SettingsDef }) {
+  constructor(opts: { store: Store; synthDef: SynthDef; displayDef: DisplayDef; def: SettingsDef }) {
     this.store = opts.store
     this.displayDef = opts.displayDef
 
@@ -126,6 +127,8 @@ export class SettingsDrawer {
           SEQ_FIELDS.filter((f) => f.field === 'bpm'),
         )
       }
+      // Preset/file import-export lives on the first pane (prologue: GLOBAL).
+      buildPresetsGroup(panes[0], { store: opts.store, def: opts.synthDef })
     }
 
     this.el.appendChild(body)
@@ -302,8 +305,8 @@ export class SettingsDrawer {
   }
 
   private numRow(label: string, spec: NumSpec): HTMLElement {
-    const minus = this.stepBtn('−', () => spec.set(this.quantize(spec, spec.get() - spec.step)))
-    const plus = this.stepBtn('+', () => spec.set(this.quantize(spec, spec.get() + spec.step)))
+    const minus = stepBtn('−', () => spec.set(this.quantize(spec, spec.get() - spec.step)))
+    const plus = stepBtn('+', () => spec.set(this.quantize(spec, spec.get() + spec.step)))
 
     const value = div('xd-set-value xd-set-num')
     const sync = (): void => {
@@ -364,14 +367,6 @@ export class SettingsDrawer {
     // float-safe for the 0.5-step BPM; integers pass through untouched
     const r = Math.round(q * 100) / 100
     return Math.max(spec.min, Math.min(spec.max, r))
-  }
-
-  private stepBtn(label: string, fn: () => void): HTMLButtonElement {
-    const b = document.createElement('button')
-    b.className = 'xd-set-step'
-    b.textContent = label
-    bindHold(b, fn)
-    return b
   }
 
   private chip(label: string, fn: () => void): HTMLButtonElement {

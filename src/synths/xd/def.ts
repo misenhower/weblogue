@@ -7,6 +7,7 @@ import { XD_PROCESSOR_NAME } from './ids'
 import { PARAMS, PARAM_COUNT, clampParam } from './params'
 import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from './program'
 import { FACTORY_PRESETS } from './presets'
+import { XD_KORG_FILE } from './progbin'
 import { NUM_SLOTS } from '../../state/persist'
 
 export const XD_DEF: SynthDef = {
@@ -23,4 +24,5 @@ export const XD_DEF: SynthDef = {
   factoryPresets: FACTORY_PRESETS,
   bankKey: 'xd-web-bank-v1', // pre-multi-synth key: existing user banks keep working
   numSlots: NUM_SLOTS,
+  korgFile: XD_KORG_FILE,
 }

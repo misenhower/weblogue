@@ -19,7 +19,7 @@ import {
 import type { ToEngine } from '../shared/messages'
 import { MOTION_PITCH_BEND, MOTION_GATE_TIME } from '../shared/paramdef'
 import type { StoreDef } from '../synths/def'
-import { loadBank, saveBankSlot, slotName } from './persist'
+import { loadBank, saveBankSlot, saveBankSlots, slotName } from './persist'
 
 /** 'ui' = panel control, 'menu' = OLED menu edit (panel controls must resync). */
 export type ParamSource = 'ui' | 'menu' | 'midi' | 'load' | 'motion' | 'engine'
@@ -177,6 +177,45 @@ export class Store {
     this.prog = this.def.cloneProgram(p)
     this.isDirty = true
     this.afterLoad()
+  }
+
+  /**
+   * Bulk-import programs into bank slots starting at startSlot, without
+   * touching the working program. Stops at the end of the bank. Returns the
+   * write count and whether every write persisted (localStorage quota).
+   */
+  importPrograms(programs: readonly Program[], startSlot: number): { written: number; persisted: boolean } {
+    if (!Number.isInteger(startSlot) || startSlot < 0 || startSlot >= this.def.numSlots) {
+      return { written: 0, persisted: true }
+    }
+    const fit = Math.min(programs.length, this.def.numSlots - startSlot)
+    const clones: Program[] = []
+    for (let i = 0; i < fit; i++) {
+      const cp = this.def.cloneProgram(programs[i])
+      this.bank[startSlot + i] = cp
+      clones.push(cp)
+    }
+    // Batch write: one entry per slot, names index/bank marker written once.
+    const persisted = saveBankSlots(this.def, startSlot, clones)
+    const written = clones.length
+    if (written > 0) {
+      // If the written range covers the loaded slot, the working copy no
+      // longer matches what that bank slot now holds — that mismatch is
+      // exactly what the dirty flag tracks.
+      if (this.slotIndex >= startSlot && this.slotIndex < startSlot + written) {
+        this.isDirty = true
+      }
+      // Slot names changed: nudge program listeners so browsers/readouts refresh.
+      for (const fn of this.programLs) fn(this.prog, this.slotIndex)
+    }
+    return { written, persisted }
+  }
+
+  /** The bank copy of a slot, cloned (for pack export; like every other bank
+   *  accessor, callers must never get the live Proxy-cached object). */
+  bankProgram(n: number): Program | null {
+    if (!Number.isInteger(n) || n < 0 || n >= this.def.numSlots) return null
+    return this.def.cloneProgram(this.bank[n])
   }
 
   slotNames(): string[] {

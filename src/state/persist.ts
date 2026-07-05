@@ -17,7 +17,8 @@ import type { StoreDef } from '../synths/def'
 
 export const NUM_SLOTS = 500
 
-const INIT_NAME = 'Init Program'
+/** Sentinel name for empty/unwritten slots (also the init-program name). */
+export const INIT_NAME = 'Init Program'
 
 function slotKey(def: StoreDef, slot: number): string {
   return def.bankKey + '/' + slot
@@ -169,6 +170,37 @@ export function saveBankSlot(def: StoreDef, slot: number, p: Program): boolean {
   const namesOk = safeSet(def.bankKey + '/names', JSON.stringify(names))
   if (safeGet(def.bankKey) === null) safeSet(def.bankKey, '1')
   return slotOk && namesOk
+}
+
+/**
+ * Batch write of consecutive slots starting at startSlot (clipped to the end
+ * of the bank). Each slot entry is written individually, but the names index
+ * (and the bank marker) is written once at the end — saveBankSlot rewrites
+ * the whole index per call, which hurts on multi-hundred-program imports.
+ * Returns false when any write did not persist; the in-memory names cache is
+ * still updated (the programs are live).
+ */
+export function saveBankSlots(def: StoreDef, startSlot: number, programs: readonly Program[]): boolean {
+  if (!Number.isInteger(startSlot) || startSlot < 0 || startSlot >= def.numSlots) return false
+  if (programs.length === 0) return true
+  const names = ensureNames(def)
+  let ok = true
+  for (let i = 0; i < programs.length; i++) {
+    const slot = startSlot + i
+    if (slot >= def.numSlots) break
+    if (!safeSet(slotKey(def, slot), def.serializeProgram(programs[i]))) ok = false
+    names[slot] = programs[i].name
+  }
+  if (!safeSet(def.bankKey + '/names', JSON.stringify(names))) ok = false
+  if (safeGet(def.bankKey) === null) safeSet(def.bankKey, '1')
+  return ok
+}
+
+/** True iff the slot has a stored entry (factory-seeded or user-written) —
+ *  mirrors readSlot's branch. Content-based "is this slot non-empty" check. */
+export function hasBankSlot(def: StoreDef, slot: number): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= def.numSlots) return false
+  return safeGet(slotKey(def, slot)) !== null
 }
 
 /** Cheap name lookup from the names index (no program deserialization). */

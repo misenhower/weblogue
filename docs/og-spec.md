@@ -167,7 +167,10 @@ the OG has no damper input? (UNCONFIRMED — verify; xd receives CC64). Note-off
 5. DELAY ROUTING order: CC88 zones documented BYPASS/POST/PRE but program enum is 0=BYPASS, 1=PRE, 2=POST — one is a doc
    error; verify which the hardware obeys via CC before finalizing the CC decoder.
 6. CC map changed at firmware 1.10 (launch 1.00 used CC1-13/64-67/90-92); implement rev 1.10 only.
-7. Slider Assign range printed 0..79 in TABLE 2 vs 29 enumerated values in P13 — clamp to 0..28.
+7. Slider Assign (byte 72): P13's sequential 0..28 list is wrong — the byte stores sparse panel-parameter ids
+   (77/78 = PITCH BEND/GATE TIME, 17..71 for the panel params), which is why TABLE 2's range column says 0..79.
+   Confirmed by jeffkistler/minilogue-editor + gazzar/loguetools; Korg's own monologue *note P12 uses the same
+   sparse-id scheme. See SLIDER_TO_HW in src/synths/og/progbin.ts.
 
 ## 16. UNCONFIRMED / calibration targets (extends docs/hardware-calibration.md; OG hardware not owned — from manuals/recordings only)
 

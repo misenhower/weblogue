@@ -7,6 +7,7 @@ import { OG_PROCESSOR_NAME } from './ids'
 import { PARAMS, PARAM_COUNT, clampParam } from './params'
 import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from './program'
 import { FACTORY_PRESETS } from './presets'
+import { OG_KORG_FILE } from './progbin'
 import { NUM_SLOTS } from '../../state/persist'
 
 export const OG_DEF: SynthDef = {
@@ -23,4 +24,5 @@ export const OG_DEF: SynthDef = {
   factoryPresets: FACTORY_PRESETS,
   bankKey: 'og-web-bank-v1',
   numSlots: NUM_SLOTS, // replica choice: 500 like the xd (hardware has 200)
+  korgFile: OG_KORG_FILE,
 }

@@ -29,11 +29,33 @@ export interface StoreDef {
   numSlots: number
 }
 
+/**
+ * Korg native file support (synths/<id>/progbin.ts): codec between the
+ * hardware's prog_bin binary (payload of .mnlgxdprog/.mnlgxdlib etc. ZIP
+ * containers, layout per docs/hardware/<synth>_MIDIImp.txt TABLE 2) and a
+ * replica Program.
+ */
+export interface KorgFileCodec {
+  /** Null = wrong magic/size for this synth. */
+  decodeProgBin(bytes: Uint8Array): Program | null
+  encodeProgBin(p: Program): Uint8Array
+  /** Manifest product string, e.g. 'minilogue xd'. */
+  product: string
+  /** prog_info root XML tag, e.g. 'xd_ProgramInformation'. */
+  infoTag: string
+  /** Single-program file extension (no dot), e.g. 'mnlgxdprog'. */
+  progExt: string
+  /** Library/bank file extensions (no dot), e.g. ['mnlgxdlib']. */
+  libExts: readonly string[]
+}
+
 export interface SynthDef extends StoreDef {
   /** Display name for the synth selector. */
   title: string
   /** AudioWorkletProcessor registration name. */
   processorName: string
+  /** Korg native program/library file support; absent = JSON packs only. */
+  korgFile?: KorgFileCodec
 }
 
 /** What the generic bootstrap (main.ts) provides to a synth app. */

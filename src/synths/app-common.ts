@@ -88,7 +88,7 @@ export function makeSynthApp(cfg: SynthAppConfig): SynthApp {
     onJoyY: (v) => send({ t: 'joyY', v }),
     onMaster: (v) => cfg.opts.onMaster(v),
   })
-  const settings = new SettingsDrawer({ store, displayDef: cfg.displayDef, def: cfg.settingsDef })
+  const settings = new SettingsDrawer({ store, synthDef: cfg.def, displayDef: cfg.displayDef, def: cfg.settingsDef })
   const display = new Display({ store, def: cfg.displayDef, onSettings: () => settings.toggle() })
   panel.displaySlot.appendChild(display.el)
   root.appendChild(panel.el)

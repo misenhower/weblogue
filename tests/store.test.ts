@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/state/store'
 import { XD_DEF } from '../src/synths/xd/def'
-import { NUM_SLOTS } from '../src/state/persist'
+import { NUM_SLOTS, hasBankSlot } from '../src/state/persist'
 import { P, PARAMS } from '../src/synths/xd/params'
 import { MOTION_PITCH_BEND } from '../src/shared/paramdef'
 import { NOTES_PER_STEP, MOTION_POINTS, GATE_TIE, STEP_RESOLUTIONS, type Program } from '../src/shared/program'
@@ -249,6 +249,84 @@ describe('bank persistence', () => {
     s.loadSlot(1)
     s.loadSlot(0)
     expect(s.getParam(P.CUTOFF)).toBe(400) // factory value, edit dropped
+  })
+
+  it('hasBankSlot: true for stored entries (factory-seeded or written), false otherwise', () => {
+    const def = { ...XD_DEF, factoryPresets: makeFactory() }
+    const s = new Store(def) // first run seeds the two factory slots
+    expect(hasBankSlot(def, 0)).toBe(true)
+    expect(hasBankSlot(def, 1)).toBe(true)
+    expect(hasBankSlot(def, 2)).toBe(false) // never written
+    // A user program named like the sentinel still counts (content-based).
+    s.setName('Init Program')
+    s.writeSlot(7)
+    expect(hasBankSlot(def, 7)).toBe(true)
+    expect(hasBankSlot(def, -1)).toBe(false)
+    expect(hasBankSlot(def, NUM_SLOTS)).toBe(false)
+  })
+})
+
+// -------------------------------------------------------------- bulk import
+
+describe('importPrograms / bankProgram', () => {
+  function imports(names: string[]): Program[] {
+    return names.map((n) => initProgram(n))
+  }
+
+  it('batch-writes slot entries with a single names-index write', () => {
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
+    const setCounts = new Map<string, number>()
+    const origSet = mock.setItem.bind(mock)
+    mock.setItem = (k: string, v: string) => {
+      setCounts.set(k, (setCounts.get(k) ?? 0) + 1)
+      origSet(k, v)
+    }
+    const r = s.importPrograms(imports(['Imp One', 'Imp Two', 'Imp Three']), 10)
+    expect(r).toEqual({ written: 3, persisted: true })
+    const slotWrites = Array.from(setCounts.keys()).filter((k) => SLOT_KEY_RE.test(k))
+    expect(slotWrites).toEqual(['xd-web-bank-v1/10', 'xd-web-bank-v1/11', 'xd-web-bank-v1/12'])
+    expect(setCounts.get('xd-web-bank-v1/names')).toBe(1) // not once per program
+    expect(s.slotNames().slice(10, 13)).toEqual(['Imp One', 'Imp Two', 'Imp Three'])
+    // roundtrips through a reload
+    const s2 = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
+    s2.loadSlot(11)
+    expect(s2.program.name).toBe('Imp Two')
+  })
+
+  it('marks the working copy dirty when the written range covers the loaded slot', () => {
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
+    expect(s.slot).toBe(0)
+    s.importPrograms(imports(['Elsewhere']), 5) // range misses slot 0
+    expect(s.dirty).toBe(false)
+    s.importPrograms(imports(['Covers A', 'Covers B']), 0) // covers slot 0
+    expect(s.dirty).toBe(true) // working copy no longer matches the bank slot
+    expect(s.program.name).toBe('Fat Bass') // working copy itself untouched
+  })
+
+  it('stops at the end of the bank and reports quota failures', () => {
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
+    const r = s.importPrograms(imports(['Fits', 'Does Not']), NUM_SLOTS - 1)
+    expect(r.written).toBe(1)
+    expect(s.slotNames()[NUM_SLOTS - 1]).toBe('Fits')
+    expect(s.importPrograms(imports(['X']), NUM_SLOTS)).toEqual({ written: 0, persisted: true })
+    mock.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    const rq = s.importPrograms(imports(['No Room']), 3)
+    expect(rq).toEqual({ written: 1, persisted: false })
+    expect(s.slotNames()[3]).toBe('No Room') // live in-memory index still updated
+  })
+
+  it('bankProgram returns a clone, not the live bank object', () => {
+    const s = new Store({ ...XD_DEF, factoryPresets: makeFactory() })
+    const a = s.bankProgram(0)
+    expect(a).not.toBeNull()
+    a!.name = 'Mutated'
+    a!.params[P.CUTOFF] = 1
+    expect(s.bankProgram(0)!.name).toBe('Fat Bass') // bank copy untouched
+    expect(s.bankProgram(0)!.params[P.CUTOFF]).toBe(400)
+    expect(s.bankProgram(-1)).toBeNull()
+    expect(s.bankProgram(NUM_SLOTS)).toBeNull()
   })
 })
 

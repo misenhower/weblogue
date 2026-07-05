@@ -11,6 +11,7 @@ import { PROLOGUE_PROCESSOR_NAME, type PrologueVariant, VARIANT_VOICES } from '.
 import { PARAMS, PARAM_COUNT, clampParam, RP } from './params'
 import { initProgram, cloneProgram, serializeProgram, deserializeProgram } from './program'
 import { FACTORY_PRESETS } from './presets'
+import { PROLOGUE_KORG_FILE } from './progbin'
 import { NUM_SLOTS } from '../../state/persist'
 
 function capped(p: Program | null, cap: number): Program | null {
@@ -34,5 +35,11 @@ export function makePrologueDef(variant: PrologueVariant): SynthDef {
     factoryPresets: FACTORY_PRESETS,
     bankKey: `prologue${variant}-web-bank-v1`,
     numSlots: NUM_SLOTS,
+    // Korg .prlgprog/.prlglib support; the blob carries no VOICE CAP (it is
+    // replica-only), so decode caps it like every other program-load path.
+    korgFile: {
+      ...PROLOGUE_KORG_FILE,
+      decodeProgBin: (bytes: Uint8Array) => capped(PROLOGUE_KORG_FILE.decodeProgBin(bytes), cap),
+    },
   }
 }

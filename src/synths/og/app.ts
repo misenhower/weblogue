@@ -15,6 +15,7 @@ import { OG_DEF } from './def'
 import { Panel } from './panel'
 import { OG_DISPLAY_DEF } from './display-def'
 import { OG_DEBUG_DEF } from './debug-def'
+import { OG_SETTINGS_DEF } from './settings-def'
 import { decodeCc } from './cc'
 import { P } from './params'
 
@@ -36,6 +37,7 @@ export function buildOgApp(opts: SynthAppOpts): SynthApp {
       }),
     displayDef: OG_DISPLAY_DEF,
     debugDef: OG_DEBUG_DEF,
+    settingsDef: OG_SETTINGS_DEF,
     midiHandlers: ({ send, store, midiActivity }) => ({
       sustain: (on) => send({ t: 'sustain', on }), // rx UNCONFIRMED on hardware (spec §16)
       param: (id, v) => {

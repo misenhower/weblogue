@@ -8,6 +8,7 @@ import './ui/theme.css'
 import './ui/kbd.css'
 import './ui/panel.css'
 import './ui/display.css'
+import './ui/settings.css'
 import './ui/debug.css'
 import './ui/shell.css'
 import { SYNTHS, pickSynth, switchSynth } from './synths/registry'
@@ -73,37 +74,45 @@ appRoot.appendChild(overlay)
 
 let bootP: Promise<void> | null = null
 function boot(): Promise<void> {
-  bootP ??= (async () => {
-    ctx = new AudioContext({ latencyHint: 'interactive' })
-    ctx.onstatechange = () => {
-      if (ctx!.state === 'running') onRunning()
-    }
-    await ctx.audioWorklet.addModule(entry.processorUrl)
-    node = new AudioWorkletNode(ctx, entry.def.processorName, {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-    })
-    masterGain = ctx.createGain()
-    masterGain.gain.value = masterLevel * masterLevel // squared audio taper
-    analyser = ctx.createAnalyser()
-    analyser.fftSize = 2048
-    node.connect(masterGain)
-    masterGain.connect(analyser)
-    analyser.connect(ctx.destination)
-    app.setSampleRate(ctx.sampleRate)
-
-    node.port.onmessage = (e: MessageEvent) => {
-      app.onEngineMessage(e.data as FromEngine)
-    }
-
-    // Flush everything queued before boot (includes the program load that
-    // store.connect() emitted), then enable the scope stream.
-    for (const m of pending) node.port.postMessage(m)
-    pending.length = 0
-    send({ t: 'scope', on: true })
-  })()
+  // A failed boot (e.g. worklet fetch 404 after a stale deploy) must not be
+  // memoized: clear bootP so the next POWER ON click retries from scratch.
+  bootP ??= doBoot().catch((err) => {
+    bootP = null
+    ctx = null
+    throw err
+  })
   return bootP
+}
+
+async function doBoot(): Promise<void> {
+  ctx = new AudioContext({ latencyHint: 'interactive' })
+  ctx.onstatechange = () => {
+    if (ctx!.state === 'running') onRunning()
+  }
+  await ctx.audioWorklet.addModule(entry.processorUrl)
+  node = new AudioWorkletNode(ctx, entry.def.processorName, {
+    numberOfInputs: 0,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  })
+  masterGain = ctx.createGain()
+  masterGain.gain.value = masterLevel * masterLevel // squared audio taper
+  analyser = ctx.createAnalyser()
+  analyser.fftSize = 2048
+  node.connect(masterGain)
+  masterGain.connect(analyser)
+  analyser.connect(ctx.destination)
+  app.setSampleRate(ctx.sampleRate)
+
+  node.port.onmessage = (e: MessageEvent) => {
+    app.onEngineMessage(e.data as FromEngine)
+  }
+
+  // Flush everything queued before boot (includes the program load that
+  // store.connect() emitted), then enable the scope stream.
+  for (const m of pending) node.port.postMessage(m)
+  pending.length = 0
+  send({ t: 'scope', on: true })
 }
 
 let poweredOn = false
@@ -121,7 +130,9 @@ async function powerOn(): Promise<void> {
 }
 // Any click on the gate powers on, not just the button — the overlay is
 // transparent for its first 250ms and must not eat that first gesture.
-overlay.addEventListener('click', () => void powerOn())
+overlay.addEventListener('click', () => {
+  powerOn().catch((err) => console.error('power on failed:', err))
+})
 void powerOn().catch((err) => console.warn('auto power-on blocked:', err))
 
 // --- Debug hook for automated verification -------------------------------

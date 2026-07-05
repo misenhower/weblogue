@@ -9,6 +9,7 @@ import { makeSynthApp } from '../app-common'
 import { XD_DEF } from './def'
 import { Panel } from './panel'
 import { XD_DISPLAY_DEF } from './display-def'
+import { XD_SETTINGS_DEF } from './settings-def'
 import { XD_DEBUG_DEF } from './debug-def'
 import { decodeCc } from './cc'
 import { resolveMidiParam } from './resolve'
@@ -32,6 +33,7 @@ export function buildXdApp(opts: SynthAppOpts): SynthApp {
         onMaster: cb.onMaster,
       }),
     displayDef: XD_DISPLAY_DEF,
+    settingsDef: XD_SETTINGS_DEF,
     debugDef: XD_DEBUG_DEF,
     midiHandlers: ({ send, store, midiActivity }) => ({
       sustain: (on) => send({ t: 'sustain', on }),

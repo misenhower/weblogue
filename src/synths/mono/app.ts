@@ -9,6 +9,7 @@ import { makeSynthApp } from '../app-common'
 import { MONO_DEF } from './def'
 import { Panel } from './panel'
 import { MONO_DISPLAY_DEF } from './display-def'
+import { MONO_SETTINGS_DEF } from './settings-def'
 import { MONO_DEBUG_DEF } from './debug-def'
 import { decodeCc } from './cc'
 import { P } from './params'
@@ -30,6 +31,7 @@ export function buildMonoApp(opts: SynthAppOpts): SynthApp {
         onMaster: cb.onMaster,
       }),
     displayDef: MONO_DISPLAY_DEF,
+    settingsDef: MONO_SETTINGS_DEF,
     debugDef: MONO_DEBUG_DEF,
     midiHandlers: ({ send, store, midiActivity }) => ({
       sustain: (on) => send({ t: 'sustain', on }), // rx UNCONFIRMED (no damper input; spec §16)

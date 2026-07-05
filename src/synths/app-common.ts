@@ -14,6 +14,7 @@ import type { SynthApp, SynthAppOpts, SynthDef } from './def'
 import type { FromEngine, ToEngine } from '../shared/messages'
 import { Store } from '../state/store'
 import { Display, type DisplayDef } from '../ui/display'
+import { SettingsDrawer, type SettingsDef } from '../ui/settings'
 import { DebugPanel, type DebugDef } from '../ui/debugpanel'
 import { attachComputerKeyboard, type Keyboard } from '../ui/keyboard'
 import { MidiInput, type MidiHandlers } from '../midi/midi'
@@ -64,6 +65,7 @@ export interface SynthAppConfig {
   opts: SynthAppOpts
   buildPanel(store: Store, callbacks: SynthPanelCallbacks): SynthPanel
   displayDef: DisplayDef
+  settingsDef: SettingsDef
   debugDef: DebugDef
   midiHandlers(ctx: SynthMidiCtx): SynthMidiHooks
   /** Window width at which the panel reaches scale 1 (logical width + margin). */
@@ -86,9 +88,11 @@ export function makeSynthApp(cfg: SynthAppConfig): SynthApp {
     onJoyY: (v) => send({ t: 'joyY', v }),
     onMaster: (v) => cfg.opts.onMaster(v),
   })
-  const display = new Display({ store, def: cfg.displayDef })
+  const settings = new SettingsDrawer({ store, displayDef: cfg.displayDef, def: cfg.settingsDef })
+  const display = new Display({ store, def: cfg.displayDef, onSettings: () => settings.toggle() })
   panel.displaySlot.appendChild(display.el)
   root.appendChild(panel.el)
+  root.appendChild(settings.el)
 
   store.connect(send)
 

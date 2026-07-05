@@ -1,7 +1,8 @@
 /*
  * OLED display module: canvas-drawn screen (HOME / param overlay / MENU)
- * plus a 5-button soft strip ([MENU] [◀] [▶] [−] [+]) that replaces the
- * hardware's dedicated menu buttons.
+ * plus a soft-button strip ([MENU] [◀] [▶] [−] [+], and a ⚙ settings-drawer
+ * button when the app provides onSettings) replacing the hardware's
+ * dedicated menu buttons.
  *
  * Rendering is requestAnimationFrame-driven but only when dirty (scope
  * frames arriving at ~20fps mark it dirty, so the scope animates without a
@@ -10,7 +11,9 @@
  */
 import type { Store, ParamSource } from '../state/store'
 import { MOTION_GATE_TIME, type ParamMeta } from '../shared/paramdef'
-import { STEP_RESOLUTIONS, NUM_MOTION_LANES } from '../shared/program'
+import { NUM_MOTION_LANES } from '../shared/program'
+import { bindHold } from './hold'
+import { SEQ_FIELDS, type SeqFieldDef } from './seqfields'
 
 /**
  * Synth-specific display surface, injected by the synth app (see
@@ -44,26 +47,10 @@ const OVERLAY_MS = 1100
 const MENU_IDLE_MS = 8000
 const MIDI_FLASH_MS = 150
 const BLINK_MS = 320
-const HOLD_DELAY_MS = 250
-const HOLD_REPEAT_MS = 60
 
 const MONO = "ui-monospace, Menlo, Consolas, 'Courier New', monospace"
 
 type Screen = 'home' | 'overlay' | 'menu'
-
-interface SeqFieldDef {
-  field: 'bpm' | 'stepLength' | 'stepResolution' | 'swing' | 'defaultGate'
-  label: string
-  step: number
-}
-
-const SEQ_FIELDS: readonly SeqFieldDef[] = [
-  { field: 'bpm', label: 'BPM', step: 0.5 },
-  { field: 'stepLength', label: 'STEP LENGTH', step: 1 },
-  { field: 'stepResolution', label: 'STEP RESOLUTION', step: 1 },
-  { field: 'swing', label: 'SWING', step: 1 },
-  { field: 'defaultGate', label: 'DEFAULT GATE', step: 1 },
-]
 
 const MOTION_FIELDS = ['ASSIGN', 'ON', 'SMOOTH', 'CLEAR'] as const
 
@@ -116,7 +103,7 @@ export class Display {
   /** Motion-lane pages shown ('arp' transport: none). */
   private readonly motionLanes: number
 
-  constructor(opts: { store: Store; def: DisplayDef }) {
+  constructor(opts: { store: Store; def: DisplayDef; onSettings?: () => void }) {
     this.store = opts.store
     this.def = opts.def
     this.menuParams = opts.def.menuParams
@@ -150,6 +137,13 @@ export class Display {
     const nextBtn = this.softButton(strip, '▶', 'next')
     const minusBtn = this.softButton(strip, '−', 'minus')
     const plusBtn = this.softButton(strip, '+', 'plus')
+    // Web-native settings drawer entry point (see src/ui/settings.ts).
+    if (opts.onSettings) {
+      const s = opts.onSettings
+      const b = this.softButton(strip, '⚙', 'settings')
+      b.title = 'Settings editor'
+      this.onClick(b, s)
+    }
 
     this.el.append(screenWrap, strip)
 
@@ -166,8 +160,8 @@ export class Display {
     this.onClick(this.menuBtn, () => this.toggleMenu())
     this.onClick(prevBtn, () => this.nav(-1))
     this.onClick(nextBtn, () => this.nav(1))
-    this.bindHold(minusBtn, () => this.adjust(-1))
-    this.bindHold(plusBtn, () => this.adjust(1))
+    bindHold(minusBtn, () => this.adjust(-1))
+    bindHold(plusBtn, () => this.adjust(1))
 
     /* ---- store subscriptions (module lives for the page lifetime) -- */
     const store = this.store
@@ -236,54 +230,6 @@ export class Display {
   /** Click handler that also works from tests (element.click()). */
   private onClick(btn: HTMLButtonElement, fn: () => void): void {
     btn.addEventListener('click', fn)
-  }
-
-  /**
-   * Press-and-hold with acceleration: fire on press, then repeat after
-   * 250ms every 60ms. A plain synthetic .click() (tests, keyboard) fires
-   * once; a real pointer press is not double-counted by its trailing click.
-   */
-  private bindHold(btn: HTMLButtonElement, fn: () => void): void {
-    let delay: ReturnType<typeof setTimeout> | null = null
-    let repeat: ReturnType<typeof setInterval> | null = null
-    let sawPointer = false
-    const stop = (): void => {
-      if (delay) clearTimeout(delay)
-      if (repeat) clearInterval(repeat)
-      delay = null
-      repeat = null
-    }
-    // An aborted press (released off-button or cancelled) produces no
-    // trailing click; sawPointer must reset or it would swallow the next
-    // keyboard/synthetic click. A release on the button keeps sawPointer so
-    // its trailing click is still ignored.
-    const windowRelease = (e: Event): void => {
-      window.removeEventListener('pointerup', windowRelease)
-      window.removeEventListener('pointercancel', windowRelease)
-      stop()
-      const onBtn = e.target instanceof Node && btn.contains(e.target)
-      if (e.type === 'pointercancel' || !onBtn) sawPointer = false
-    }
-    btn.addEventListener('pointerdown', () => {
-      sawPointer = true
-      fn()
-      stop()
-      window.addEventListener('pointerup', windowRelease)
-      window.addEventListener('pointercancel', windowRelease)
-      delay = setTimeout(() => {
-        repeat = setInterval(fn, HOLD_REPEAT_MS)
-      }, HOLD_DELAY_MS)
-    })
-    btn.addEventListener('pointerup', stop)
-    btn.addEventListener('pointercancel', stop)
-    btn.addEventListener('pointerleave', stop)
-    btn.addEventListener('click', () => {
-      if (sawPointer) {
-        sawPointer = false
-        return
-      }
-      fn()
-    })
   }
 
   /* ---------------------------------------------------------------- */
@@ -387,17 +333,7 @@ export class Display {
       // (PORTAMENTO knob, OCTAVE lever) that also expose these params.
       store.setParam(p.meta.id, store.getParam(p.meta.id) + dir, 'menu')
     } else if (p.kind === 'seq') {
-      const seq = store.program.seq
-      const cur =
-        p.def.field === 'bpm'
-          ? seq.bpm
-          : p.def.field === 'stepLength'
-            ? seq.stepLength
-            : p.def.field === 'stepResolution'
-              ? seq.stepResolution
-              : p.def.field === 'swing'
-                ? seq.swing
-                : seq.defaultGate
+      const cur = p.def.get(store.program.seq)
       store.setSeqField(p.def.field, cur + dir * p.def.step)
       // Spec §11: GATE TIME is motion-recordable — editing DEFAULT GATE
       // during realtime rec also writes the gate-time motion lane.
@@ -712,25 +648,7 @@ export class Display {
       this.text(ctx, p.meta.label, SCREEN_W / 2, 46, 13, { align: 'center', alpha: 0.85 })
       this.text(ctx, this.def.formatParam(p.meta.id, v), SCREEN_W / 2, 84, 26, { align: 'center' })
     } else if (p.kind === 'seq') {
-      const seq = this.store.program.seq
-      let value: string
-      switch (p.def.field) {
-        case 'bpm':
-          value = seq.bpm.toFixed(1)
-          break
-        case 'stepLength':
-          value = String(seq.stepLength)
-          break
-        case 'stepResolution':
-          value = STEP_RESOLUTIONS[seq.stepResolution]?.label ?? String(seq.stepResolution)
-          break
-        case 'swing':
-          value = (seq.swing > 0 ? '+' : '') + seq.swing + '%'
-          break
-        case 'defaultGate':
-          value = Math.round((seq.defaultGate / 72) * 100) + '%'
-          break
-      }
+      const value = p.def.fmt(p.def.get(this.store.program.seq))
       this.text(ctx, p.def.label, SCREEN_W / 2, 46, 13, { align: 'center', alpha: 0.85 })
       this.text(ctx, value, SCREEN_W / 2, 84, 26, { align: 'center' })
     } else {

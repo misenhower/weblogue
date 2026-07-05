@@ -11,6 +11,7 @@ import { makeSynthApp } from '../app-common'
 import { makePrologueDef } from './def'
 import { Panel } from './panel'
 import { makePrologueDisplayDef } from './display-def'
+import { prologueSettingsDef } from './settings-def'
 import { makePrologueDebugDef } from './debug-def'
 import { decodeCc } from './cc'
 import { resolveMidiParam } from './resolve'
@@ -35,6 +36,7 @@ function buildApp(variant: PrologueVariant, opts: SynthAppOpts): SynthApp {
         onMaster: cb.onMaster,
       }),
     displayDef: makePrologueDisplayDef(variant),
+    settingsDef: prologueSettingsDef(variant),
     debugDef: makePrologueDebugDef(VARIANT_VOICES[variant]),
     midiHandlers: ({ send, store, midiActivity }) => ({
       sustain: (on) => send({ t: 'sustain', on }),

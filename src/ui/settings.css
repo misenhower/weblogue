@@ -1,0 +1,239 @@
+/* ==================================================================
+   Settings drawer (src/ui/settings.ts): the OLED menu's contents as a
+   web-native slide-out editor. Opened from the ⚙ OLED soft button; the
+   panel stays visible and playable while it is open.
+   z-order: above page chrome (60), below popover menus (80).
+   ================================================================== */
+
+.xd-settings {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: #141418;
+  border-left: 1px solid #3a3a40;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.55);
+  font-family: Futura, 'Century Gothic', 'Avenir Next Condensed', system-ui;
+  transform: translateX(102%);
+  /* visibility keeps the closed drawer's controls out of the tab order;
+     the delay hides it only after the slide-out finishes */
+  visibility: hidden;
+  transition:
+    transform 0.22s ease,
+    visibility 0s linear 0.22s;
+}
+
+.xd-settings.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.22s ease;
+}
+
+/* ---------------------------------------------------------------- */
+/* head + tabs                                                       */
+/* ---------------------------------------------------------------- */
+
+.xd-set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #26262c;
+}
+
+.xd-set-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #8fe0a0;
+}
+
+.xd-set-close {
+  background: none;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  color: var(--xd-legend-dim, #909097);
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.xd-set-close:hover {
+  color: var(--xd-legend, #d8d8dc);
+}
+
+.xd-set-tabbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 0;
+}
+
+.xd-set-tab {
+  flex: 1;
+  font: 600 10px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--xd-legend-dim, #909097);
+  background: #1c1c20;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.xd-set-tab:hover {
+  color: var(--xd-legend, #d8d8dc);
+}
+
+.xd-set-tab.is-on {
+  color: #8fe0a0;
+  border-color: #4a5a4e;
+  background: #1d241e;
+}
+
+/* ---------------------------------------------------------------- */
+/* body                                                              */
+/* ---------------------------------------------------------------- */
+
+.xd-set-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 14px 16px;
+}
+
+.xd-set-pane.is-hidden {
+  display: none;
+}
+
+.xd-set-group {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--xd-legend-dim, #909097);
+  border-bottom: 1px solid #26262c;
+  padding: 14px 0 4px;
+  margin-bottom: 4px;
+}
+
+.xd-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  min-height: 26px;
+}
+
+.xd-set-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--xd-legend, #d8d8dc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* value wells share the OLED-readout look */
+.xd-set-value {
+  font: 500 11px/1 ui-monospace, Menlo, Consolas, 'Courier New', monospace;
+  color: var(--xd-oled-fg, #e8f4e8);
+  background: var(--xd-oled, #0a0c0a);
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xd-set-value:hover {
+  border-color: #55555c;
+}
+
+.xd-set-numwrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.xd-set-num {
+  min-width: 68px;
+  text-align: center;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.xd-set-num.is-dragging {
+  border-color: #8fe0a0;
+}
+
+.xd-set-step {
+  font: 700 12px/1 ui-monospace, Menlo, monospace;
+  color: var(--xd-legend-dim, #909097);
+  background: #1c1c20;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  /* press-and-hold must own the touch pointer (no pan-cancel mid-hold) */
+  touch-action: none;
+}
+
+.xd-set-step:hover {
+  color: var(--xd-legend, #d8d8dc);
+  border-color: #55555c;
+}
+
+/* ---------------------------------------------------------------- */
+/* motion lane rows                                                  */
+/* ---------------------------------------------------------------- */
+
+.xd-set-motionrow .xd-set-assign {
+  flex: 1;
+  text-align: left;
+  max-width: none;
+}
+
+.xd-set-chip {
+  font: 600 8.5px/1 Futura, 'Century Gothic', system-ui;
+  letter-spacing: 0.08em;
+  color: var(--xd-legend-dim, #909097);
+  background: #1c1c20;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  padding: 5px 6px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.xd-set-chip.is-on {
+  color: #8fe0a0;
+  border-color: #4a5a4e;
+  background: #1d241e;
+}
+
+.xd-set-clear {
+  font: 600 10px/1 ui-monospace, Menlo, monospace;
+  color: var(--xd-legend-dim, #909097);
+  background: none;
+  border: 1px solid #3a3a40;
+  border-radius: 3px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.xd-set-clear:hover {
+  color: var(--xd-led-red, #e06060);
+  border-color: #5a3a3a;
+}

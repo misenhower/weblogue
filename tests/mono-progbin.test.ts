@@ -332,7 +332,7 @@ describe('mono korg file identity', () => {
     expect(MONO_KORG_FILE.product).toBe('monologue')
     expect(MONO_KORG_FILE.infoTag).toBe('monologue_ProgramInformation')
     expect(MONO_KORG_FILE.progExt).toBe('molgprog')
-    expect(MONO_KORG_FILE.libExts).toEqual(['molglib'])
+    expect(MONO_KORG_FILE.libExts).toEqual(['molglib', 'molgpreset'])
     expect(MONO_DEF.korgFile).toBe(MONO_KORG_FILE)
   })
 })

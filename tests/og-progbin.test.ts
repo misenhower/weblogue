@@ -42,7 +42,7 @@ describe('OG prog_bin codec', () => {
     expect(OG_KORG_FILE.product).toBe('minilogue')
     expect(OG_KORG_FILE.infoTag).toBe('minilogue_ProgramInformation')
     expect(OG_KORG_FILE.progExt).toBe('mnlgprog')
-    expect(OG_KORG_FILE.libExts).toEqual(['mnlglib'])
+    expect(OG_KORG_FILE.libExts).toEqual(['mnlglib', 'mnlgpreset'])
   })
 
   it('encodes a 448-byte blob with PROG/SEQD magics and spec-anchored fields', () => {

@@ -470,5 +470,5 @@ export const XD_KORG_FILE: KorgFileCodec = {
   product: 'minilogue xd',
   infoTag: 'xd_ProgramInformation',
   progExt: 'mnlgxdprog',
-  libExts: ['mnlgxdlib'],
+  libExts: ['mnlgxdlib', 'mnlgxdpreset'],
 }

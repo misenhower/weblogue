@@ -479,5 +479,5 @@ export const MONO_KORG_FILE: KorgFileCodec = {
   product: 'monologue',
   infoTag: 'monologue_ProgramInformation',
   progExt: 'molgprog',
-  libExts: ['molglib'],
+  libExts: ['molglib', 'molgpreset'],
 }

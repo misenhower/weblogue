@@ -456,5 +456,5 @@ export const OG_KORG_FILE: KorgFileCodec = {
   product: 'minilogue',
   infoTag: 'minilogue_ProgramInformation',
   progExt: 'mnlgprog',
-  libExts: ['mnlglib'],
+  libExts: ['mnlglib', 'mnlgpreset'],
 }

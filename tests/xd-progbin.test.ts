@@ -241,6 +241,6 @@ describe('xd prog_bin codec', () => {
     expect(XD_KORG_FILE.product).toBe('minilogue xd')
     expect(XD_KORG_FILE.infoTag).toBe('xd_ProgramInformation')
     expect(XD_KORG_FILE.progExt).toBe('mnlgxdprog')
-    expect(XD_KORG_FILE.libExts).toEqual(['mnlgxdlib'])
+    expect(XD_KORG_FILE.libExts).toEqual(['mnlgxdlib', 'mnlgxdpreset'])
   })
 })

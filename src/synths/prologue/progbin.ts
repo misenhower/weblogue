@@ -271,5 +271,5 @@ export const PROLOGUE_KORG_FILE: KorgFileCodec = {
   product: 'prologue',
   infoTag: 'prologue_ProgramInformation',
   progExt: 'prlgprog',
-  libExts: ['prlglib'],
+  libExts: ['prlglib', 'prlgpreset'],
 }

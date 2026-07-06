@@ -47,7 +47,7 @@ describe('prologue prog_bin codec', () => {
     expect(PROLOGUE_KORG_FILE.product).toBe('prologue')
     expect(PROLOGUE_KORG_FILE.infoTag).toBe('prologue_ProgramInformation')
     expect(PROLOGUE_KORG_FILE.progExt).toBe('prlgprog')
-    expect(PROLOGUE_KORG_FILE.libExts).toEqual(['prlglib'])
+    expect(PROLOGUE_KORG_FILE.libExts).toEqual(['prlglib', 'prlgpreset'])
   })
 
   it('encodes exactly 336 bytes with PROG + PRED magics', () => {

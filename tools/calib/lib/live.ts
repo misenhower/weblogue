@@ -19,6 +19,9 @@ export interface LivePoint {
   peakDbfs?: number
   /** [harmonic index k (1-based), hw dB, rep dB] for the ladder view */
   ladder?: [number, number, number][]
+  /** normalized ~2.5-cycle waveform snapshots for the per-point mini-scopes */
+  waveHw?: number[]
+  waveRep?: number[]
   note?: string
 }
 
@@ -115,8 +118,24 @@ function render() {
   }
   h += '</table><div class="sub">' + done + '/' + s.points.length + ' points done</div>'
   h += chart(s.points)
+  h += thumbs(s.points)
   h += ladder(s.points)
   document.getElementById('body').innerHTML = h
+}
+function thumbs(points) {
+  const ds = points.filter(p => p.status === 'done' && p.waveHw && p.waveHw.length)
+  if (!ds.length) return ''
+  let h = '<div class="sub" style="margin-top:14px"><span style="color:#7fb5ff">\\u2014 hardware</span> <span style="color:#e0a06a">\\u2014 replica</span> waveform snapshots (~2.5 cycles, normalized)</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px">'
+  for (const p of ds) {
+    const W = 200, H = 64
+    const path = (w, col) => '<polyline fill="none" stroke="' + col + '" stroke-width="1.2" points="'
+      + w.map((v, i) => (i / (w.length - 1) * W).toFixed(1) + ',' + (H / 2 - v * (H / 2 - 4)).toFixed(1)).join(' ') + '"/>'
+    h += '<div><svg width="' + W + '" height="' + H + '" style="background:#191c21;border-radius:5px">'
+      + path(p.waveHw, '#7fb5ff') + (p.waveRep ? path(p.waveRep, '#e0a06a') : '')
+      + '</svg><div class="sub" style="margin:0;font-size:11px">' + esc(p.label) + '</div></div>'
+  }
+  return h + '</div>'
 }
 function chart(points) {
   const ds = points.filter(p => p.status === 'done' && p.hwCents !== undefined)

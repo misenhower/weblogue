@@ -7,6 +7,8 @@
  * the analysis.
  */
 import { createServer, type Server } from 'node:http'
+import { createHash } from 'node:crypto'
+import type { Socket } from 'node:net'
 import { fftMag } from '../../../src/ui/fft'
 import { fftPeakHz } from './features'
 
@@ -47,6 +49,23 @@ export class ScopeState {
       out[i] = this.ring[idx]
       idx = (idx + 1) % this.ring.length
     }
+    return out
+  }
+
+  /**
+   * One frame as a flat Float32Array for the WebSocket binary path:
+   * [peakDb, rmsDb, f0, waveLen, specLen, ...wave, ...spec]
+   */
+  binFrame(): Float32Array {
+    const f = this.frame() as { peakDb: number; rmsDb: number; f0: number; wave: number[]; spec: number[] }
+    const out = new Float32Array(5 + f.wave.length + f.spec.length)
+    out[0] = Number.isFinite(f.peakDb) ? f.peakDb : -160
+    out[1] = Number.isFinite(f.rmsDb) ? f.rmsDb : -160
+    out[2] = f.f0
+    out[3] = f.wave.length
+    out[4] = f.spec.length
+    out.set(f.wave, 5)
+    out.set(f.spec, 5 + f.wave.length)
     return out
   }
 
@@ -95,7 +114,31 @@ export class ScopeState {
   }
 }
 
+const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+const WS_FPS = 30
+
+/** Server->client binary WebSocket frame (no masking server-side). */
+function wsFrame(payload: Buffer): Buffer {
+  const len = payload.length
+  let header: Buffer
+  if (len < 126) {
+    header = Buffer.from([0x82, len])
+  } else if (len < 65536) {
+    header = Buffer.alloc(4)
+    header[0] = 0x82
+    header[1] = 126
+    header.writeUInt16BE(len, 2)
+  } else {
+    header = Buffer.alloc(10)
+    header[0] = 0x82
+    header[1] = 127
+    header.writeBigUInt64BE(BigInt(len), 2)
+  }
+  return Buffer.concat([header, payload])
+}
+
 export function startScopeServer(state: ScopeState, port = SCOPE_PORT): Promise<{ url: string; close: () => void } | null> {
+  const clients = new Set<Socket>()
   const srv: Server = createServer((req, res) => {
     if (req.url?.startsWith('/scope.json')) {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
@@ -105,10 +148,49 @@ export function startScopeServer(state: ScopeState, port = SCOPE_PORT): Promise<
       res.end(PAGE)
     }
   })
+  // WebSocket push: hand-rolled RFC 6455 handshake + unmasked binary frames.
+  // The page falls back to /scope.json polling if the socket fails.
+  srv.on('upgrade', (req, socket: Socket) => {
+    const key = req.headers['sec-websocket-key']
+    if (typeof key !== 'string') {
+      socket.destroy()
+      return
+    }
+    const accept = createHash('sha1').update(key + WS_GUID).digest('base64')
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    )
+    socket.setNoDelay(true)
+    clients.add(socket)
+    const drop = (): void => {
+      clients.delete(socket)
+      socket.destroy()
+    }
+    socket.on('close', drop)
+    socket.on('error', drop)
+    // client frames: only react to close (opcode 0x8); pings are not expected
+    socket.on('data', (d: Buffer) => {
+      if (d.length && (d[0] & 0x0f) === 0x8) drop()
+    })
+  })
+  const timer = setInterval(() => {
+    if (clients.size === 0) return
+    const f = state.binFrame()
+    const frame = wsFrame(Buffer.from(f.buffer, f.byteOffset, f.byteLength))
+    for (const c of clients) c.write(frame)
+  }, Math.round(1000 / WS_FPS))
   return new Promise((resolve) => {
     srv.once('error', () => resolve(null))
     srv.listen(port, '127.0.0.1', () =>
-      resolve({ url: `http://127.0.0.1:${port}/`, close: () => srv.close() }),
+      resolve({
+        url: `http://127.0.0.1:${port}/`,
+        close: () => {
+          clearInterval(timer)
+          for (const c of clients) c.destroy()
+          srv.close()
+        },
+      }),
     )
   })
 }
@@ -174,22 +256,48 @@ function drawSpec(s, lo, hi) {
   }
   sctx.stroke()
 }
-async function tick() {
-  try {
-    const r = await fetch('/scope.json', { cache: 'no-store' })
-    const d = await r.json()
+function renderData(d) {
+  const pk = document.getElementById('peak')
+  pk.textContent = d.peakDb === null || d.peakDb < -120 ? '-inf' : d.peakDb.toFixed(1) + ' dBFS'
+  pk.className = d.peakDb > -3 ? 'warn' : 'v'
+  document.getElementById('rms').textContent = d.rmsDb < -120 ? '-inf' : d.rmsDb.toFixed(1) + ' dBFS'
+  document.getElementById('pitch').textContent = d.f0 ? d.f0.toFixed(1) + ' Hz (' + noteName(d.f0) + ')' : '—'
+  drawWave(d.wave)
+  drawSpec(d.spec, d.specLo || 30, d.specHi || 16000)
+}
+let usingWs = false
+function connectWs() {
+  const ws = new WebSocket('ws://' + location.host + '/')
+  ws.binaryType = 'arraybuffer'
+  ws.onmessage = (e) => {
+    usingWs = true
     document.getElementById('status').textContent = ''
-    const pk = document.getElementById('peak')
-    pk.textContent = d.peakDb === null || d.peakDb < -120 ? '-inf' : d.peakDb.toFixed(1) + ' dBFS'
-    pk.className = d.peakDb > -3 ? 'warn' : 'v'
-    document.getElementById('rms').textContent = d.rmsDb < -120 ? '-inf' : d.rmsDb.toFixed(1) + ' dBFS'
-    document.getElementById('pitch').textContent = d.f0 ? d.f0.toFixed(1) + ' Hz (' + noteName(d.f0) + ')' : '—'
-    drawWave(d.wave)
-    drawSpec(d.spec, d.specLo || 30, d.specHi || 16000)
-  } catch {
-    document.getElementById('status').textContent = 'disconnected — is calib scope running?'
+    const f = new Float32Array(e.data)
+    const waveLen = f[3], specLen = f[4]
+    renderData({
+      peakDb: f[0], rmsDb: f[1], f0: f[2],
+      wave: f.subarray(5, 5 + waveLen),
+      spec: f.subarray(5 + waveLen, 5 + waveLen + specLen),
+    })
+  }
+  ws.onclose = ws.onerror = () => {
+    usingWs = false
+    document.getElementById('status').textContent = 'reconnecting…'
+    setTimeout(connectWs, 2000)
+  }
+}
+async function tick() {
+  if (!usingWs) {
+    try {
+      const r = await fetch('/scope.json', { cache: 'no-store' })
+      renderData(await r.json())
+      document.getElementById('status').textContent = '(polling fallback)'
+    } catch {
+      document.getElementById('status').textContent = 'disconnected — is calib scope running?'
+    }
   }
   setTimeout(tick, 100)
 }
+connectWs()
 tick()
 </script></body></html>`

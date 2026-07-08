@@ -26,6 +26,31 @@ export interface PointFeatures {
   strikes: StrikeFeatures[]
   /** dB re k=1, index 0 = H1 (always 0); per-harmonic median across strikes */
   harmonicsDb: number[]
+  /**
+   * ~2.5 cycles of the first strike's sustain, zero-cross aligned, peak-
+   * normalized, 200 points — the dashboard's per-point mini-scope.
+   */
+  waveSnap: number[]
+}
+
+function waveSnapshot(x: Float32Array, sr: number, from: number, f0: number, points = 200, cycles = 2.5): number[] {
+  const span = Math.max(8, Math.round((cycles / Math.max(1, f0)) * sr))
+  let s = Math.min(from, Math.max(0, x.length - span - 1))
+  const limit = Math.min(x.length - span - 1, from + Math.round((sr / Math.max(1, f0)) * 4))
+  for (let i = from + 1; i < limit; i++) {
+    if (x[i - 1] <= 0 && x[i] > 0) {
+      s = i
+      break
+    }
+  }
+  const out = new Array<number>(points)
+  let peak = 1e-9
+  for (let p = 0; p < points; p++) {
+    const v = x[s + Math.round((p * span) / (points - 1))] ?? 0
+    out[p] = v
+    peak = Math.max(peak, Math.abs(v))
+  }
+  return out.map((v) => Math.round((v / peak) * 1000) / 1000)
 }
 
 function median(xs: number[]): number {
@@ -86,7 +111,10 @@ export function measurePoint(
   const centsAll = strikes.map((s) => s.cents)
   const kMax = Math.min(...ladders.map((l) => l.length))
   const harmonicsDb = Array.from({ length: kMax }, (_, k) => median(ladders.map((l) => l[k])))
+  const snapFrom = Math.min(x.length - 1, onsetSample + Math.round(0.15 * sr))
+  const waveSnap = waveSnapshot(x, sr, snapFrom, strikes[0]?.f0Hz ?? nominal ?? 100)
   return {
+    waveSnap,
     peakDbfs: peak,
     f0Hz: median(strikes.map((s) => s.f0Hz)),
     cents: median(centsAll),

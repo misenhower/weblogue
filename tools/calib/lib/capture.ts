@@ -80,7 +80,7 @@ export function streamPcm(
     'f32le',
     '-',
   ])
-  let pending = Buffer.alloc(0)
+  let pending: Buffer = Buffer.alloc(0)
   p.stdout.on('data', (d: Buffer) => {
     pending = pending.length ? Buffer.concat([pending, d]) : d
     const usable = pending.length - (pending.length % 4)

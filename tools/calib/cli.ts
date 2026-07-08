@@ -597,6 +597,8 @@ async function cmdRun(args: Args): Promise<number> {
       lp.ladder = hw.harmonicsDb
         .map((db, k): [number, number, number] => [k + 1, db, repF.harmonicsDb[k] ?? NaN])
         .slice(1)
+      lp.waveHw = hw.waveSnap
+      lp.waveRep = repF.waveSnap
       pushLive()
       const c = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}¢`
       const spread = hw.strikes.length > 1 ? ` ±${(hw.centsSpread / 2).toFixed(1)}¢×${hw.strikes.length}` : ''

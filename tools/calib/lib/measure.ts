@@ -73,8 +73,10 @@ function measureStrike(
   )
   const coarse = fftPeakHz(x, from, Math.min(16384, to - from), sr)
   const seed = job.features.nominalHz ?? coarse
-  // trust the coarse FFT unless it's wildly off the nominal (harmonic grab)
-  const nominal = Math.abs(1200 * Math.log2(coarse / seed)) < 300 ? coarse : seed
+  // trust the coarse FFT unless it's wildly off the nominal (harmonic grab).
+  // ±1300¢ accepts the full ±1200¢ PITCH-knob sweep range while still
+  // rejecting a 3rd-harmonic grab (+1902¢); H2 can't dominate on saw/tri/sqr.
+  const nominal = Math.abs(1200 * Math.log2(coarse / seed)) < 1300 ? coarse : seed
   const track = phasePitchTrack(x, sr, nominal, { from, to })
   const f0 = median(Array.from(track.v))
   const ladder = harmonicLadder(x, sr, from, f0, job.features.harmonics ?? 8)

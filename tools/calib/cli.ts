@@ -388,25 +388,33 @@ async function cmdScope(args: Args): Promise<number> {
 // monitor — persistent scope + run dashboard + session history (ctrl-C stops)
 // ---------------------------------------------------------------------------
 async function cmdMonitor(args: Args): Promise<number> {
-  const rigCfg = loadRig(ROOT)
-  const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
-  if (!audioMatch) {
-    console.log('no audio device configured — run: npm run calib -- devices --save')
-    return 1
-  }
-  const dev = await resolveAudioDevice(audioMatch)
   const state = new ScopeState(48000)
   const srv = await startMonitorServer(ROOT, state)
   if (!srv) {
     console.log(`${FAIL} port ${MONITOR_PORT} already in use — another monitor or a run's dashboard is up`)
     return 1
   }
-  const stream = streamPcm(dev.index, (chunk) => state.push(chunk))
-  console.log(`monitor on [${dev.index}] ${dev.name} — open ${srv.url}  (ctrl-C to stop)`)
+  // --no-audio: results/history/run views only (e.g. inside an IDE preview,
+  // where macOS denies capture permission); the scope stays flatlined.
+  let stream: { stop: () => void } | null = null
+  if (!args.flags.has('no-audio')) {
+    const rigCfg = loadRig(ROOT)
+    const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
+    if (!audioMatch) {
+      console.log('no audio device configured — run: npm run calib -- devices --save')
+      srv.close()
+      return 1
+    }
+    const dev = await resolveAudioDevice(audioMatch)
+    stream = streamPcm(dev.index, (chunk) => state.push(chunk))
+    console.log(`monitor on [${dev.index}] ${dev.name} — open ${srv.url}  (ctrl-C to stop)`)
+  } else {
+    console.log(`monitor (no audio) — open ${srv.url}  (ctrl-C to stop)`)
+  }
   console.log('runs started while the monitor is up appear on this page automatically')
   await new Promise<void>((resolve) => {
     process.on('SIGINT', () => {
-      stream.stop()
+      stream?.stop()
       srv.close()
       resolve()
     })

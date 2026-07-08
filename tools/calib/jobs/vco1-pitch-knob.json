@@ -1,0 +1,30 @@
+{
+  "id": "vco1-pitch-knob",
+  "domain": "vco.pitch",
+  "description": "D1: PITCH knob curve at the documented MIDIimp breakpoints — verifies pitchToCents segments (DOCUMENTED-exact; flag >3¢, don't refit)",
+  "overrides": {
+    "vco1Wave": 2,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "vco1Pitch",
+    "points": [0, 4, 100, 256, 356, 400, 476, 492, 512, 532, 548, 668, 800, 1020, 1023]
+  },
+  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": { "nominalHz": 440, "harmonics": 4 }
+}

@@ -15,9 +15,9 @@
       "port": 4173
     },
     {
-      "name": "calib-live",
+      "name": "calib-monitor",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "calib", "--", "run", "vco1-a440"],
+      "runtimeArgs": ["run", "calib", "--", "monitor", "--no-audio"],
       "port": 8077
     }
   ]

@@ -6,3 +6,8 @@ dist/
 
 # Vendor reference docs (Korg copyright) — keep local, cite URLs in specs
 docs/hardware/
+
+# Calibration rig: raw captures + scratch stay local; features/reports are committed
+calib/sessions/*/raw/
+calib/tmp/
+calib/backups/

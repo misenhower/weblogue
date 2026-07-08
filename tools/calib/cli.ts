@@ -33,6 +33,7 @@ import { measurePoint, type PointFeatures } from './lib/measure'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointResult } from './lib/report'
+import { startLiveServer, type LiveState } from './lib/live'
 
 const ROOT = process.cwd()
 
@@ -458,17 +459,53 @@ async function cmdRun(args: Args): Promise<number> {
   const session = createSession(ROOT, job)
   console.log(`session ${session.dir}`)
 
+  // live monitor: one browser tab left open shows the run as it happens
+  const live = await startLiveServer()
+  if (live) console.log(`live monitor: ${live.url}`)
+  const liveState: LiveState = {
+    job: { id: job.id, domain: job.domain, description: job.description },
+    phase: 'silence-check',
+    points: points.map((pt) => ({
+      label: pt === null ? 'base patch' : `${job.sweep!.param}=${pt}`,
+      raw: pt,
+      status: 'pending',
+    })),
+    updatedAt: '',
+  }
+  const pushLive = (): void => {
+    liveState.updatedAt = new Date().toISOString()
+    live?.update({ ...liveState, points: liveState.points.map((p) => ({ ...p })) })
+  }
+  pushLive()
+
   // pre-run silence check: the capture bus must be quiet before we measure
   const silPath = join(session.rawDir, 'silence.wav')
   await recordWav({ deviceIndex: dev.index, seconds: 1.0, outPath: silPath })
   const sil = readWav(new Uint8Array(readFileSync(silPath)))
   const silPeak = peakDbfs(sil.channels[0])
+  if (silPeak < -90) {
+    console.log(`${FAIL} capture input is digitally silent (peak ${silPeak === -Infinity ? '-inf' : silPeak.toFixed(1)} dBFS)`)
+    console.log('  fix: wrong audio device, muted USB send, or macOS denied capture permission to this terminal')
+    liveState.phase = 'aborted'
+    liveState.message = 'capture input digitally silent — device/permission problem'
+    pushLive()
+    await sleep(2500)
+    live?.close()
+    return 1
+  }
   if (silPeak > -45) {
     console.log(`${FAIL} capture bus is not quiet: peak ${silPeak.toFixed(1)} dBFS with nothing playing (want < -45)`)
     console.log('  fix: mute other channels/sources on the mixer, stop any playback, then re-run')
+    liveState.phase = 'aborted'
+    liveState.message = `capture bus not quiet: ${silPeak.toFixed(1)} dBFS — mute other sources and re-run`
+    pushLive()
+    await sleep(2500)
+    live?.close()
     return 1
   }
   console.log(`silence floor ${silPeak.toFixed(1)} dBFS peak — ok`)
+  liveState.phase = 'running'
+  pushLive()
 
   const midi = MidiRig.open(midiMatch)
   let backup: Uint8Array | null = null
@@ -478,6 +515,9 @@ async function cmdRun(args: Args): Promise<number> {
     backup = await snapshotEditBuffer(midi, ch)
     for (const [i, pt] of points.entries()) {
       const label = pt === null ? 'base' : `${job.sweep!.param}=${pt}`
+      const lp = liveState.points[i]
+      lp.status = 'running'
+      pushLive()
       await pushDump(midi, ch, encodeProgBin(jobProgram(job, pt)))
       const wavPath = join(session.rawDir, `point-${String(i).padStart(3, '0')}.wav`)
 
@@ -501,9 +541,15 @@ async function cmdRun(args: Args): Promise<number> {
           const msg = err instanceof Error ? err.message : String(err)
           if (attempt >= 2) {
             aborted = `point ${i + 1} (${label}) failed twice: ${msg}`
+            lp.status = 'failed'
+            lp.note = msg
+            pushLive()
             break
           }
           console.log(`  point ${i + 1}: ${msg} — retrying once`)
+          lp.status = 'retry'
+          lp.note = msg
+          pushLive()
         }
       }
       if (aborted) break
@@ -512,6 +558,16 @@ async function cmdRun(args: Args): Promise<number> {
       const rep = renderJobPoint(job, pt)
       const repF = measurePoint(rep.samples, rep.sr, rep.onsetSample, job)
       results.push({ point: pt, hw, rep: repF })
+      lp.status = 'done'
+      lp.note = ''
+      lp.hwCents = hw.cents
+      lp.repCents = repF.cents
+      lp.hwSpread = hw.centsSpread
+      lp.peakDbfs = hw.peakDbfs
+      lp.ladder = hw.harmonicsDb
+        .map((db, k): [number, number, number] => [k + 1, db, repF.harmonicsDb[k] ?? NaN])
+        .slice(1)
+      pushLive()
       const c = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}¢`
       const spread = hw.strikes.length > 1 ? ` ±${(hw.centsSpread / 2).toFixed(1)}¢×${hw.strikes.length}` : ''
       console.log(
@@ -533,6 +589,11 @@ async function cmdRun(args: Args): Promise<number> {
   if (aborted) {
     console.log(`${FAIL} run aborted: ${aborted}`)
     console.log(`  raw captures kept in ${session.rawDir} for inspection; edit buffer was restored`)
+    liveState.phase = 'aborted'
+    liveState.message = aborted
+    pushLive()
+    await sleep(2500)
+    live?.close()
     return 1
   }
   saveJson(session.dir, 'features.json', { job: job.id, domain: job.domain, results })
@@ -540,6 +601,11 @@ async function cmdRun(args: Args): Promise<number> {
   saveText(session.dir, 'report.md', md)
   console.log(`\nreport: ${join(session.dir, 'report.md')}\n`)
   console.log(md)
+  liveState.phase = 'done'
+  liveState.reportPath = join(session.dir, 'report.md')
+  pushLive()
+  await sleep(2500)
+  live?.close()
   return 0
 }
 

@@ -13,6 +13,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "preview"],
       "port": 4173
+    },
+    {
+      "name": "calib-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "calib", "--", "run", "vco1-a440"],
+      "port": 8077
     }
   ]
 }

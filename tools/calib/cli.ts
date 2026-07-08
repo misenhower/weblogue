@@ -496,13 +496,34 @@ function playNotes(midi: MidiRig, ch: number, job: CalibJob): void {
 async function cmdRun(args: Args): Promise<number> {
   const name = args.rest[0]
   if (!name) {
-    console.log('usage: npm run calib -- run <job> [--dry] [--midi m] [--audio a]')
+    console.log('usage: npm run calib -- run <job|all> [--dry] [--midi m] [--audio a]')
     return 1
   }
-  const jobPath = existsSync(name)
-    ? name
-    : join(ROOT, 'tools/calib/jobs', name.endsWith('.json') ? name : `${name}.json`)
+  const jobsDir = join(ROOT, 'tools/calib/jobs')
+  if (name === 'all') {
+    let worst = 0
+    for (const f of readdirSync(jobsDir).filter((f) => f.endsWith('.json')).sort()) {
+      const path = join(jobsDir, f)
+      const job = loadJob(path)
+      console.log(`\n=== ${job.id} ===`)
+      if (job.disabled) {
+        console.log(`${SKIP} skipped: ${job.disabled}`)
+        continue
+      }
+      worst = Math.max(worst, await runOneJob(args, path))
+    }
+    return worst
+  }
+  const jobPath = existsSync(name) ? name : join(jobsDir, name.endsWith('.json') ? name : `${name}.json`)
+  return runOneJob(args, jobPath)
+}
+
+async function runOneJob(args: Args, jobPath: string): Promise<number> {
   const job = loadJob(jobPath)
+  if (job.disabled) {
+    console.log(`${FAIL} job "${job.id}" is disabled: ${job.disabled}`)
+    return 1
+  }
   const points = jobPoints(job)
   const noteStr = job.notes.map((n) => `${n.midi}@${n.onSec}-${n.offSec}s`).join(', ')
 

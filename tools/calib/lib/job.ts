@@ -24,6 +24,8 @@ export interface CalibJob {
   overrides?: Record<string, number>
   /** optional single-param sweep; absent = one point at the base patch */
   sweep?: { param: string; points: number[] }
+  /** present = job is not runnable yet; the value says why (skipped by `run all`) */
+  disabled?: string
   notes: JobNote[]
   /**
    * Repeat the note plan this many times per capture (default 1), each

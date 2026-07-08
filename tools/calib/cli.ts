@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { listPorts, MidiRig, sleep } from './lib/midi'
-import { listAudioDevices, resolveAudioDevice, recordWav } from './lib/capture'
+import { listAudioDevices, resolveAudioDevice, recordWav, streamPcm } from './lib/capture'
 import { loadRig, saveRig, rigPath, calibDir, type RigConfig } from './lib/rig'
 import {
   frameCurrentProgramDump,
@@ -34,6 +34,7 @@ import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointResult } from './lib/report'
 import { startLiveServer, type LiveState } from './lib/live'
+import { ScopeState, startScopeServer } from './lib/scope'
 
 const ROOT = process.cwd()
 
@@ -354,6 +355,35 @@ function median(xs: number[]): number {
 }
 
 // ---------------------------------------------------------------------------
+// scope — realtime waveform/spectrum monitor (PoC; ctrl-C to stop)
+// ---------------------------------------------------------------------------
+async function cmdScope(args: Args): Promise<number> {
+  const rigCfg = loadRig(ROOT)
+  const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
+  if (!audioMatch) {
+    console.log('no audio device configured — run: npm run calib -- devices --save')
+    return 1
+  }
+  const dev = await resolveAudioDevice(audioMatch)
+  const state = new ScopeState(48000)
+  const srv = await startScopeServer(state)
+  if (!srv) {
+    console.log(`${FAIL} scope port already in use — is another calib scope running?`)
+    return 1
+  }
+  const stream = streamPcm(dev.index, (chunk) => state.push(chunk))
+  console.log(`scope on [${dev.index}] ${dev.name} — open ${srv.url}  (ctrl-C to stop)`)
+  await new Promise<void>((resolve) => {
+    process.on('SIGINT', () => {
+      stream.stop()
+      srv.close()
+      resolve()
+    })
+  })
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // restore — push a saved edit-buffer snapshot back to the synth
 // ---------------------------------------------------------------------------
 async function cmdRestore(args: Args): Promise<number> {
@@ -665,9 +695,12 @@ async function main(): Promise<void> {
     case 'run':
       code = await cmdRun(args)
       break
+    case 'scope':
+      code = await cmdScope(args)
+      break
     default:
       console.log(
-        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | restore [--file f]>'
+        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | scope [--audio a] | restore [--file f]>'
       )
       code = args.cmd === 'help' ? 0 : 1
   }

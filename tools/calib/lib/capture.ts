@@ -54,6 +54,49 @@ export async function resolveAudioDevice(nameMatch: string): Promise<AudioDevice
   return hit
 }
 
+/**
+ * Stream continuous mono float32 PCM from the device to `onChunk` until
+ * stop() is called. Used by the realtime scope; measurements always use
+ * recordWav.
+ */
+export function streamPcm(
+  deviceIndex: number,
+  onChunk: (samples: Float32Array) => void,
+  sampleRate = 48000,
+): { stop: () => void } {
+  const p = spawn('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'avfoundation',
+    '-i',
+    `:${deviceIndex}`,
+    '-ac',
+    '1',
+    '-ar',
+    String(sampleRate),
+    '-f',
+    'f32le',
+    '-',
+  ])
+  let pending = Buffer.alloc(0)
+  p.stdout.on('data', (d: Buffer) => {
+    pending = pending.length ? Buffer.concat([pending, d]) : d
+    const usable = pending.length - (pending.length % 4)
+    if (!usable) return
+    const out = new Float32Array(usable / 4)
+    for (let i = 0; i < out.length; i++) out[i] = pending.readFloatLE(i * 4)
+    pending = Buffer.from(pending.subarray(usable)) // remainder is <4 bytes
+    onChunk(out)
+  })
+  return {
+    stop: () => {
+      p.kill('SIGINT')
+    },
+  }
+}
+
 export interface RecordOpts {
   deviceIndex: number
   seconds: number

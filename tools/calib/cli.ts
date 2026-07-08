@@ -28,6 +28,11 @@ import { fftPeakHz, phasePitchTrack } from './lib/features'
 import { initProgram } from '../../src/synths/xd/program'
 import { P } from '../../src/synths/xd/params'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
+import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
+import { measurePoint, type PointFeatures } from './lib/measure'
+import { renderJobPoint } from './lib/render'
+import { createSession, saveJson, saveText } from './lib/session'
+import { renderReport, type PointResult } from './lib/report'
 
 const ROOT = process.cwd()
 
@@ -37,14 +42,19 @@ const ROOT = process.cwd()
 interface Args {
   cmd: string
   flags: Map<string, string | true>
+  rest: string[]
 }
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help'
   const flags = new Map<string, string | true>()
+  const rest: string[] = []
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i]
-    if (!a.startsWith('--')) continue
+    if (!a.startsWith('--')) {
+      rest.push(a)
+      continue
+    }
     const key = a.slice(2)
     const next = argv[i + 1]
     if (next !== undefined && !next.startsWith('--')) {
@@ -54,7 +64,7 @@ function parseArgs(argv: string[]): Args {
       flags.set(key, true)
     }
   }
-  return { cmd, flags }
+  return { cmd, flags, rest }
 }
 
 function flagStr(args: Args, key: string): string | null {
@@ -151,13 +161,7 @@ async function cmdCheck(args: Args): Promise<number> {
     // -- 3: SysEx dump round-trip -------------------------------------------
     // Leaves the CALIB CHK test patch in the edit buffer for step 6.
     try {
-      backup = await requestDump(midi, ch)
-      // persist the snapshot BEFORE pushing anything: even a crash or a
-      // yanked cable can't lose the user's edit state (calib restore re-pushes)
-      const backupDir = join(calibDir(ROOT), 'backups')
-      mkdirSync(backupDir, { recursive: true })
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-      writeFileSync(join(backupDir, `edit-buffer-${stamp}.bin`), backup)
+      backup = await snapshotEditBuffer(midi, ch)
       const backupProg = decodeProgBin(backup)
       const prog = initProgram()
       prog.name = 'CALIB CHK'
@@ -387,6 +391,158 @@ async function cmdRestore(args: Args): Promise<number> {
   }
 }
 
+/** Request the edit buffer and persist it to calib/backups/ before any push. */
+async function snapshotEditBuffer(midi: MidiRig, ch: number): Promise<Uint8Array> {
+  const blob = await requestDump(midi, ch)
+  const dir = join(calibDir(ROOT), 'backups')
+  mkdirSync(dir, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  writeFileSync(join(dir, `edit-buffer-${stamp}.bin`), blob)
+  return blob
+}
+
+/** Fire the job's note plan over MIDI (async, detached — timing from audio). */
+function playNotes(midi: MidiRig, ch: number, job: CalibJob): void {
+  const events: { at: number; on: boolean; midi: number; vel: number }[] = []
+  for (const n of expandNotes(job)) {
+    events.push({ at: n.onSec, on: true, midi: n.midi, vel: n.vel })
+    events.push({ at: n.offSec, on: false, midi: n.midi, vel: 0 })
+  }
+  events.sort((a, b) => a.at - b.at)
+  void (async () => {
+    let prev = 0
+    for (const e of events) {
+      await sleep(Math.max(0, (e.at - prev) * 1000))
+      prev = e.at
+      if (e.on) midi.noteOn(e.midi, e.vel, ch)
+      else midi.noteOff(e.midi, ch)
+    }
+  })()
+}
+
+// ---------------------------------------------------------------------------
+// run — execute a measurement job: hardware capture + replica render + report
+// ---------------------------------------------------------------------------
+async function cmdRun(args: Args): Promise<number> {
+  const name = args.rest[0]
+  if (!name) {
+    console.log('usage: npm run calib -- run <job> [--dry] [--midi m] [--audio a]')
+    return 1
+  }
+  const jobPath = existsSync(name)
+    ? name
+    : join(ROOT, 'tools/calib/jobs', name.endsWith('.json') ? name : `${name}.json`)
+  const job = loadJob(jobPath)
+  const points = jobPoints(job)
+  const noteStr = job.notes.map((n) => `${n.midi}@${n.onSec}-${n.offSec}s`).join(', ')
+
+  if (args.flags.has('dry')) {
+    console.log(`job ${job.id} (${job.domain}): ${points.length} point(s), ${job.captureSec}s capture each`)
+    for (const [i, pt] of points.entries()) {
+      const label = pt === null ? 'base patch' : `${job.sweep!.param}=${pt}`
+      console.log(`  ${i + 1}/${points.length}  push full patch (${label}) -> notes ${noteStr} -> record`)
+    }
+    console.log(`estimated wall-clock ~${Math.ceil(points.length * (job.captureSec + 2.5))}s + replica renders`)
+    return 0
+  }
+
+  const rigCfg = loadRig(ROOT)
+  const midiMatch = flagStr(args, 'midi') ?? rigCfg?.midiPort ?? 'minilogue xd'
+  const ch = rigCfg?.midiChannel ?? 0
+  const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
+  if (!audioMatch) {
+    console.log('no audio device configured — run: npm run calib -- devices --save')
+    return 1
+  }
+  const dev = await resolveAudioDevice(audioMatch)
+  const session = createSession(ROOT, job)
+  console.log(`session ${session.dir}`)
+
+  // pre-run silence check: the capture bus must be quiet before we measure
+  const silPath = join(session.rawDir, 'silence.wav')
+  await recordWav({ deviceIndex: dev.index, seconds: 1.0, outPath: silPath })
+  const sil = readWav(new Uint8Array(readFileSync(silPath)))
+  const silPeak = peakDbfs(sil.channels[0])
+  if (silPeak > -45) {
+    console.log(`${FAIL} capture bus is not quiet: peak ${silPeak.toFixed(1)} dBFS with nothing playing (want < -45)`)
+    console.log('  fix: mute other channels/sources on the mixer, stop any playback, then re-run')
+    return 1
+  }
+  console.log(`silence floor ${silPeak.toFixed(1)} dBFS peak — ok`)
+
+  const midi = MidiRig.open(midiMatch)
+  let backup: Uint8Array | null = null
+  const results: PointResult[] = []
+  let aborted: string | null = null
+  try {
+    backup = await snapshotEditBuffer(midi, ch)
+    for (const [i, pt] of points.entries()) {
+      const label = pt === null ? 'base' : `${job.sweep!.param}=${pt}`
+      await pushDump(midi, ch, encodeProgBin(jobProgram(job, pt)))
+      const wavPath = join(session.rawDir, `point-${String(i).padStart(3, '0')}.wav`)
+
+      let hw: PointFeatures | null = null
+      for (let attempt = 1; hw === null; attempt++) {
+        await recordWav({
+          deviceIndex: dev.index,
+          seconds: job.captureSec,
+          outPath: wavPath,
+          onRecording: () => playNotes(midi, ch, job),
+        })
+        try {
+          const wav = readWav(new Uint8Array(readFileSync(wavPath)))
+          const x = wav.channels[0]
+          const onset = detectOnset(x, wav.sr)
+          if (!onset) throw new Error('no onset found (silent capture?)')
+          if (onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          if (onset.peakDbfs < -45) throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          hw = measurePoint(x, wav.sr, onset.sample, job)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (attempt >= 2) {
+            aborted = `point ${i + 1} (${label}) failed twice: ${msg}`
+            break
+          }
+          console.log(`  point ${i + 1}: ${msg} — retrying once`)
+        }
+      }
+      if (aborted) break
+      if (hw === null) break
+
+      const rep = renderJobPoint(job, pt)
+      const repF = measurePoint(rep.samples, rep.sr, rep.onsetSample, job)
+      results.push({ point: pt, hw, rep: repF })
+      const c = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}¢`
+      const spread = hw.strikes.length > 1 ? ` ±${(hw.centsSpread / 2).toFixed(1)}¢×${hw.strikes.length}` : ''
+      console.log(
+        `point ${i + 1}/${points.length} ${label} | peak ${hw.peakDbfs.toFixed(1)} dBFS | ` +
+          `hw ${hw.f0Hz.toFixed(2)} Hz (${c(hw.cents)}${spread}) | replica ${repF.f0Hz.toFixed(2)} Hz (${c(repF.cents)})`,
+      )
+    }
+  } finally {
+    if (backup) {
+      try {
+        await pushDump(midi, ch, backup)
+      } catch {
+        console.log(`${FAIL} failed to restore the edit buffer — re-push with: npm run calib -- restore`)
+      }
+    }
+    midi.close()
+  }
+
+  if (aborted) {
+    console.log(`${FAIL} run aborted: ${aborted}`)
+    console.log(`  raw captures kept in ${session.rawDir} for inspection; edit buffer was restored`)
+    return 1
+  }
+  saveJson(session.dir, 'features.json', { job: job.id, domain: job.domain, results })
+  const md = renderReport(job, results, { dir: session.dir })
+  saveText(session.dir, 'report.md', md)
+  console.log(`\nreport: ${join(session.dir, 'report.md')}\n`)
+  console.log(md)
+  return 0
+}
+
 /** Request the edit buffer (func 10 -> 40); throws on timeout. */
 async function requestDump(midi: MidiRig, ch: number, timeoutMs = 3000): Promise<Uint8Array> {
   const reply = midi.awaitSysEx(
@@ -440,9 +596,12 @@ async function main(): Promise<void> {
     case 'restore':
       code = await cmdRestore(args)
       break
+    case 'run':
+      code = await cmdRun(args)
+      break
     default:
       console.log(
-        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | restore [--file f]>'
+        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | restore [--file f]>'
       )
       code = args.cmd === 'help' ? 0 : 1
   }

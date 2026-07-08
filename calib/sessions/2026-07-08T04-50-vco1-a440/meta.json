@@ -1,0 +1,11 @@
+{
+  "date": "2026-07-08T04:50:36.558Z",
+  "gitRev": "e67d80f",
+  "node": "v22.22.0",
+  "rig": {
+    "midiPort": "minilogue xd",
+    "midiChannel": 0,
+    "audioDevice": "ProFX",
+    "notes": "ProFX input gain at unity (0/midpoint detent), xd master volume full — validated 2026-07-07: max-level patch peaks -8.1 dBFS, 0 clips; init A4 -28.8 dBFS; floor -68.5 dBFS"
+  }
+}

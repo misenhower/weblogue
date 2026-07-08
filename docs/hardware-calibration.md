@@ -65,8 +65,13 @@ timing derives from audio onsets, never from clock sync.
 
 **Capture** — xd OUTPUT L/R → interface line-in → ffmpeg (avfoundation) subprocess writing
 float WAV at 48 kHz, one file per sweep point. Devices are stored by *name* in `calib/rig.json`
-and resolved to indices at runtime. Line-in bypasses macOS mic processing; the only rig hygiene
-is gain (harness warns outside −40..−1 dBFS peak). Each capture starts with ~300 ms of pre-roll
+and resolved to indices at runtime. Line-in bypasses macOS mic processing; rig hygiene is gain
+(harness warns outside −40..−1 dBFS peak) plus three measured constraints (2026-07-08): the
+ProFX runs at its **44.1 kHz native rate** (its 48 kHz USB mode duplicates/drops packets on this
+Mac — ffmpeg's in-path resample to 48 kHz is clean and identical for every capture), it stays
+out of aggregate devices, and it is never the system default in/out. The per-point validation
+enforces this class of failure anyway: silence-floor gate, strike-spread ≤ 8¢, and a
+waveform-continuity scan that rejects captures with spliced/dropped USB chunks. Each capture starts with ~300 ms of pre-roll
 that measures the noise floor; the onset (first RMS crossing above it) is t=0 for every feature
 window, which cancels all I/O latency.
 

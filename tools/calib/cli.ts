@@ -35,6 +35,7 @@ import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointResult } from './lib/report'
 import { startLiveServer, type LiveState } from './lib/live'
 import { ScopeState, startScopeServer } from './lib/scope'
+import { startMonitorServer, MONITOR_PORT } from './lib/monitor'
 
 const ROOT = process.cwd()
 
@@ -384,6 +385,36 @@ async function cmdScope(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// monitor — persistent scope + run dashboard + session history (ctrl-C stops)
+// ---------------------------------------------------------------------------
+async function cmdMonitor(args: Args): Promise<number> {
+  const rigCfg = loadRig(ROOT)
+  const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
+  if (!audioMatch) {
+    console.log('no audio device configured — run: npm run calib -- devices --save')
+    return 1
+  }
+  const dev = await resolveAudioDevice(audioMatch)
+  const state = new ScopeState(48000)
+  const srv = await startMonitorServer(ROOT, state)
+  if (!srv) {
+    console.log(`${FAIL} port ${MONITOR_PORT} already in use — another monitor or a run's dashboard is up`)
+    return 1
+  }
+  const stream = streamPcm(dev.index, (chunk) => state.push(chunk))
+  console.log(`monitor on [${dev.index}] ${dev.name} — open ${srv.url}  (ctrl-C to stop)`)
+  console.log('runs started while the monitor is up appear on this page automatically')
+  await new Promise<void>((resolve) => {
+    process.on('SIGINT', () => {
+      stream.stop()
+      srv.close()
+      resolve()
+    })
+  })
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // restore — push a saved edit-buffer snapshot back to the synth
 // ---------------------------------------------------------------------------
 async function cmdRestore(args: Args): Promise<number> {
@@ -489,9 +520,11 @@ async function cmdRun(args: Args): Promise<number> {
   const session = createSession(ROOT, job)
   console.log(`session ${session.dir}`)
 
-  // live monitor: one browser tab left open shows the run as it happens
+  // live view: host our own dashboard on 8077, or — when a calib monitor
+  // already owns that port — POST run state to it instead.
   const live = await startLiveServer()
   if (live) console.log(`live monitor: ${live.url}`)
+  else console.log(`monitor detected on port ${MONITOR_PORT} — pushing run state there`)
   const liveState: LiveState = {
     job: { id: job.id, domain: job.domain, description: job.description },
     phase: 'silence-check',
@@ -504,7 +537,13 @@ async function cmdRun(args: Args): Promise<number> {
   }
   const pushLive = (): void => {
     liveState.updatedAt = new Date().toISOString()
-    live?.update({ ...liveState, points: liveState.points.map((p) => ({ ...p })) })
+    const snap = { ...liveState, points: liveState.points.map((p) => ({ ...p })) }
+    if (live) live.update(snap)
+    else
+      void fetch(`http://127.0.0.1:${MONITOR_PORT}/run-state`, {
+        method: 'POST',
+        body: JSON.stringify(snap),
+      }).catch(() => {})
   }
   pushLive()
 
@@ -700,9 +739,12 @@ async function main(): Promise<void> {
     case 'scope':
       code = await cmdScope(args)
       break
+    case 'monitor':
+      code = await cmdMonitor(args)
+      break
     default:
       console.log(
-        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | scope [--audio a] | restore [--file f]>'
+        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | monitor [--audio a] | scope [--audio a] | restore [--file f]>'
       )
       code = args.cmd === 'help' ? 0 : 1
   }

@@ -117,6 +117,48 @@ export class ScopeState {
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 const WS_FPS = 30
 
+/**
+ * Attach the scope's WebSocket push (RFC 6455 handshake + unmasked binary
+ * frames at WS_FPS) to any http server. Returns a detach/cleanup fn.
+ * Shared by the standalone scope and the unified monitor.
+ */
+export function attachScopeWs(srv: Server, state: ScopeState): () => void {
+  const clients = new Set<Socket>()
+  srv.on('upgrade', (req, socket: Socket) => {
+    const key = req.headers['sec-websocket-key']
+    if (typeof key !== 'string') {
+      socket.destroy()
+      return
+    }
+    const accept = createHash('sha1').update(key + WS_GUID).digest('base64')
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    )
+    socket.setNoDelay(true)
+    clients.add(socket)
+    const drop = (): void => {
+      clients.delete(socket)
+      socket.destroy()
+    }
+    socket.on('close', drop)
+    socket.on('error', drop)
+    socket.on('data', (d: Buffer) => {
+      if (d.length && (d[0] & 0x0f) === 0x8) drop()
+    })
+  })
+  const timer = setInterval(() => {
+    if (clients.size === 0) return
+    const f = state.binFrame()
+    const frame = wsFrame(Buffer.from(f.buffer, f.byteOffset, f.byteLength))
+    for (const c of clients) c.write(frame)
+  }, Math.round(1000 / WS_FPS))
+  return () => {
+    clearInterval(timer)
+    for (const c of clients) c.destroy()
+  }
+}
+
 /** Server->client binary WebSocket frame (no masking server-side). */
 function wsFrame(payload: Buffer): Buffer {
   const len = payload.length
@@ -138,7 +180,6 @@ function wsFrame(payload: Buffer): Buffer {
 }
 
 export function startScopeServer(state: ScopeState, port = SCOPE_PORT): Promise<{ url: string; close: () => void } | null> {
-  const clients = new Set<Socket>()
   const srv: Server = createServer((req, res) => {
     if (req.url?.startsWith('/scope.json')) {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
@@ -148,46 +189,14 @@ export function startScopeServer(state: ScopeState, port = SCOPE_PORT): Promise<
       res.end(PAGE)
     }
   })
-  // WebSocket push: hand-rolled RFC 6455 handshake + unmasked binary frames.
-  // The page falls back to /scope.json polling if the socket fails.
-  srv.on('upgrade', (req, socket: Socket) => {
-    const key = req.headers['sec-websocket-key']
-    if (typeof key !== 'string') {
-      socket.destroy()
-      return
-    }
-    const accept = createHash('sha1').update(key + WS_GUID).digest('base64')
-    socket.write(
-      'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
-        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    )
-    socket.setNoDelay(true)
-    clients.add(socket)
-    const drop = (): void => {
-      clients.delete(socket)
-      socket.destroy()
-    }
-    socket.on('close', drop)
-    socket.on('error', drop)
-    // client frames: only react to close (opcode 0x8); pings are not expected
-    socket.on('data', (d: Buffer) => {
-      if (d.length && (d[0] & 0x0f) === 0x8) drop()
-    })
-  })
-  const timer = setInterval(() => {
-    if (clients.size === 0) return
-    const f = state.binFrame()
-    const frame = wsFrame(Buffer.from(f.buffer, f.byteOffset, f.byteLength))
-    for (const c of clients) c.write(frame)
-  }, Math.round(1000 / WS_FPS))
+  const detachWs = attachScopeWs(srv, state)
   return new Promise((resolve) => {
     srv.once('error', () => resolve(null))
     srv.listen(port, '127.0.0.1', () =>
       resolve({
         url: `http://127.0.0.1:${port}/`,
         close: () => {
-          clearInterval(timer)
-          for (const c of clients) c.destroy()
+          detachWs()
           srv.close()
         },
       }),

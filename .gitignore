@@ -11,3 +11,4 @@ docs/hardware/
 calib/sessions/*/raw/
 calib/tmp/
 calib/backups/
+calib/sessions/

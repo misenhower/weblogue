@@ -82,6 +82,28 @@ function measureStrike(
 }
 
 /**
+ * Count waveform-continuity violations: large-slope events whose spacing is
+ * far off the dominant periodic spacing (saw resets etc.). Duplicated or
+ * dropped USB audio chunks show up here even when long-term pitch survives.
+ * Only meaningful for strongly periodic tonal captures.
+ */
+export function countDiscontinuities(x: Float32Array): number {
+  let peak = 0
+  const jumps: number[] = []
+  for (let i = 1; i < x.length; i++) {
+    const a = Math.abs(x[i])
+    if (a > peak) peak = a
+    if (Math.abs(x[i] - x[i - 1]) > peak * 0.5 && peak > 0.005) jumps.push(i)
+  }
+  if (jumps.length < 8) return 0
+  const gaps = jumps.slice(1).map((j, k) => j - jumps[k])
+  const med = [...gaps].sort((a, b) => a - b)[gaps.length >> 1]
+  if (med <= 0) return 0
+  // gaps of thousands of samples are the silences between strikes, not glitches
+  return gaps.filter((g) => Math.abs(g - med) > med * 0.25 && g > 4 && g < med * 20).length
+}
+
+/**
  * Measure every strike of the (repeat-expanded) note plan. The first strike's
  * onset is `onsetSample` (detected for hardware, exact for the replica);
  * later strikes are offset by the plan's known repeat spacing — the ±150 ms

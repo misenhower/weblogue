@@ -29,7 +29,7 @@ import { initProgram } from '../../src/synths/xd/program'
 import { P } from '../../src/synths/xd/params'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
-import { measurePoint, type PointFeatures } from './lib/measure'
+import { measurePoint, countDiscontinuities, type PointFeatures } from './lib/measure'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointResult } from './lib/report'
@@ -605,7 +605,19 @@ async function cmdRun(args: Args): Promise<number> {
           if (!onset) throw new Error('no onset found (silent capture?)')
           if (onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
           if (onset.peakDbfs < -45) throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          if (job.features.nominalHz) {
+            const disc = countDiscontinuities(x)
+            if (disc > 5)
+              throw new Error(`${disc} waveform discontinuities — capture corruption (USB packet drops/duplicates)`)
+          }
           hw = measurePoint(x, wav.sr, onset.sample, job)
+          // analog voice spread is ~1-3 cents; far beyond that means the
+          // capture timeline itself is broken (sample drops / rate conflict)
+          if (hw.strikes.length > 1 && hw.centsSpread > 8) {
+            const spread = hw.centsSpread.toFixed(1)
+            hw = null
+            throw new Error(`strike spread ${spread}¢ — capture dropouts suspected (device rate conflict? other apps on the interface?)`)
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           if (attempt >= 2) {

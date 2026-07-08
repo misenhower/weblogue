@@ -6,7 +6,7 @@
  */
 import type { CalibJob } from './job'
 import { expandNotes } from './job'
-import { fftPeakHz, phasePitchTrack, harmonicLadder } from './features'
+import { fftPeakHz, phasePitchTrack, harmonicLadder, goertzelC } from './features'
 import { peakDbfs } from './onset'
 
 export interface StrikeFeatures {
@@ -71,7 +71,20 @@ function measureStrike(
     x.length,
     Math.max(from + Math.round(0.3 * sr), strikeOnset + Math.round((noteDur - 0.1) * sr)),
   )
-  const coarse = fftPeakHz(x, from, Math.min(16384, to - from), sr)
+  let coarse = fftPeakHz(x, from, Math.min(16384, to - from), sr)
+  // subharmonic descent: on narrow pulses and folded waves a harmonic can
+  // out-peak H1 (e.g. SQR at d=0.15 has H2 > H1) — if f/2 or f/3 carries
+  // real energy, the fundamental is below the FFT peak
+  const gTo = Math.min(to, from + 16384)
+  const powerAt = (f: number): number => goertzelC(x, from, gTo, f, sr).power
+  const peakPower = powerAt(coarse)
+  for (const div of [3, 2]) {
+    const cand = coarse / div
+    if (cand >= 25 && powerAt(cand) > 0.2 * peakPower) {
+      coarse = cand
+      break
+    }
+  }
   const seed = job.features.nominalHz ?? coarse
   // trust the coarse FFT unless it's wildly off the nominal (harmonic grab).
   // ±1300¢ accepts the full ±1200¢ PITCH-knob sweep range while still
@@ -95,14 +108,27 @@ export function countDiscontinuities(x: Float32Array): number {
   for (let i = 1; i < x.length; i++) {
     const a = Math.abs(x[i])
     if (a > peak) peak = a
+    // 0.5×peak catches the (resampler-spread) saw reset every cycle so the
+    // periodic baseline is dense; rare non-clustered spacings are the glitches
     if (Math.abs(x[i] - x[i - 1]) > peak * 0.5 && peak > 0.005) jumps.push(i)
   }
   if (jumps.length < 8) return 0
   const gaps = jumps.slice(1).map((j, k) => j - jumps[k])
   const med = [...gaps].sort((a, b) => a - b)[gaps.length >> 1]
   if (med <= 0) return 0
+  // a waveform may have several legitimate slope events per cycle (e.g. the
+  // SAW morph's second reset), so any gap spacing that recurs in >=10% of
+  // cycles is a wave feature, not a glitch. Splices are rare by definition.
+  const common: number[] = []
+  for (const g of gaps) {
+    if (common.some((c) => Math.abs(g - c) <= c * 0.25)) continue
+    const share = gaps.filter((o) => Math.abs(o - g) <= g * 0.25).length / gaps.length
+    if (share >= 0.1) common.push(g)
+  }
   // gaps of thousands of samples are the silences between strikes, not glitches
-  return gaps.filter((g) => Math.abs(g - med) > med * 0.25 && g > 4 && g < med * 20).length
+  return gaps.filter(
+    (g) => g > 4 && g < med * 20 && !common.some((c) => Math.abs(g - c) <= c * 0.25),
+  ).length
 }
 
 /**

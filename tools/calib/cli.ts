@@ -587,7 +587,6 @@ async function cmdRun(args: Args): Promise<number> {
   const midi = MidiRig.open(midiMatch)
   let backup: Uint8Array | null = null
   const results: PointResult[] = []
-  let aborted: string | null = null
   try {
     backup = await snapshotEditBuffer(midi, ch)
     for (const [i, pt] of points.entries()) {
@@ -613,10 +612,14 @@ async function cmdRun(args: Args): Promise<number> {
           if (!onset) throw new Error('no onset found (silent capture?)')
           if (onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
           if (onset.peakDbfs < -45) throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          // >30 matches observed USB corruption (74-120/capture); a handful
+          // can be benign resampled-edge borderline hits at low f0 — warn
+          // only. TODO(M3): replace slope scan with a phase-jump detector.
           if (job.features.nominalHz) {
             const disc = countDiscontinuities(x)
-            if (disc > 5)
+            if (disc > 30)
               throw new Error(`${disc} waveform discontinuities — capture corruption (USB packet drops/duplicates)`)
+            if (disc > 5) console.log(`  point ${i + 1}: note — ${disc} waveform discontinuities (borderline; inspect if results look off)`)
           }
           hw = measurePoint(x, wav.sr, onset.sample, job)
           // analog voice spread is ~1-3 cents; far beyond that means the
@@ -629,7 +632,9 @@ async function cmdRun(args: Args): Promise<number> {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           if (attempt >= 2) {
-            aborted = `point ${i + 1} (${label}) failed twice: ${msg}`
+            // a failed point is data too (e.g. hardware silent at a SHAPE
+            // endpoint) — record it and keep sweeping
+            console.log(`${FAIL} point ${i + 1}/${points.length} ${label} failed twice: ${msg}`)
             lp.status = 'failed'
             lp.note = msg
             pushLive()
@@ -641,8 +646,7 @@ async function cmdRun(args: Args): Promise<number> {
           pushLive()
         }
       }
-      if (aborted) break
-      if (hw === null) break
+      if (hw === null) continue
 
       const rep = renderJobPoint(job, pt)
       const repF = measurePoint(rep.samples, rep.sr, rep.onsetSample, job)
@@ -677,15 +681,19 @@ async function cmdRun(args: Args): Promise<number> {
     midi.close()
   }
 
-  if (aborted) {
-    console.log(`${FAIL} run aborted: ${aborted}`)
-    console.log(`  raw captures kept in ${session.rawDir} for inspection; edit buffer was restored`)
+  const failed = liveState.points.filter((p) => p.status === 'failed')
+  if (results.length === 0) {
+    console.log(`${FAIL} run produced no usable points (${failed.length} failed) — raw captures kept in ${session.rawDir}`)
     liveState.phase = 'aborted'
-    liveState.message = aborted
+    liveState.message = 'no usable points'
     pushLive()
     await sleep(2500)
     live?.close()
     return 1
+  }
+  if (failed.length) {
+    console.log(`${FAIL} ${failed.length}/${points.length} points failed (kept in the report): ${failed.map((p) => p.label).join(', ')}`)
+    liveState.message = `${failed.length} point(s) failed — see notes`
   }
   saveJson(session.dir, 'features.json', { job: job.id, domain: job.domain, results })
   const md = renderReport(job, results, { dir: session.dir })
@@ -697,7 +705,7 @@ async function cmdRun(args: Args): Promise<number> {
   pushLive()
   await sleep(2500)
   live?.close()
-  return 0
+  return failed.length ? 1 : 0
 }
 
 /** Request the edit buffer (func 10 -> 40); throws on timeout. */

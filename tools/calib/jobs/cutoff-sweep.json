@@ -1,8 +1,7 @@
 {
   "id": "cutoff-sweep",
   "domain": "filter.cutoff",
-  "description": "D4/M3: cutoff taper via NOISE High through the VCF",
-  "disabled": "needs M3 PSD-transfer features + expMap fit (tonal features would report nonsense for noise)",
+  "description": "D4/M3: cutoff taper via NOISE High through the VCF — PSD transfer vs the raw-1023 reference point, fitLpMag corner per point, expMap fit",
   "overrides": {
     "vco1Level": 0,
     "vco2Level": 0,
@@ -27,5 +26,5 @@
   },
   "notes": [{ "midi": 60, "vel": 100, "onSec": 0.4, "offSec": 3.4 }],
   "captureSec": 4.0,
-  "features": { "harmonics": 0 }
+  "features": { "kind": "noise" }
 }

@@ -61,20 +61,22 @@ export function startMonitorServer(
       const job = JSON.parse(readFileSync(join(dir, 'job.json'), 'utf8'))
       interface RawResult {
         point: number | null
-        hw: { cents: number; centsSpread?: number; peakDbfs: number; harmonicsDb: number[]; waveSnap?: number[] }
-        rep: { cents: number; harmonicsDb: number[]; waveSnap?: number[] }
+        hw: { cents?: number; centsSpread?: number; peakDbfs: number; harmonicsDb?: number[]; waveSnap?: number[] }
+        rep: { cents?: number; harmonicsDb?: number[]; waveSnap?: number[] }
       }
       const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as { results: RawResult[] }
       const points: LivePoint[] = feats.results.map((r) => ({
         label: r.point === null ? 'base patch' : `${job.sweep?.param}=${r.point}`,
         raw: r.point,
         status: 'done',
+        // non-tonal sessions (noise/envelope kinds) lack these fields — the
+        // page renders blanks for undefined
         hwCents: r.hw.cents,
         repCents: r.rep.cents,
         hwSpread: r.hw.centsSpread,
         peakDbfs: r.hw.peakDbfs,
-        ladder: r.hw.harmonicsDb
-          .map((db, k): [number, number, number] => [k + 1, db, r.rep.harmonicsDb[k] ?? NaN])
+        ladder: (r.hw.harmonicsDb ?? [])
+          .map((db, k): [number, number, number] => [k + 1, db, r.rep.harmonicsDb?.[k] ?? NaN])
           .slice(1),
         waveHw: r.hw.waveSnap,
         waveRep: r.rep.waveSnap,

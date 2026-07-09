@@ -36,7 +36,14 @@ export interface CalibJob {
   repeat?: number
   repeatEverySec?: number
   captureSec: number
-  features: { nominalHz?: number; harmonics?: number }
+  features: {
+    nominalHz?: number
+    harmonics?: number
+    /** measurement kind: tonal (default), noise (PSD transfer), envelope (EG segment) */
+    kind?: 'tonal' | 'noise' | 'envelope'
+    /** which EG segment an envelope job measures */
+    env?: 'attack' | 'decay' | 'release' | 'sustain'
+  }
 }
 
 /** The note plan with repeats expanded to absolute times. */
@@ -82,6 +89,12 @@ export function loadJob(path: string): CalibJob {
   if (job.sweep) {
     if (!PARAM_BY_KEY.has(job.sweep.param)) fail(`unknown sweep param key "${job.sweep.param}"`)
     if (!Array.isArray(job.sweep.points) || job.sweep.points.length === 0) fail('empty sweep points')
+  }
+  const kind = job.features?.kind ?? 'tonal'
+  if (!['tonal', 'noise', 'envelope'].includes(kind)) fail(`unknown features.kind "${kind}"`)
+  if (kind === 'envelope') {
+    if (!job.features.env) fail('envelope jobs need features.env (attack|decay|release|sustain)')
+    if (!job.features.nominalHz) fail('envelope jobs need features.nominalHz (tone-locked follower)')
   }
   return job
 }

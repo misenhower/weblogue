@@ -29,7 +29,9 @@ import { initProgram } from '../../src/synths/xd/program'
 import { P } from '../../src/synths/xd/params'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
-import { measurePoint, countDiscontinuities, type PointFeatures } from './lib/measure'
+import { type PointFeatures } from './lib/measure'
+import { captureVerdict } from './lib/phasejump'
+import { measureAny, buildProposals, sweepValues, summarize, jobKind, type AnyFeatures, type AnyResult } from './lib/domains'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointResult } from './lib/report'
@@ -385,6 +387,90 @@ async function cmdScope(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// compare — re-render the replica against a stored session's hardware
+// features (run after hand-applying proposed values to curves.ts: residuals
+// should collapse). accept — archive the session's proposals as the
+// provenance record in calib/results/<domain>.json.
+// ---------------------------------------------------------------------------
+function resolveSession(name: string | undefined): string | null {
+  if (!name) return null
+  if (existsSync(join(name, 'features.json'))) return name
+  const dir = join(calibDir(ROOT), 'sessions', name)
+  return existsSync(join(dir, 'features.json')) ? dir : null
+}
+
+async function cmdCompare(args: Args): Promise<number> {
+  const dir = resolveSession(args.rest[0])
+  if (!dir) {
+    console.log('usage: npm run calib -- compare <session-dir-or-name>  (must contain features.json)')
+    return 1
+  }
+  const job = loadJob(join(dir, 'job.json'))
+  const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as { results: AnyResult[] }
+  const stored = feats.results
+  // fresh replica render of every stored point with CURRENT curves.ts values
+  const fresh: AnyResult[] = stored.map((r) => {
+    const rend = renderJobPoint(job, r.point)
+    return { point: r.point, hw: r.hw, rep: measureAny(rend.samples, rend.sr, rend.onsetSample, job) }
+  })
+  const { unit, values: hwV } = sweepValues(job, fresh, 'hw')
+  const { values: nowV } = sweepValues(job, fresh, 'rep')
+  const { values: thenV } = sweepValues(job, stored, 'rep')
+  console.log(`\n${job.id} — replica vs stored hardware (${unit}); before = at capture time, after = current curves.ts\n`)
+  console.log('| point | hardware | replica before | replica after | Δ before | Δ after |')
+  console.log('|---|---|---|---|---|---|')
+  const dev: { before: number; after: number }[] = []
+  for (let i = 0; i < fresh.length; i++) {
+    const [h, b, a] = [hwV[i], thenV[i], nowV[i]]
+    if (h === null || b === null || a === null) continue
+    const d = (r: number): string =>
+      unit === '¢' ? `${r >= 0 ? '+' : ''}${r.toFixed(1)}¢` : `${r >= 0 ? '+' : ''}${(r * 100).toFixed(1)}%`
+    const delta = (v: number): number => (unit === '¢' ? v - h : v / h - 1)
+    dev.push({ before: delta(b), after: delta(a) })
+    const fmt = (v: number): string => (unit === '¢' ? v.toFixed(1) : v.toPrecision(4))
+    console.log(
+      `| ${fresh[i].point ?? 'base'} | ${fmt(h)} | ${fmt(b)} | ${fmt(a)} | ${d(delta(b))} | ${d(delta(a))} |`,
+    )
+  }
+  const rms = (xs: number[]): number => Math.sqrt(xs.reduce((s, v) => s + v * v, 0) / Math.max(1, xs.length))
+  const before = rms(dev.map((d) => d.before))
+  const after = rms(dev.map((d) => d.after))
+  const p = (v: number): string => (unit === '¢' ? `${v.toFixed(1)}¢` : `${(v * 100).toFixed(1)}%`)
+  console.log(`\nRMS deviation vs hardware: before ${p(before)} -> after ${p(after)} ${after < before ? '✓ closer' : '✗ NOT closer'}`)
+  return after < before ? 0 : 1
+}
+
+async function cmdAccept(args: Args): Promise<number> {
+  const dir = resolveSession(args.rest[0])
+  if (!dir) {
+    console.log('usage: npm run calib -- accept <session-dir-or-name>')
+    return 1
+  }
+  const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as {
+    domain: string
+    proposals?: unknown[]
+    measuredDate?: string
+  }
+  if (!feats.proposals?.length) {
+    console.log(`${FAIL} session has no proposals to accept`)
+    return 1
+  }
+  const outDir = join(calibDir(ROOT), 'results')
+  mkdirSync(outDir, { recursive: true })
+  const outPath = join(outDir, `${feats.domain}.json`)
+  writeFileSync(
+    outPath,
+    JSON.stringify(
+      { domain: feats.domain, measuredDate: feats.measuredDate, acceptedAt: new Date().toISOString(), session: dir, proposals: feats.proposals },
+      null,
+      2,
+    ) + '\n',
+  )
+  console.log(`${PASS} accepted -> ${outPath} (commit this as the provenance record)`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // monitor — persistent scope + run dashboard + session history (ctrl-C stops)
 // ---------------------------------------------------------------------------
 async function cmdMonitor(args: Args): Promise<number> {
@@ -607,7 +693,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
 
   const midi = MidiRig.open(midiMatch)
   let backup: Uint8Array | null = null
-  const results: PointResult[] = []
+  const results: AnyResult[] = []
   try {
     backup = await snapshotEditBuffer(midi, ch)
     for (const [i, pt] of points.entries()) {
@@ -617,8 +703,9 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
       pushLive()
       await pushDump(midi, ch, encodeProgBin(jobProgram(job, pt)))
       const wavPath = join(session.rawDir, `point-${String(i).padStart(3, '0')}.wav`)
+      const kind = jobKind(job)
 
-      let hw: PointFeatures | null = null
+      let hw: AnyFeatures | null = null
       for (let attempt = 1; hw === null; attempt++) {
         await recordWav({
           deviceIndex: dev.index,
@@ -630,25 +717,41 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
           const wav = readWav(new Uint8Array(readFileSync(wavPath)))
           const x = wav.channels[0]
           const onset = detectOnset(x, wav.sr)
-          if (!onset) throw new Error('no onset found (silent capture?)')
-          if (onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
-          if (onset.peakDbfs < -45) throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
-          // >30 matches observed USB corruption (74-120/capture); a handful
-          // can be benign resampled-edge borderline hits at low f0 — warn
-          // only. TODO(M3): replace slope scan with a phase-jump detector.
-          if (job.features.nominalHz) {
-            const disc = countDiscontinuities(x)
-            if (disc > 30)
-              throw new Error(`${disc} waveform discontinuities — capture corruption (USB packet drops/duplicates)`)
-            if (disc > 5) console.log(`  point ${i + 1}: note — ${disc} waveform discontinuities (borderline; inspect if results look off)`)
+          let onsetSample: number
+          if (onset) {
+            onsetSample = onset.sample
+          } else if (kind === 'noise') {
+            // a noise point can be legitimately near-silent (cutoff ~0):
+            // fall back to the scheduled note time; window margins absorb
+            // the capture-start skew and the PSD needs no ms precision
+            onsetSample = Math.min(x.length - 1, Math.round((0.2 + job.notes[0].onSec) * wav.sr))
+          } else {
+            throw new Error('no onset found (silent capture?)')
           }
-          hw = measurePoint(x, wav.sr, onset.sample, job)
-          // analog voice spread is ~1-3 cents; far beyond that means the
-          // capture timeline itself is broken (sample drops / rate conflict)
-          if (hw.strikes.length > 1 && hw.centsSpread > 8) {
-            const spread = hw.centsSpread.toFixed(1)
-            hw = null
-            throw new Error(`strike spread ${spread}¢ — capture dropouts suspected (device rate conflict? other apps on the interface?)`)
+          if (onset && onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          if (onset && onset.peakDbfs < -45 && kind !== 'noise')
+            throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+          hw = measureAny(x, wav.sr, onsetSample, job)
+          // phase-jump corruption gate (tonal only: needs a stable tone; the
+          // envelope kind's amplitude ramps would starve the probes)
+          if (kind === 'tonal') {
+            const t = hw as PointFeatures
+            const wFrom = onsetSample + Math.round(0.15 * wav.sr)
+            const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
+            if (wTo - wFrom > 0.3 * wav.sr) {
+              const verdict = captureVerdict(x, wav.sr, t.f0Hz, wFrom, wTo)
+              if (verdict) {
+                hw = null
+                throw new Error(verdict)
+              }
+            }
+            // analog voice spread is ~1-3 cents; far beyond that means the
+            // capture timeline itself is broken (sample drops / rate conflict)
+            if (hw && t.strikes.length > 1 && t.centsSpread > 8) {
+              const spread = t.centsSpread.toFixed(1)
+              hw = null
+              throw new Error(`strike spread ${spread}¢ — capture dropouts suspected (device rate conflict? other apps on the interface?)`)
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -670,25 +773,33 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
       if (hw === null) continue
 
       const rep = renderJobPoint(job, pt)
-      const repF = measurePoint(rep.samples, rep.sr, rep.onsetSample, job)
+      const repF = measureAny(rep.samples, rep.sr, rep.onsetSample, job)
       results.push({ point: pt, hw, rep: repF })
       lp.status = 'done'
       lp.note = ''
-      lp.hwCents = hw.cents
-      lp.repCents = repF.cents
-      lp.hwSpread = hw.centsSpread
       lp.peakDbfs = hw.peakDbfs
-      lp.ladder = hw.harmonicsDb
-        .map((db, k): [number, number, number] => [k + 1, db, repF.harmonicsDb[k] ?? NaN])
-        .slice(1)
-      lp.waveHw = hw.waveSnap
-      lp.waveRep = repF.waveSnap
+      if (kind === 'tonal') {
+        const t = hw as PointFeatures
+        const tr = repF as PointFeatures
+        lp.hwCents = t.cents
+        lp.repCents = tr.cents
+        lp.hwSpread = t.centsSpread
+        lp.ladder = t.harmonicsDb
+          .map((db, k): [number, number, number] => [k + 1, db, tr.harmonicsDb[k] ?? NaN])
+          .slice(1)
+        lp.waveHw = t.waveSnap
+        lp.waveRep = tr.waveSnap
+      } else {
+        lp.note = `hw ${summarize(job, hw)} | rep ${summarize(job, repF)}`
+      }
       pushLive()
-      const c = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(1)}¢`
-      const spread = hw.strikes.length > 1 ? ` ±${(hw.centsSpread / 2).toFixed(1)}¢×${hw.strikes.length}` : ''
+      const spread =
+        kind === 'tonal' && (hw as PointFeatures).strikes.length > 1
+          ? ` ±${((hw as PointFeatures).centsSpread / 2).toFixed(1)}¢×${(hw as PointFeatures).strikes.length}`
+          : ''
       console.log(
         `point ${i + 1}/${points.length} ${label} | peak ${hw.peakDbfs.toFixed(1)} dBFS | ` +
-          `hw ${hw.f0Hz.toFixed(2)} Hz (${c(hw.cents)}${spread}) | replica ${repF.f0Hz.toFixed(2)} Hz (${c(repF.cents)})`,
+          `hw ${summarize(job, hw)}${spread} | replica ${summarize(job, repF)}`,
       )
     }
   } finally {
@@ -716,8 +827,22 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
     console.log(`${FAIL} ${failed.length}/${points.length} points failed (kept in the report): ${failed.map((p) => p.label).join(', ')}`)
     liveState.message = `${failed.length} point(s) failed — see notes`
   }
-  saveJson(session.dir, 'features.json', { job: job.id, domain: job.domain, results })
-  const md = renderReport(job, results, { dir: session.dir })
+  const proposals = buildProposals(job, results)
+  const measuredDate = new Date().toISOString().slice(0, 10)
+  saveJson(session.dir, 'features.json', {
+    job: job.id,
+    domain: job.domain,
+    kind: jobKind(job),
+    results,
+    proposals,
+    measuredDate,
+  })
+  const md = renderReport(
+    job,
+    results,
+    { dir: session.dir },
+    proposals.length ? { measuredDate, items: proposals } : undefined,
+  )
   saveText(session.dir, 'report.md', md)
   console.log(`\nreport: ${join(session.dir, 'report.md')}\n`)
   console.log(md)
@@ -791,9 +916,15 @@ async function main(): Promise<void> {
     case 'monitor':
       code = await cmdMonitor(args)
       break
+    case 'compare':
+      code = await cmdCompare(args)
+      break
+    case 'accept':
+      code = await cmdAccept(args)
+      break
     default:
       console.log(
-        'usage: npm run calib -- <devices [--save] | check [--midi m] [--audio a] [--channel 1-16] [--skip-audio] | run <job> [--dry] | monitor [--audio a] | scope [--audio a] | restore [--file f]>'
+        'usage: npm run calib -- <devices [--save] | check [...] | run <job|all> [--dry] | compare <session> | accept <session> | monitor [--audio a] | scope [--audio a] | restore [--file f]>'
       )
       code = args.cmd === 'help' ? 0 : 1
   }

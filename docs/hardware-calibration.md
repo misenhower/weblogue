@@ -147,6 +147,12 @@ Long unattended runs must never end in silently unusable data:
   render → comparison report. First look at the report format.
 - **M3 — First fitted domain (filter cutoff)**: sweep → fit → proposal → hand-apply → `compare`
   confirms residuals collapse. Validates the whole loop once, end to end.
+  *Software half landed 2026-07-09 (hardware session pending)*: job kinds tonal/noise/envelope
+  (`measure-noise` PSD-transfer + `fitLpMag` corners, `measure-env` EG segment times with the
+  0.7492 attack-rise shape factor, `phasejump` replacing the slope corruption scan), the
+  proposal pipeline with held-out validation (`## Proposals` in report.md), `compare`/`accept`
+  commands, and eg-attack/decay/release + cutoff-sweep jobs. Pipeline proven by replica
+  self-calibration tests: the render→measure→fit loop recovers the replica's own curves.
 - **M4 — Core voice domains**: VCO pitch/portamento, SHAPE, remaining filter, EGs, mod depths + LFO.
 - **M5 — Breadth**: MULTI voicings, LFO-sync semantics, drift, FX, arp variants; checklist sweep;
   propagation notes for the other synth modes.

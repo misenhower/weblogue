@@ -19,9 +19,36 @@
   },
   "sweep": {
     "param": "ampDecay",
-    "points": [0, 85, 171, 256, 341, 426, 512, 597, 682, 767, 853, 938, 1023]
+    "points": [
+      0,
+      85,
+      171,
+      256,
+      341,
+      426,
+      512,
+      597,
+      682,
+      767,
+      853,
+      896,
+      938,
+      980,
+      1023
+    ]
   },
-  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.3, "offSec": 3.8 }],
-  "captureSec": 4.2,
-  "features": { "nominalHz": 440, "kind": "envelope", "env": "decay" }
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 10.3
+    }
+  ],
+  "captureSec": 11.0,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "decay"
+  }
 }

@@ -19,9 +19,36 @@
   },
   "sweep": {
     "param": "ampRelease",
-    "points": [0, 85, 171, 256, 341, 426, 512, 597, 682, 767, 853, 938, 1023]
+    "points": [
+      0,
+      85,
+      171,
+      256,
+      341,
+      426,
+      512,
+      597,
+      682,
+      767,
+      853,
+      896,
+      938,
+      980,
+      1023
+    ]
   },
-  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.3, "offSec": 1.5 }],
-  "captureSec": 4.5,
-  "features": { "nominalHz": 440, "kind": "envelope", "env": "release" }
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 1.5
+    }
+  ],
+  "captureSec": 12.0,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "release"
+  }
 }

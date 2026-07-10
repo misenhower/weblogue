@@ -63,15 +63,18 @@ timing derives from audio onsets, never from clock sync.
 > size. Treat it as a doc bug: derive payload length from the 7↔8-bit grouping and verify
 > empirically at milestone M1.
 
-**Capture** — xd OUTPUT L/R → interface line-in → ffmpeg (avfoundation) subprocess writing
-float WAV at 48 kHz, one file per sweep point. Devices are stored by *name* in `calib/rig.json`
-and resolved to indices at runtime. Line-in bypasses macOS mic processing; rig hygiene is gain
-(harness warns outside −40..−1 dBFS peak) plus three measured constraints (2026-07-08): the
-ProFX runs at its **44.1 kHz native rate** (its 48 kHz USB mode duplicates/drops packets on this
-Mac — ffmpeg's in-path resample to 48 kHz is clean and identical for every capture), it stays
-out of aggregate devices, and it is never the system default in/out. The per-point validation
-enforces this class of failure anyway: silence-floor gate, strike-spread ≤ 8¢, and a
-waveform-continuity scan that rejects captures with spliced/dropped USB chunks. Each capture starts with ~300 ms of pre-roll
+**Capture** — xd OUTPUT L/R → interface line-in → the CoreAudio-native helper
+(`tools/calib/native/calib-rec.swift`: AVAudioEngine tap + AVAudioConverter SRC, compiled on
+demand by capture.ts) writing float WAV at 48 kHz, one file per sweep point. **Never capture
+through ffmpeg's avfoundation input** — it silently drops stream chunks at a condition-dependent
+rate and masqueraded as several different hardware problems before the 2026-07-10 diagnosis (full
+story + proof chain in [calibration-findings.md](calibration-findings.md)). Devices are stored by
+*name* in `calib/rig.json` and resolved to HAL ids at runtime. Rig hygiene: gain (harness warns
+outside −40..−1 dBFS peak), keep the interface out of aggregate devices and never the system
+default in/out. Capture integrity is enforced, not assumed: `calib check` step 8 captures the
+xd's crystal-clocked VPM Sin1 and requires ≤2 phase jumps and <0.3¢ pitch sd; per-point run
+validation gates on silence floor, strike spread ≤8¢, and the phase-jump detector (>2 events
+fails). Each capture starts with ~300 ms of pre-roll
 that measures the noise floor; the onset (first RMS crossing above it) is t=0 for every feature
 window, which cancels all I/O latency.
 

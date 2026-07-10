@@ -145,10 +145,13 @@ case "stream":
   signal(SIGINT) { _ in exit(0) }
   signal(SIGTERM) { _ in exit(0) }
   let stdout = FileHandle.standardOutput
-  _ = startCapture(deviceID: devID, rate: rate, channels: 1) { buf in
+  // keep a strong reference: a discarded engine is deallocated immediately
+  // and the tap silently stops delivering
+  let engine = startCapture(deviceID: devID, rate: rate, channels: 1) { buf in
     guard let data = buf.floatChannelData else { return }
     stdout.write(Data(bytes: data[0], count: Int(buf.frameLength) * 4))
   }
+  defer { engine.stop() }
   RunLoop.main.run()
 
 default:

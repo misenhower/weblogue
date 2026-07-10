@@ -39,6 +39,31 @@ in exactly one of three tiers:
 3. **Structure** — rare: routing or behavior contrary to the spec (e.g., drive placement,
    EG retrigger semantics). Action: update xd-spec.md first, then change the engine.
 
+## Calibration profiles (versioned tier-1/2 values)
+
+Tier-1/2 values don't overwrite curves.ts — they land as **versioned profiles** in
+`src/synths/xd/profiles.ts`. `v0` freezes the original guessed values exactly as first
+shipped; each reviewed calibration round becomes a new profile (`v1 · measured 2026-07-10`,
+…). A `CALIBRATION → PROFILE` dropdown in the settings drawer switches versions live
+(persisted per browser; `{t:'calibProfile'}` makes the engine re-derive every physical
+value from the current raw params), so any two rounds can be A/B'd on the same patch —
+guessed vs measured, or round N vs round N+1.
+
+Consequences:
+
+- **The review gate stays intact**: a measured profile ships as a *non-default* dropdown
+  entry; promoting one to `XD_DEFAULT_PROFILE` is itself a reviewed change, and tests pin
+  against the default.
+- Profile tables are evaluated by the same monotone-cubic code the fits use
+  (`src/shared/monotone.ts`), so a fitted table and its applied form cannot drift apart.
+- Profile tables use ALL measured points including the fits' held-out points — held-out
+  exists to validate the curve family, not to be discarded from the final table.
+- The DISPLAY pitch table never follows the profile: the hardware's own OLED shows Korg's
+  documented numbers while the analog voice does something else, and the replica mirrors
+  that split (`pitchToCents` = display, `vcoPitchCents` = engine).
+- Not yet in the schema (join when measured): filter voicing `XD_FILTER_CFG` (D4), drift
+  constants (D8), portamento.
+
 ## Provenance convention
 
 Tag each tuned constant/table at its definition site:

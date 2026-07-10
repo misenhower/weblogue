@@ -5,7 +5,10 @@
  */
 import processorUrl from './processor.ts?worker&url'
 import type { SynthApp, SynthAppOpts, SynthEntry } from '../def'
+import type { ToEngine } from '../../shared/messages'
+import type { ExtraGroup } from '../../ui/settings'
 import { makeSynthApp } from '../app-common'
+import { XD_PROFILES, XD_DEFAULT_PROFILE, setXdProfile } from './profiles'
 import { XD_DEF } from './def'
 import { Panel } from './panel'
 import { XD_DISPLAY_DEF } from './display-def'
@@ -15,6 +18,54 @@ import { decodeCc } from './cc'
 import { resolveMidiParam } from './resolve'
 import { P } from './params'
 import { MOTION_PITCH_BEND } from '../../shared/paramdef'
+
+const PROFILE_KEY = 'weblogue-xd-calib-profile'
+
+/**
+ * CALIBRATION > PROFILE drawer row: switches the versioned calibration
+ * profile (profiles.ts) in BOTH realms — this thread for display curves, the
+ * worklet via {t:'calibProfile'} (Engine.setCalibProfile re-applies all
+ * params). The choice persists like the other UI settings; `send` is the
+ * pre-boot-buffered sender, so restoring it before the worklet exists is fine.
+ */
+function calibProfileGroup(send: (m: ToEngine) => void): ExtraGroup {
+  const apply = (i: number): void => {
+    setXdProfile(XD_PROFILES[i].id)
+    send({ t: 'calibProfile', id: XD_PROFILES[i].id })
+  }
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(PROFILE_KEY)
+  } catch {
+    // storage blocked (private mode): run on the default, picks don't persist
+  }
+  let cur = Math.max(
+    0,
+    XD_PROFILES.findIndex((p) => p.id === (saved ?? XD_DEFAULT_PROFILE)),
+  )
+  if (XD_PROFILES[cur].id !== XD_DEFAULT_PROFILE) apply(cur)
+  return {
+    title: 'CALIBRATION',
+    rows: [
+      {
+        label: 'PROFILE',
+        get: () => cur,
+        set: (v) => {
+          if (!XD_PROFILES[v] || v === cur) return
+          cur = v
+          apply(v)
+          try {
+            localStorage.setItem(PROFILE_KEY, XD_PROFILES[v].id)
+          } catch {
+            // storage blocked: the switch still applies for this session
+          }
+        },
+        options: () => XD_PROFILES.map((p, i) => ({ label: p.name, value: i, selected: i === cur })),
+        fmt: (v) => XD_PROFILES[v]?.name ?? '?',
+      },
+    ],
+  }
+}
 
 export function buildXdApp(opts: SynthAppOpts): SynthApp {
   return makeSynthApp({
@@ -33,7 +84,7 @@ export function buildXdApp(opts: SynthAppOpts): SynthApp {
         onMaster: cb.onMaster,
       }),
     displayDef: XD_DISPLAY_DEF,
-    settingsDef: XD_SETTINGS_DEF,
+    settingsDef: { ...XD_SETTINGS_DEF, extras: [calibProfileGroup(opts.send)] },
     debugDef: XD_DEBUG_DEF,
     midiHandlers: ({ send, store, midiActivity }) => ({
       sustain: (on) => send({ t: 'sustain', on }),

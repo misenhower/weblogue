@@ -28,6 +28,8 @@ export interface EngineShell {
   setPressure(v: number): void
   setDebug(on: boolean): void
   setDebugAll(all: boolean): void
+  /** Synths with versioned calibration profiles (e.g. xd) implement this. */
+  setCalibProfile?(id: string): void
   copyDebugTaps(dst: Float32Array[]): void
   copyDebugVoiceTaps(dst: Float32Array[]): void
   debugVoiceInfo(i: number): DbgVoice
@@ -143,6 +145,9 @@ export function registerSynthProcessor(
           this.busyMs = 0
           this.wallFrames = 0
           this.dbgCount = 0
+          return
+        case 'calibProfile':
+          this.engine.setCalibProfile?.(m.id)
           return
         default:
           break

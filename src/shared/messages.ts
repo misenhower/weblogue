@@ -21,6 +21,7 @@ export type ToEngine =
   | { t: 'pressure'; v: number } // 0..1 channel aftertouch -> MIDI_AT_ASSIGN dest
   | { t: 'scope'; on: boolean }
   | { t: 'debug'; on: boolean; all?: boolean } // SERVICE MODE telemetry (all = 4-voice taps)
+  | { t: 'calibProfile'; id: string } // switch calibration profile (synths/<id>/profiles.ts)
 
 export interface DbgVoice {
   note: number

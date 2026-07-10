@@ -20,14 +20,8 @@ import { SvfFilter } from '../../dsp/filter'
 import { AdsrEg, AdEg } from '../../dsp/eg'
 import { Lfo, LFO_MODE } from '../../dsp/lfo'
 import { Drift } from '../../dsp/drift'
-import {
-  XD_FILTER_CFG,
-  EG_MAX_PITCH_CENTS,
-  EG_MAX_CUTOFF_OCTAVES,
-  LFO_MAX_PITCH_CENTS,
-  LFO_MAX_CUTOFF_OCTAVES,
-  LFO_MAX_SHAPE,
-} from './curves'
+import { XD_FILTER_CFG } from './curves'
+import { activeXdProfile } from './profiles'
 
 /** EG TARGET values (params.ts order): CUTOFF, PITCH 2, PITCH. */
 const EGT_CUTOFF = 0
@@ -419,6 +413,9 @@ export class Voice {
   }
 
   tick(): number {
+    // Calibration-profile scalars (mod depths, SQR PW floor) are read live so
+    // a profile switch takes effect without reconstructing voices.
+    const prof = activeXdProfile()
     // Modulators.
     const drift1C = this.drift1.tick()
     const drift2C = this.drift2.tick()
@@ -438,13 +435,13 @@ export class Voice {
 
     // EG pitch (spec §8): PITCH -> VCO1+VCO2+MULTI, PITCH 2 -> VCO2 only.
     const tgt = this.egTarget
-    const egPitch = tgt === EGT_CUTOFF ? 0 : this.egIntPct01 * EG_MAX_PITCH_CENTS * egV
+    const egPitch = tgt === EGT_CUTOFF ? 0 : this.egIntPct01 * prof.egMaxPitchCents * egV
     const egAll = tgt === EGT_PITCH ? egPitch : 0
     const eg2 = tgt === EGT_CUTOFF ? 0 : egPitch
 
     // LFO pitch routed by Target OSC (spec §9).
     const to = this.lfoTargetOsc
-    const lfoPitch = this.lfoTarget === LT_PITCH ? this.lfoInt01 * LFO_MAX_PITCH_CENTS * lfoV : 0
+    const lfoPitch = this.lfoTarget === LT_PITCH ? this.lfoInt01 * prof.lfoMaxPitchCents * lfoV : 0
     const lp1 = to === TO_ALL || to === TO_VCO12 ? lfoPitch : 0
     const lp2 = to !== TO_MULTI ? lfoPitch : 0
     const lpM = to === TO_ALL || to === TO_MULTI ? lfoPitch : 0
@@ -455,7 +452,9 @@ export class Voice {
     const fM = baseHz * this.octM * pow2((det + egAll + lpM) * CENT) // digital: no drift
 
     // LFO -> SHAPE on the routed oscillators only.
-    const lfoShape = this.lfoTarget === LT_SHAPE ? this.lfoInt01 * LFO_MAX_SHAPE * lfoV : 0
+    const lfoShape = this.lfoTarget === LT_SHAPE ? this.lfoInt01 * prof.lfoMaxShape * lfoV : 0
+    this.vco1.pwMin = prof.sqrPwMin
+    this.vco2.pwMin = prof.sqrPwMin
     this.vco1.setShape(to === TO_ALL || to === TO_VCO12 ? clamp01(this.shape1 + lfoShape) : this.shape1)
     this.vco2.setShape(to !== TO_MULTI ? clamp01(this.shape2 + lfoShape) : this.shape2)
     this.multi.setShape(to === TO_ALL || to === TO_MULTI ? clamp01(this.shapeM + lfoShape) : this.shapeM)
@@ -483,8 +482,8 @@ export class Voice {
 
     // Filter: keytrack (centered C4) x EG x LFO, exponents summed -> one pow.
     const velScale = 1 + (this.vel01 - 1) * this.egVel01 // blends 1 -> vel
-    const egOct = tgt === EGT_CUTOFF ? this.egIntPct01 * EG_MAX_CUTOFF_OCTAVES * egV * velScale : 0
-    const lfoOct = this.lfoTarget === LT_CUTOFF ? this.lfoInt01 * LFO_MAX_CUTOFF_OCTAVES * lfoV : 0
+    const egOct = tgt === EGT_CUTOFF ? this.egIntPct01 * prof.egMaxCutoffOctaves * egV * velScale : 0
+    const lfoOct = this.lfoTarget === LT_CUTOFF ? this.lfoInt01 * prof.lfoMaxCutoffOctaves * lfoV : 0
     let fc = this.cutoffHz * pow2(this.ktAmt * (this._note - 60) / 12 + egOct + lfoOct)
     if (!(fc >= MIN_CUTOFF)) fc = MIN_CUTOFF // also catches NaN
     else if (fc > this.maxFreq) fc = this.maxFreq

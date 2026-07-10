@@ -156,6 +156,14 @@ export class Vco {
   private shapeTarget = 0
   private shapeSm = 0
 
+  /**
+   * SQR pulse width at SHAPE max (0..0.5); pw runs 0.5 -> pwMin over SHAPE.
+   * A calibration target: the real xd narrows all the way to 0% = silence
+   * (measured 2026-07-08); the historical replica guess floors at 5%.
+   * Read live each sample so a profile switch needs no reconstruction.
+   */
+  pwMin = 0.05
+
   private phase = 0
   private _wrapped = false
   private _wrapFrac = 0
@@ -393,14 +401,26 @@ export class Vco {
       return (1 - m) * core + m * Math.sin(HALF_PI * foldGain * core)
     }
 
-    // SQR: pulse width 50% -> 5%; both edges BLEP'd; analytic DC removal
+    // SQR: pulse width 50% -> pwMin; both edges BLEP'd; analytic DC removal
     // (dc = 2*pw - 1) and peak normalization so output stays within [-1, 1].
-    let pw = 0.5 - 0.45 * shape
-    const minPw = Math.max(0.05, Math.min(adt, 0.45))
-    if (pw < minPw) pw = minPw
-    else if (pw > 1 - minPw) pw = 1 - minPw
+    // Widths below the BLEP transition width can't be rendered: the stock law
+    // (pwMin 0.05) clamps there at full amplitude exactly as it always has —
+    // that path must stay bit-identical for every synth. Only a calibration
+    // profile that asks for a sub-5% floor fades the unrenderable stretch out
+    // instead, so pwMin = 0 reaches true silence at SHAPE max like the
+    // measured hardware. (The pwMin < minPw gate also keeps the fade
+    // denominator strictly positive.)
+    let pw = 0.5 - (0.5 - this.pwMin) * shape
+    const minPw = Math.max(this.pwMin, Math.min(adt, 0.45))
+    let fade = 1
+    if (pw < minPw) {
+      if (this.pwMin < 0.05 && this.pwMin < minPw) {
+        fade = Math.max(0, (pw - this.pwMin) / (minPw - this.pwMin))
+      }
+      pw = minPw
+    } else if (pw > 1 - minPw) pw = 1 - minPw
     const dc = 2 * pw - 1
-    const scale = 1 / (2 * (1 - pw))
+    const scale = fade / (2 * (1 - pw))
     if (!rev) {
       let core = pulseBl(t, adt, pw, sync)
       if (sync) {

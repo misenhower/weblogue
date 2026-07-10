@@ -21,7 +21,7 @@
 import { P, PARAMS, MOTION_META } from './params'
 import { clamp, dbToGain } from '../../shared/maps'
 import {
-  pitchToCents,
+  vcoPitchCents,
   egIntToPercent,
   attackToSec,
   decayToSec,
@@ -52,6 +52,7 @@ import {
   type OffsetResolution,
 } from '../../dsp/enginebase'
 import type { Arp } from '../../dsp/arp'
+import { setXdProfile } from './profiles'
 import { Voice } from './voice'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
@@ -140,6 +141,17 @@ export class Engine extends EngineBase<Voice> {
     this.finishInit()
   }
 
+  /* ------------------------------------------------- calibration profile -- */
+
+  /**
+   * Switch the worklet realm's calibration profile (profiles.ts) and re-derive
+   * every cached physical value from the current raw params. Voice-level
+   * scalars (mod depths, SQR PW floor) read the profile live and need no push.
+   */
+  setCalibProfile(id: string): void {
+    if (setXdProfile(id)) this.applyAllParams()
+  }
+
   /* ----------------------------------------------------------- joystick -- */
 
   /** Joystick Y, -1..1; offsets the assigned destination (block-rate). */
@@ -223,12 +235,12 @@ export class Engine extends EngineBase<Voice> {
         for (let i = 0; i < NV; i++) vs[i].setVcoOctave(1, Math.pow(2, Math.round(e) - 1))
         break
       case P.VCO1_PITCH: {
-        const c = pitchToCents(e)
+        const c = vcoPitchCents(e)
         for (let i = 0; i < NV; i++) vs[i].setVcoPitchCents(0, c)
         break
       }
       case P.VCO2_PITCH: {
-        const c = pitchToCents(e)
+        const c = vcoPitchCents(e)
         for (let i = 0; i < NV; i++) vs[i].setVcoPitchCents(1, c)
         break
       }

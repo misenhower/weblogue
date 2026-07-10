@@ -4,32 +4,35 @@
  * values 0..1023. Piecewise tables reproduce the official minilogue xd MIDI
  * implementation (see docs/xd-spec.md); values that had to be guessed are
  * marked UNCONFIRMED and are calibration targets
- * (docs/hardware-calibration.md).
+ * (docs/hardware-calibration.md). Calibratable curves read the ACTIVE
+ * calibration profile (profiles.ts) — the default profile v0 reproduces the
+ * original guessed values exactly.
  */
-import { clamp, lerp, expMap } from '../../shared/maps'
+import { clamp, lerp } from '../../shared/maps'
 import type { SvfCfg } from '../../dsp/filter'
+import { activeXdProfile, curveAt, DOCUMENTED_PITCH_SEGS } from './profiles'
 
 // ---------------------------------------------------------------------------
 // VCO PITCH knob: raw 0..1023 -> cents -1200..+1200 [MIDIimp note P5, exact]
 // ---------------------------------------------------------------------------
-const PITCH_SEGS: Array<[number, number, number, number]> = [
-  [0, 4, -1200, -1200],
-  [4, 356, -1200, -256],
-  [356, 476, -256, -16],
-  [476, 492, -16, 0],
-  [492, 532, 0, 0],
-  [532, 548, 0, 16],
-  [548, 668, 16, 256],
-  [668, 1020, 256, 1200],
-  [1020, 1023, 1200, 1200],
-]
 
+/** DISPLAY value: always the documented table (what the hardware OLED shows). */
 export function pitchToCents(raw: number): number {
   const r = clamp(raw, 0, 1023)
-  for (const [rl, rh, cl, ch] of PITCH_SEGS) {
+  for (const [rl, rh, cl, ch] of DOCUMENTED_PITCH_SEGS) {
     if (r <= rh) return rh === rl ? cl : lerp(cl, ch, (r - rl) / (rh - rl))
   }
   return 1200
+}
+
+/**
+ * ENGINE value: what the analog pitch actually does, per the active profile.
+ * Hardware-measured ~0.39x shallower than the documented table mid-range
+ * (2026-07-08 finding) — the OLED numbers and the sounding pitch disagree on
+ * the real instrument too, so display and engine use separate curves.
+ */
+export function vcoPitchCents(raw: number): number {
+  return curveAt(activeXdProfile().vcoPitchCents, raw)
 }
 
 // ---------------------------------------------------------------------------
@@ -44,30 +47,28 @@ export function egIntToPercent(raw: number): number {
   return 100
 }
 
-/** EG->pitch depth at 100% (cents). UNCONFIRMED on hardware; musical choice. */
-export const EG_MAX_PITCH_CENTS = 4800
-
-/** EG->cutoff depth expressed in octaves at 100%. UNCONFIRMED on hardware. */
-export const EG_MAX_CUTOFF_OCTAVES = 10
+// EG->pitch / EG->cutoff depths at 100% live in the active profile
+// (UNCONFIRMED musical choices); voice.ts reads them per block.
 
 // ---------------------------------------------------------------------------
-// Envelope times. Hardware seconds are undocumented; SoS: slowest attack ~3s.
+// Envelope times. Hardware seconds are undocumented; profile v0 guessed
+// expMaps from SoS (slowest attack ~3s), v1 carries the measured tables.
 // ---------------------------------------------------------------------------
 export function attackToSec(raw: number): number {
-  return expMap(raw, 0.0006, 3.0)
+  return curveAt(activeXdProfile().egAttackSec, raw)
 }
 export function decayToSec(raw: number): number {
-  return expMap(raw, 0.002, 12.0)
+  return curveAt(activeXdProfile().egDecaySec, raw)
 }
 export function releaseToSec(raw: number): number {
-  return expMap(raw, 0.002, 15.0)
+  return curveAt(activeXdProfile().egReleaseSec, raw)
 }
 
 // ---------------------------------------------------------------------------
 // Filter
 // ---------------------------------------------------------------------------
 export function cutoffToHz(raw: number): number {
-  return expMap(raw, 16, 21000)
+  return curveAt(activeXdProfile().cutoffHz, raw)
 }
 export function resonanceTo01(raw: number): number {
   return Math.pow(clamp(raw, 0, 1023) / 1023, 1.1)
@@ -91,7 +92,7 @@ export const XD_FILTER_CFG: SvfCfg = {
 // LFO [MIDIimp note P11]
 // ---------------------------------------------------------------------------
 export function lfoRateToHz(raw: number): number {
-  return expMap(raw, 0.05, 28)
+  return curveAt(activeXdProfile().lfoRateHz, raw)
 }
 
 /** BPM-sync divisions in 64-wide zones, values = whole-note fractions. */
@@ -129,10 +130,8 @@ export function lfoIntTo01(raw: number): number {
   return clamp((clamp(raw, 0, 1023) - 512) / 511, -1, 1)
 }
 
-/** LFO INT scaling per target at full depth. UNCONFIRMED on hardware; musical choices. */
-export const LFO_MAX_PITCH_CENTS = 1200
-export const LFO_MAX_CUTOFF_OCTAVES = 7
-export const LFO_MAX_SHAPE = 1
+// LFO INT scaling per target at full depth lives in the active profile
+// (UNCONFIRMED musical choices); voice.ts reads them per block.
 
 // ---------------------------------------------------------------------------
 // Mixer / levels

@@ -31,8 +31,25 @@ export interface SettingsTab {
   groups: readonly SettingsGroup[]
 }
 
+/** A free-standing enum row NOT backed by a program param (drawer-only state,
+ *  e.g. the xd calibration-profile selector). */
+export interface ExtraEnumRow {
+  label: string
+  get(): number
+  set(v: number): void
+  options(): MenuItem[]
+  fmt(v: number): string
+}
+
+export interface ExtraGroup {
+  title: string
+  rows: readonly ExtraEnumRow[]
+}
+
 export interface SettingsDef {
   tabs: readonly SettingsTab[]
+  /** Appended to the first pane, after the presets group. */
+  extras?: readonly ExtraGroup[]
 }
 
 /** Horizontal pixels for a full-range drag on a numeric value. */
@@ -129,6 +146,10 @@ export class SettingsDrawer {
       }
       // Preset/file import-export lives on the first pane (prologue: GLOBAL).
       buildPresetsGroup(panes[0], { store: opts.store, def: opts.synthDef })
+      for (const g of opts.def.extras ?? []) {
+        panes[0].appendChild(div('xd-set-group', g.title))
+        for (const r of g.rows) panes[0].appendChild(this.enumRow(r.label, r))
+      }
     }
 
     this.el.appendChild(body)
@@ -292,13 +313,17 @@ export class SettingsDrawer {
   private enumRow(label: string, spec: EnumSpec): HTMLElement {
     const value = document.createElement('button')
     value.className = 'xd-set-value'
-    value.addEventListener('click', () => {
-      showMenu(value, spec.options(), (v) => spec.set(Number(v)))
-    })
     const sync = (): void => {
       const t = spec.fmt(spec.get())
       if (value.textContent !== t) value.textContent = t
     }
+    value.addEventListener('click', () => {
+      // sync directly after set: extras rows have no store event to refresh on
+      showMenu(value, spec.options(), (v) => {
+        spec.set(Number(v))
+        sync()
+      })
+    })
     this.updaters.push(sync)
     sync()
     return row('xd-set-row', div('xd-set-label', label), value)

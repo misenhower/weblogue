@@ -352,10 +352,11 @@ const V2: XdCalibProfile = {
 
 export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2]
 
-/** The shipped default. Promoting a measured profile is a reviewed change. */
-export const XD_DEFAULT_PROFILE = 'v0'
+/** The shipped default. Promoting a measured profile is a reviewed change —
+ *  v2 promoted 2026-07-10 after Matt's listening A/B (v0 remains selectable). */
+export const XD_DEFAULT_PROFILE = 'v2'
 
-let active: XdCalibProfile = V0
+let active: XdCalibProfile = V2
 
 export function activeXdProfile(): XdCalibProfile {
   return active

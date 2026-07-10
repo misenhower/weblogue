@@ -36,13 +36,16 @@ afterEach(() => {
 
 const RAWS = [0, 1, 64, 200, 356, 511.5, 512, 700, 938, 1023]
 
-describe('profile v0 (default) reproduces the original guessed curves exactly', () => {
-  it('is the shipped default', () => {
-    expect(activeXdProfile().id).toBe('v0')
-    expect(XD_DEFAULT_PROFILE).toBe('v0')
+describe('the shipped default', () => {
+  it('is v2 (promoted 2026-07-10 after the listening A/B)', () => {
+    expect(XD_DEFAULT_PROFILE).toBe('v2')
+    expect(activeXdProfile().id).toBe('v2')
   })
+})
 
+describe('profile v0 reproduces the original guessed curves exactly', () => {
   it.each(RAWS)('raw %d', (raw) => {
+    setXdProfile('v0')
     expect(cutoffToHz(raw)).toBe(expMap(raw, 16, 21000))
     expect(attackToSec(raw)).toBe(expMap(raw, 0.0006, 3.0))
     expect(decayToSec(raw)).toBe(expMap(raw, 0.002, 12.0))
@@ -93,6 +96,7 @@ describe('profile v1 (measured 2026-07-10)', () => {
   })
 
   it('attack at knob noon is the measured ~0.59 s, 18x the v0 guess', () => {
+    setXdProfile('v0')
     const guess = attackToSec(512)
     setXdProfile('v1')
     expect(attackToSec(512)).toBeCloseTo(0.58858, 4)

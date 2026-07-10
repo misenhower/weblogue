@@ -5,7 +5,7 @@
  * own curves.ts values. This is the plumbing proof the hardware sessions
  * stand on.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { join } from 'node:path'
 import { writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,6 +19,7 @@ import {
   type AnyResult,
 } from '../tools/calib/lib/domains'
 import { cutoffToHz, attackToSec } from '../src/synths/xd/curves'
+import { setXdProfile, XD_DEFAULT_PROFILE } from '../src/synths/xd/profiles'
 
 const JOBS = join(__dirname, '../tools/calib/jobs')
 
@@ -104,6 +105,13 @@ describe('job kind validation', () => {
 })
 
 describe('replica self-calibration (end-to-end pipeline proof)', () => {
+  // The proof is "the pipeline recovers KNOWN curves from the replica's own
+  // output". Pin the profile whose curves the assertions reference — the
+  // pitch check compares against the DOCUMENTED table, which only the v0
+  // engine law matches (measured profiles deliberately diverge from it).
+  beforeAll(() => setXdProfile('v0'))
+  afterAll(() => setXdProfile(XD_DEFAULT_PROFILE))
+
   it('cutoff-sweep: fitted corners track cutoffToHz and the expMap proposal fits', () => {
     // raw 1023 is the transfer reference; mid points carry the fit
     const { job, results } = selfResults(join(JOBS, 'cutoff-sweep.json'), [128, 320, 512, 704, 896, 1023])

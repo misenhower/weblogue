@@ -9,7 +9,7 @@ import type { CalibJob } from './job'
 import { measurePoint, type PointFeatures } from './measure'
 import { measureNoisePoint, transferDb, fitLpMag, type NoisePointFeatures } from './measure-noise'
 import { measureEnvPoint, type EnvPointFeatures, type EnvSegment } from './measure-env'
-import { proposeExpMap, verifyPitchTable, type Proposal, type SweepPoint } from './proposal'
+import { proposeCurve, verifyPitchTable, type Proposal, type SweepPoint } from './proposal'
 import { attackToSec, decayToSec, releaseToSec, cutoffToHz } from '../../../src/synths/xd/curves'
 
 export type JobKind = 'tonal' | 'noise' | 'envelope'
@@ -94,7 +94,11 @@ export function sweepValues(
         values: results.map((r) => {
           if (r === ref) return null
           const p = pick(r) as NoisePointFeatures
-          return fitLpMag(p.psdHz, transferDb(p, refF)).fcHz
+          const fit = fitLpMag(p.psdHz, transferDb(p, refF))
+          // near-closed-filter captures are noise-floor garbage: the corner
+          // search rails toward its bound with a poor fit — exclude, don't fit
+          if (fit.fcHz > 40000 || fit.r2 < 0.6) return null
+          return fit.fcHz
         }),
       }
     }
@@ -129,13 +133,13 @@ export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' 
   if (pts.length < 4) return []
 
   if (job.domain === 'filter.cutoff' && jobKind(job) === 'noise') {
-    return [proposeExpMap('filter.cutoff — cutoffToHz', 'Hz', pts, cutoffToHz(0), cutoffToHz(1023))]
+    return [proposeCurve('filter.cutoff — cutoffToHz', 'Hz', pts, cutoffToHz(0), cutoffToHz(1023))]
   }
   if (jobKind(job) === 'envelope') {
     const seg = job.features.env
-    if (seg === 'attack') return [proposeExpMap('eg.amp attack — attackToSec', 's', pts, attackToSec(0), attackToSec(1023))]
-    if (seg === 'decay') return [proposeExpMap('eg.amp decay — decayToSec', 's', pts, decayToSec(0), decayToSec(1023))]
-    if (seg === 'release') return [proposeExpMap('eg.amp release — releaseToSec', 's', pts, releaseToSec(0), releaseToSec(1023))]
+    if (seg === 'attack') return [proposeCurve('eg.amp attack — attackToSec', 's', pts, attackToSec(0), attackToSec(1023))]
+    if (seg === 'decay') return [proposeCurve('eg.amp decay — decayToSec', 's', pts, decayToSec(0), decayToSec(1023))]
+    if (seg === 'release') return [proposeCurve('eg.amp release — releaseToSec', 's', pts, releaseToSec(0), releaseToSec(1023))]
     return []
   }
   if (job.domain === 'vco.pitch' && job.sweep?.param === 'vco1Pitch') {

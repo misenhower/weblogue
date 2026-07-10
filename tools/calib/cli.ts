@@ -30,7 +30,7 @@ import { P } from '../../src/synths/xd/params'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
-import { captureVerdict } from './lib/phasejump'
+import { phaseJumps } from './lib/phasejump'
 import { measureAny, buildProposals, sweepValues, summarize, jobKind, type AnyFeatures, type AnyResult } from './lib/domains'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
@@ -596,7 +596,13 @@ async function cmdRun(args: Args): Promise<number> {
         console.log(`${SKIP} skipped: ${job.disabled}`)
         continue
       }
-      worst = Math.max(worst, await runOneJob(args, path))
+      try {
+        worst = Math.max(worst, await runOneJob(args, path))
+      } catch (err) {
+        // a transient crash (e.g. a SysEx timeout) must not kill the suite
+        console.log(`${FAIL} ${job.id} crashed: ${err instanceof Error ? err.message : err} — continuing`)
+        worst = Math.max(worst, 1)
+      }
     }
     return worst
   }
@@ -739,11 +745,18 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
             const wFrom = onsetSample + Math.round(0.15 * wav.sr)
             const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
             if (wTo - wFrom > 0.3 * wav.sr) {
-              const verdict = captureVerdict(x, wav.sr, t.f0Hz, wFrom, wTo)
-              if (verdict) {
+              // real USB corruption measured ~10 events/s AND damaged pitch;
+              // the xd's own analog phase jitter produces a few benign events
+              // per capture (spikier than the replica's model — a D8 datum).
+              // Gate on sustained rate; the strike-spread guard catches
+              // timeline damage independently.
+              const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
+              const perSec = pj.count / ((wTo - wFrom) / wav.sr)
+              if (pj.count >= 8 && perSec > 4) {
                 hw = null
-                throw new Error(verdict)
+                throw new Error(`${pj.count} phase jumps (${perSec.toFixed(1)}/s) — USB splice/drop suspected`)
               }
+              if (pj.count > 2) console.log(`  point ${i + 1}: note — ${pj.count} phase events (analog jitter range)`)
             }
             // analog voice spread is ~1-3 cents; far beyond that means the
             // capture timeline itself is broken (sample drops / rate conflict)

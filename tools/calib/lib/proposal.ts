@@ -98,6 +98,47 @@ function centsResidualRms(points: readonly SweepPoint[], predict: (raw: number) 
 }
 
 /**
+ * When an expMap fit's residual exceeds this, the shape isn't exponential —
+ * fall back to a tier-2 monotone lookup table (docs/hardware-calibration.md
+ * tier model; the measured EG time curves are segmented, not expMap-shaped).
+ */
+export const TABLE_FALLBACK_PCT = 25
+
+/**
+ * Analytic-first curve proposal: try expMap; when its fit residual says the
+ * curve family is wrong, refit the same fit points as a monotone table
+ * (log-domain PCHIP for positive units) and score held-out points against
+ * the table instead.
+ */
+export function proposeCurve(
+  domain: string,
+  unit: string,
+  points: SweepPoint[],
+  currentLo: number,
+  currentHi: number,
+): Proposal {
+  const exp = proposeExpMap(domain, unit, points, currentLo, currentHi)
+  if (!(exp.fitResidualPct > TABLE_FALLBACK_PCT) || points.some((p) => p.value <= 0)) return exp
+  const { fit, held } = splitHeldOut(points)
+  const table = monotoneTable(fit.map((p) => ({ x: p.raw, y: Math.log(p.value) })))
+  const at = (raw: number): number => Math.exp(table.at(raw))
+  const knots: [number, number][] = Array.from(table.xs, (x, i) => [x, Math.exp(table.ys[i])])
+  return {
+    domain,
+    unit,
+    current: exp.current,
+    proposed: `monotone table (${knots.length} pts, log-PCHIP)`,
+    fitResidualPct: logResidualPct(fit, at),
+    heldOutResidualPct: held.length ? logResidualPct(held, at) : NaN,
+    table: knots,
+    notes: [
+      `expMap rejected: residual ${exp.fitResidualPct.toFixed(1)}% > ${TABLE_FALLBACK_PCT}% — curve is not exponential (best expMap was ${exp.proposed})`,
+      ...exp.notes,
+    ],
+  }
+}
+
+/**
  * Propose replacement expMap endpoints for a swept domain: log-linear least
  * squares (fit.ts fitExpMap) on the fit points, held-out residual scored
  * against the fitted curve. Endpoints are rounded to 3 significant figures in

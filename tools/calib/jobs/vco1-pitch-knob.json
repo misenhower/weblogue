@@ -23,8 +23,8 @@
     "points": [0, 4, 100, 256, 356, 400, 476, 492, 512, 532, 548, 668, 800, 1020, 1023]
   },
   "notes": [{ "midi": 69, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
-  "repeat": 2,
+  "repeat": 4,
   "repeatEverySec": 1.7,
-  "captureSec": 3.6,
+  "captureSec": 7.0,
   "features": { "nominalHz": 440, "harmonics": 4 }
 }

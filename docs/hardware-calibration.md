@@ -64,6 +64,25 @@ Consequences:
 - Not yet in the schema (join when measured): filter voicing `XD_FILTER_CFG` (D4), drift
   constants (D8), portamento.
 
+## Drift realism modes (planned, Matt 2026-07-10 — build alongside D8)
+
+A second dropdown, analogous to the calibration profile, selecting how much imperfection
+the drift system simulates:
+
+- **NONE** — sterile: no drift at all.
+- **LIGHT** (default) — modeled on the D8 steady-state measurements; just enough to feel
+  alive.
+- **FULL** — session-level realism on top of LIGHT: a whole-unit tuning offset that
+  differs per "day" (measured reality: the unit floats a few cents sharp as a whole —
+  +2.8¢ on 2026-07-10, +2.3¢ on a later check the same week), per-voice offsets that each
+  land differently on a given day, and the occasional voice wandering further off course.
+
+Data boundary this encodes: a constant all-voices offset belongs to drift realism, never
+to a knob curve — the v1 pitch table was recentered so the detent is exactly 0 for this
+reason. FULL mode should also expose the xd's own remedy: a "run tuning" action mirroring
+the hardware's tuning mode, which re-zeros most of the accumulated offset but leaves a
+small residual (the real tuning routine isn't perfect either).
+
 ## Provenance convention
 
 Tag each tuned constant/table at its definition site:

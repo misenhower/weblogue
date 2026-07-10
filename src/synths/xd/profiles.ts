@@ -153,9 +153,12 @@ const V0: XdCalibProfile = {
 const V1: XdCalibProfile = {
   ...V0,
   id: 'v1',
-  name: 'v1 · measured 2026-07-10',
+  name: 'v1 · partial calibration 2026-07-10',
   date: '2026-07-10',
-  notes: 'First hardware round: VCO pitch law, EG time tables, cutoff span, SQR PW endpoint.',
+  notes:
+    'First hardware round — PARTIAL: only VCO pitch law, EG time tables, cutoff span and the ' +
+    'SQR PW endpoint are measured; everything else (mod depths, LFO, filter voicing, drift) ' +
+    'inherits the v0 guesses.',
   vcoPitchCents: {
     kind: 'pchip',
     knots: [

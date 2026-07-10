@@ -910,17 +910,24 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
   return failed.length ? 1 : 0
 }
 
-/** Request the edit buffer (func 10 -> 40); throws on timeout. */
+/**
+ * Request the edit buffer (func 10 -> 40); the xd occasionally misses a
+ * request (observed ~1 in 10 under rapid traffic), so one silent retry
+ * before throwing.
+ */
 async function requestDump(midi: MidiRig, ch: number, timeoutMs = 3000): Promise<Uint8Array> {
-  const reply = midi.awaitSysEx(
-    (m) => parseXdSysex(m)?.func === FUNC_CURRENT_PROGRAM_DUMP,
-    timeoutMs
-  )
-  midi.send(frameCurrentProgramRequest(ch))
-  try {
-    return parseXdSysex(await reply)!.data
-  } catch {
-    throw new Error('no reply to CURRENT PROGRAM DATA DUMP REQUEST (func 10) within 3 s')
+  for (let attempt = 1; ; attempt++) {
+    const reply = midi.awaitSysEx(
+      (m) => parseXdSysex(m)?.func === FUNC_CURRENT_PROGRAM_DUMP,
+      timeoutMs
+    )
+    midi.send(frameCurrentProgramRequest(ch))
+    try {
+      return parseXdSysex(await reply)!.data
+    } catch {
+      if (attempt >= 2)
+        throw new Error(`no reply to CURRENT PROGRAM DATA DUMP REQUEST (func 10) after ${attempt} attempts`)
+    }
   }
 }
 

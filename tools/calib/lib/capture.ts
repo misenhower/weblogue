@@ -78,8 +78,21 @@ export interface RecordOpts {
   onRecording?: () => void
 }
 
-/** Record a WAV; resolves when the helper exits cleanly, rejects with stderr tail. */
-export function recordWav(opts: RecordOpts): Promise<void> {
+/**
+ * Record a WAV; resolves when the helper exits cleanly, rejects with stderr
+ * tail. A short capture (transient CoreAudio stall — the helper detects and
+ * reports it) is retried once before rejecting.
+ */
+export async function recordWav(opts: RecordOpts): Promise<void> {
+  try {
+    await recordWavOnce(opts)
+  } catch (err) {
+    if (!(err instanceof Error && err.message.includes('short capture'))) throw err
+    await recordWavOnce(opts)
+  }
+}
+
+function recordWavOnce(opts: RecordOpts): Promise<void> {
   const { deviceIndex, seconds, outPath } = opts
   const channels = opts.channels ?? 2
   const sampleRate = opts.sampleRate ?? 48000

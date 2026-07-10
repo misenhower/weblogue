@@ -84,10 +84,24 @@ integrity": Sin1 capture must show ≤2 phase jumps, <0.3¢ sd) makes this failu
 one-line diagnosis forever.
 
 Corollaries: the earlier "ProFX must stay at 44.1 kHz" rule was diagnosing ffmpeg, not the
-device — 48 kHz deserves a retest through the clean backend (flip the rate, run `calib
-check`, read step 8). The phase-jump detector was correct every time it fired; the
+device — retested through the clean backend the same day: **48 kHz native is byte-clean**
+(quartz sd 0.006¢, zero jumps, three consecutive check runs), so the rig now runs 48 kHz
+with no conversion step. The phase-jump detector was correct every time it fired; the
 2026-07-10 afternoon's "analog jitter" reinterpretation (and the loosened gate that came
 with it) was wrong.
+
+**Measurement generations**: only trust measurements from capture generation 2 (the
+CoreAudio helper, 2026-07-10 onward). Generation-1 (ffmpeg) sessions were deleted; the
+three early hardware findings above were re-confirmed on generation 2 (SQR silence and the
+SAW 165 Hz locks reproduce in the clean suite; the pitch table was re-measured at
+±0.1–0.4¢ per point).
+
+### 2026-07-10 · Two transient failure modes, both retried automatically now
+
+- CoreAudio occasionally under-delivers a fresh capture (seen right after device rate
+  changes): the helper counts frames and reports "short capture"; recordWav retries once.
+- The xd occasionally ignores a SysEx dump request (~1 in 10 under rapid traffic):
+  requestDump retries once before failing.
 
 ### Meta-lessons
 

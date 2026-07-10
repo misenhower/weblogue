@@ -2,5 +2,5 @@
   "midiPort": "minilogue xd",
   "midiChannel": 0,
   "audioDevice": "ProFX",
-  "notes": "ProFX input gain at unity (0/midpoint detent), xd master volume full — validated 2026-07-07: max-level patch peaks -8.1 dBFS, 0 clips. IMPORTANT: ProFX must stay at 44.1 kHz native (Audio MIDI Setup); its 48 kHz USB mode duplicates/drops packets on this Mac (2026-07-08). ffmpeg resamples to 48k in-path. Keep ProFX out of the rekordbox aggregate and NOT as system default in/out."
+  "notes": "ProFX gain at unity (0/midpoint detent), xd master full (max-level patch -8 dBFS, 0 clips). Capture generation 2 (CoreAudio calib-rec helper, 2026-07-10): 48 kHz native VERIFIED clean (quartz sd 0.006c, 0 jumps x3 runs) — the old 44.1-only rule was an ffmpeg artifact. Only trust measurements from generation 2. Keep ProFX out of aggregates and not system default in/out."
 }

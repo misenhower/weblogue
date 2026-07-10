@@ -126,17 +126,26 @@ case "rec":
     commonFormat: .pcmFormatFloat32, interleaved: false)
   guard file != nil else { fail("cannot open output \(args[6])") }
   var announced = false
+  var frames: Int64 = 0
   let engine = startCapture(deviceID: devID, rate: rate, channels: AVAudioChannelCount(ch)) { buf in
     if !announced {
       announced = true
       FileHandle.standardError.write("READY\n".data(using: .utf8)!)
     }
+    frames += Int64(buf.frameLength)
     try? file?.write(from: buf)
   }
   RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
   engine.stop()
   engine.inputNode.removeTap(onBus: 0)
   file = nil // finalize the WAV header
+  // CoreAudio can transiently stall a fresh engine (seen right after device
+  // rate changes): a capture that under-delivers is unusable — report it so
+  // the caller retries instead of analyzing a truncated file
+  let expected = Int64(seconds * rate * 0.9)
+  if frames < expected {
+    fail("short capture: \(frames) frames, expected ~\(Int64(seconds * rate))")
+  }
 
 case "stream":
   guard args.count == 4, let devID = UInt32(args[2]), let rate = Double(args[3]) else {

@@ -121,6 +121,33 @@ describe('profile v1 (measured 2026-07-10)', () => {
   })
 })
 
+describe('profile v2 (batch 2)', () => {
+  it('carries the batch-2 measurements and the v1-carried release raw-0 knot', () => {
+    setXdProfile('v2')
+    expect(cutoffToHz(0)).toBeCloseTo(25.1, 6)
+    expect(cutoffToHz(1023)).toBeCloseTo(17800, 6)
+    expect(attackToSec(512)).toBeCloseTo(0.59287, 4)
+    expect(decayToSec(1023)).toBeCloseTo(16.412, 3)
+    expect(releaseToSec(0)).toBeCloseTo(0.0041341, 6) // carried from the v1 round
+    expect(vcoPitchCents(356)).toBeCloseTo(-99.74, 2)
+    expect(vcoPitchCents(512)).toBe(0) // recentered dead zone
+    expect(activeXdProfile().sqrPwMin).toBe(0)
+    // documented-flat end pairs pooled: exactly flat, like the hardware ends
+    expect(vcoPitchCents(0)).toBe(vcoPitchCents(4))
+    expect(vcoPitchCents(1020)).toBe(vcoPitchCents(1023))
+  })
+
+  it('v1 and v2 EG tables agree within the measured repeatability (~12%)', () => {
+    setXdProfile('v1')
+    const v1 = [attackToSec(512), decayToSec(512), releaseToSec(512)]
+    setXdProfile('v2')
+    const v2 = [attackToSec(512), decayToSec(512), releaseToSec(512)]
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(Math.log(v2[i] / v1[i]))).toBeLessThan(0.12)
+    }
+  })
+})
+
 describe('SQR pulse-width floor (profile sqrPwMin)', () => {
   function sqrRms(pwMin: number, freq = 220, reset = false): number {
     const vco = new Vco(SR)

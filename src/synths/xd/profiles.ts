@@ -241,7 +241,116 @@ const V1: XdCalibProfile = {
   sqrPwMin: 0,
 }
 
-export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1]
+/*
+ * v2 — second independent hardware round (batch 2, 2026-07-10 late), sessions
+ * 2026-07-10T07-4x/5x + 23-28 in calib/sessions/. Improvements over v1's
+ * round: the pitch sweep medians ALL FOUR voices per point (was a voice pair)
+ * and the cutoff sweep medians all four analog VCFs per point via per-strike
+ * PSD transfers (was one rotating voice; measured per-voice VCF spread
+ * ~3-6% mid-band). Repeatability vs the v1 round: EG tables within a few %,
+ * pitch deltas within 0.2 cents. Sources:
+ *   cutoffHz       2026-07-10T23-28-cutoff-sweep   (expMap fit, held-out 12.2%)
+ *   egAttackSec    2026-07-10T07-49-eg-attack      (log-PCHIP, held-out 0.38%)
+ *   egDecaySec     2026-07-10T07-50-eg-decay       (log-PCHIP, held-out 11.9%)
+ *   egReleaseSec   2026-07-10T07-54-eg-release     (log-PCHIP, held-out 10.7%;
+ *                  raw-0 knot carried from the v1 round — batch 2 measured
+ *                  null there: ~4 ms sits at the ~3 ms follower floor)
+ *   vcoPitchCents  2026-07-10T07-59-vco1-pitch-knob (4-voice medians)
+ * Pitch table recentered by -2.221 cents (the unit's tuning state during the
+ * sweep: dead zone read +2.02/+2.05/+2.60); dead-zone knots pooled to 0 and
+ * the documented-flat end pairs (0/4, 1020/1023) pooled to their means.
+ */
+const V2: XdCalibProfile = {
+  ...V0,
+  id: 'v2',
+  name: 'v2 · partial calibration, batch 2',
+  date: '2026-07-10',
+  notes:
+    'Second hardware round — PARTIAL like v1 (same fields measured, others inherit v0): ' +
+    'all-4-voice medians for pitch AND cutoff; EG tables re-measured independently.',
+  vcoPitchCents: {
+    kind: 'pchip',
+    knots: [
+      [0, -1200.09],
+      [4, -1200.09],
+      [100, -898.75],
+      [256, -412.86],
+      [356, -99.74],
+      [400, -66.41],
+      [476, -6.61],
+      [492, 0],
+      [512, 0],
+      [532, 0],
+      [548, 5.51],
+      [668, 100.32],
+      [800, 509.08],
+      [1020, 1199.54],
+      [1023, 1199.54],
+    ],
+  },
+  egAttackSec: {
+    kind: 'logPchip',
+    knots: [
+      [0, 0.0042336],
+      [85, 0.018047],
+      [171, 0.068106],
+      [256, 0.14808],
+      [341, 0.26223],
+      [426, 0.40743],
+      [512, 0.59287],
+      [597, 0.79645],
+      [682, 1.0444],
+      [767, 1.3229],
+      [853, 1.6307],
+      [938, 1.9746],
+      [1023, 2.342],
+    ],
+  },
+  egDecaySec: {
+    kind: 'logPchip',
+    knots: [
+      [0, 0.0033878],
+      [85, 0.014721],
+      [171, 0.077378],
+      [256, 0.18099],
+      [341, 0.32505],
+      [426, 0.5087],
+      [512, 0.73578],
+      [597, 1.0067],
+      [682, 1.3386],
+      [767, 1.6814],
+      [853, 2.0726],
+      [896, 2.3393],
+      [938, 4.658],
+      [980, 8.4385],
+      [1023, 16.412],
+    ],
+  },
+  egReleaseSec: {
+    kind: 'logPchip',
+    knots: [
+      [0, 0.0041341], // carried from the v1 round (see header note)
+      [85, 0.015611],
+      [171, 0.077795],
+      [256, 0.18277],
+      [341, 0.32977],
+      [426, 0.51792],
+      [512, 0.75802],
+      [597, 1.0055],
+      [682, 1.3453],
+      [767, 1.6918],
+      [853, 2.0912],
+      [896, 2.2909],
+      [938, 4.6846],
+      [980, 8.5318],
+      [1023, 16.548],
+    ],
+  },
+  cutoffHz: { kind: 'expMap', lo: 25.1, hi: 17800 },
+  sqrPwMin: 0,
+}
+
+export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2]
 
 /** The shipped default. Promoting a measured profile is a reviewed change. */
 export const XD_DEFAULT_PROFILE = 'v0'

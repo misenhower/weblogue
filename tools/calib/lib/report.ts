@@ -40,7 +40,7 @@ const sign = (x: number, fmt: (v: number) => string): string => (x >= 0 ? '+' : 
 export function renderReport(
   job: CalibJob,
   results: PointResult[],
-  meta: { dir: string },
+  meta: { dir: string; profile?: string },
   proposals?: { measuredDate: string; items: Proposal[] },
   failures?: readonly PointFailure[],
 ): string {
@@ -49,6 +49,9 @@ export function renderReport(
   lines.push('')
   lines.push(`Domain: \`${job.domain}\` — ${job.description ?? ''}`)
   lines.push(`Session: \`${meta.dir}\``)
+  if (meta.profile) {
+    lines.push(`Replica columns + "current" expressions: calibration profile \`${meta.profile}\``)
+  }
   lines.push('')
   if (failures && failures.length > 0) {
     lines.push(`## ⚠ FAILED POINTS — ${failures.length} of ${results.length + failures.length} planned`)

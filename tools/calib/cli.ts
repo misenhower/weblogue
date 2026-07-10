@@ -27,6 +27,7 @@ import { detectOnset, peakDbfs } from './lib/onset'
 import { fftPeakHz, phasePitchTrack } from './lib/features'
 import { initProgram } from '../../src/synths/xd/program'
 import { P, PARAMS } from '../../src/synths/xd/params'
+import { XD_PROFILES, setXdProfile } from '../../src/synths/xd/profiles'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
@@ -447,7 +448,12 @@ function resolveSession(name: string | undefined): string | null {
 async function cmdCompare(args: Args): Promise<number> {
   const dir = resolveSession(args.rest[0])
   if (!dir) {
-    console.log('usage: npm run calib -- compare <session-dir-or-name>  (must contain features.json)')
+    console.log('usage: npm run calib -- compare <session-dir-or-name> [--profile <id>]')
+    return 1
+  }
+  const profile = flagStr(args, 'profile') ?? 'v0'
+  if (!setXdProfile(profile)) {
+    console.log(`${FAIL} unknown calibration profile "${profile}" — have: ${XD_PROFILES.map((p) => p.id).join(', ')}`)
     return 1
   }
   const job = loadJob(join(dir, 'job.json'))
@@ -461,7 +467,7 @@ async function cmdCompare(args: Args): Promise<number> {
   const { unit, values: hwV } = sweepValues(job, fresh, 'hw')
   const { values: nowV } = sweepValues(job, fresh, 'rep')
   const { values: thenV } = sweepValues(job, stored, 'rep')
-  console.log(`\n${job.id} — replica vs stored hardware (${unit}); before = at capture time, after = current curves.ts\n`)
+  console.log(`\n${job.id} — replica vs stored hardware (${unit}); before = at capture time, after = profile ${profile}\n`)
   console.log('| point | hardware | replica before | replica after | Δ before | Δ after |')
   console.log('|---|---|---|---|---|---|')
   const dev: { before: number; after: number }[] = []
@@ -714,6 +720,14 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
   if (job.disabled) {
     console.log(`${FAIL} job "${job.id}" is disabled: ${job.disabled}`)
     return { code: 1, detail: `disabled: ${job.disabled}` }
+  }
+  // Replica renders, proposal "current" expressions, and fits all read the
+  // active calibration profile — select it per run so hardware can be
+  // compared against v0 guesses or a measured profile (--profile v1).
+  const profile = flagStr(args, 'profile') ?? 'v0'
+  if (!setXdProfile(profile)) {
+    console.log(`${FAIL} unknown calibration profile "${profile}" — have: ${XD_PROFILES.map((p) => p.id).join(', ')}`)
+    return { code: 1, detail: `unknown profile "${profile}"` }
   }
   const points = jobPoints(job)
   const noteStr = job.notes.map((n) => `${n.midi}@${n.onSec}-${n.offSec}s`).join(', ')
@@ -998,6 +1012,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
     job: job.id,
     domain: job.domain,
     kind: jobKind(job),
+    replicaProfile: profile,
     planned: points.length,
     results,
     pointFailures: failures,
@@ -1007,7 +1022,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
   const md = renderReport(
     job,
     results,
-    { dir: session.dir },
+    { dir: session.dir, profile },
     proposals.length ? { measuredDate, items: proposals } : undefined,
     failures,
   )

@@ -26,7 +26,7 @@ import { readWav } from './lib/wav'
 import { detectOnset, peakDbfs } from './lib/onset'
 import { fftPeakHz, phasePitchTrack } from './lib/features'
 import { initProgram } from '../../src/synths/xd/program'
-import { P } from '../../src/synths/xd/params'
+import { P, PARAMS } from '../../src/synths/xd/params'
 import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths/xd/progbin'
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
@@ -683,6 +683,32 @@ interface RunOutcome {
  */
 class CaptureInfraError extends Error {}
 
+/**
+ * One-time patch verification per run: request the edit buffer back and
+ * require every PARAM to match what was pushed (non-param byte diffs are
+ * tolerated, same criterion as check step 3). Catches encode bugs, ignored
+ * pushes, or stale edit-buffer state — e.g. a preset's FX staying enabled —
+ * before a whole sweep is measured against the wrong patch. ~150 ms per run.
+ */
+async function verifyEditBuffer(midi: MidiRig, ch: number, sent: Uint8Array): Promise<void> {
+  const read = await requestDump(midi, ch)
+  const sentProg = decodeProgBin(sent)
+  const readProg = decodeProgBin(read)
+  if (!sentProg || !readProg) throw new Error('patch verify: edit-buffer read-back failed to decode')
+  const bad: number[] = []
+  for (let id = 0; id < sentProg.params.length; id++) {
+    if (readProg.params[id] !== sentProg.params[id]) bad.push(id)
+  }
+  if (bad.length > 0) {
+    const names = bad.slice(0, 4).map((id) => PARAMS[id]?.key ?? `#${id}`).join(', ')
+    throw new Error(
+      `patch verify FAILED: ${bad.length} param(s) differ from the pushed patch (${names}` +
+        `${bad.length > 4 ? ', …' : ''}) — aborting before measuring the wrong patch state`,
+    )
+  }
+  console.log(`${PASS} patch verify: edit-buffer read-back matches the pushed patch (${sentProg.params.length} params)`)
+}
+
 async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
   const job = loadJob(jobPath)
   if (job.disabled) {
@@ -879,7 +905,9 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
       const lp = liveState.points[i]
       lp.status = 'running'
       pushLive()
-      await pushDump(midi, ch, encodeProgBin(jobProgram(job, pt)))
+      const blob = encodeProgBin(jobProgram(job, pt))
+      await pushDump(midi, ch, blob)
+      if (i === 0) await verifyEditBuffer(midi, ch, blob)
       for (let attempt = 1; attempt <= 2 && !slots[i]; attempt++) {
         let hw: AnyFeatures | null = null
         try {

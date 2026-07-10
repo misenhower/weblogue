@@ -34,7 +34,7 @@ import { phaseJumps } from './lib/phasejump'
 import { measureAny, buildProposals, sweepValues, summarize, jobKind, type AnyFeatures, type AnyResult } from './lib/domains'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
-import { renderReport, type PointResult } from './lib/report'
+import { renderReport, type PointFailure, type PointResult } from './lib/report'
 import { startLiveServer, type LiveState } from './lib/live'
 import { ScopeState, startScopeServer } from './lib/scope'
 import { startMonitorServer, MONITOR_PORT } from './lib/monitor'
@@ -632,34 +632,62 @@ async function cmdRun(args: Args): Promise<number> {
   }
   const jobsDir = join(ROOT, 'tools/calib/jobs')
   if (name === 'all') {
-    let worst = 0
+    const suite: { id: string; icon: string; detail: string }[] = []
     for (const f of readdirSync(jobsDir).filter((f) => f.endsWith('.json')).sort()) {
       const path = join(jobsDir, f)
       const job = loadJob(path)
       console.log(`\n=== ${job.id} ===`)
       if (job.disabled) {
         console.log(`${SKIP} skipped: ${job.disabled}`)
+        suite.push({ id: job.id, icon: SKIP, detail: `skipped: ${job.disabled}` })
         continue
       }
       try {
-        worst = Math.max(worst, await runOneJob(args, path))
+        const r = await runOneJob(args, path)
+        suite.push({ id: job.id, icon: r.code === 0 ? PASS : FAIL, detail: r.detail })
       } catch (err) {
         // a transient crash (e.g. a SysEx timeout) must not kill the suite
-        console.log(`${FAIL} ${job.id} crashed: ${err instanceof Error ? err.message : err} — continuing`)
-        worst = Math.max(worst, 1)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.log(`${FAIL} ${job.id} crashed: ${msg} — continuing`)
+        suite.push({ id: job.id, icon: FAIL, detail: `crashed: ${msg}` })
       }
     }
-    return worst
+    // Suite summary: one line per job, so failed POINTS are as loud as failed
+    // jobs — a point that quietly vanishes from a sweep thins the fit without
+    // anyone noticing (2026-07-10 lesson).
+    console.log('\n=== suite summary ===')
+    const w = Math.max(0, ...suite.map((s) => s.id.length))
+    for (const s of suite) console.log(`${s.icon} ${s.id.padEnd(w)}  ${s.detail}`)
+    const bad = suite.filter((s) => s.icon === FAIL)
+    console.log(
+      bad.length
+        ? `${FAIL} ${bad.length}/${suite.length} job(s) need attention: ${bad.map((s) => s.id).join(', ')}`
+        : `${PASS} all ${suite.length} job(s) clean`,
+    )
+    return bad.length ? 1 : 0
   }
   const jobPath = existsSync(name) ? name : join(jobsDir, name.endsWith('.json') ? name : `${name}.json`)
-  return runOneJob(args, jobPath)
+  return (await runOneJob(args, jobPath)).code
 }
 
-async function runOneJob(args: Args, jobPath: string): Promise<number> {
+/** Per-job outcome for the `run all` suite summary. */
+interface RunOutcome {
+  code: number
+  detail: string
+}
+
+/**
+ * A recordWav-level failure is rig infrastructure (helper crash, device gone,
+ * permission revoked) — never a per-point measurement gate. It aborts the job
+ * immediately instead of grinding through per-point retries on a dead rig.
+ */
+class CaptureInfraError extends Error {}
+
+async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
   const job = loadJob(jobPath)
   if (job.disabled) {
     console.log(`${FAIL} job "${job.id}" is disabled: ${job.disabled}`)
-    return 1
+    return { code: 1, detail: `disabled: ${job.disabled}` }
   }
   const points = jobPoints(job)
   const noteStr = job.notes.map((n) => `${n.midi}@${n.onSec}-${n.offSec}s`).join(', ')
@@ -671,7 +699,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
       console.log(`  ${i + 1}/${points.length}  push full patch (${label}) -> notes ${noteStr} -> record`)
     }
     console.log(`estimated wall-clock ~${Math.ceil(points.length * (job.captureSec + 2.5))}s + replica renders`)
-    return 0
+    return { code: 0, detail: 'dry run' }
   }
 
   const rigCfg = loadRig(ROOT)
@@ -680,7 +708,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
   const audioMatch = flagStr(args, 'audio') ?? rigCfg?.audioDevice
   if (!audioMatch) {
     console.log('no audio device configured — run: npm run calib -- devices --save')
-    return 1
+    return { code: 1, detail: 'no audio device configured' }
   }
   const dev = await resolveAudioDevice(audioMatch)
   const session = createSession(ROOT, job)
@@ -726,7 +754,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
     pushLive()
     await sleep(2500)
     live?.close()
-    return 1
+    return { code: 1, detail: 'aborted: capture input digitally silent' }
   }
   if (silPeak > -45) {
     console.log(`${FAIL} capture bus is not quiet: peak ${silPeak.toFixed(1)} dBFS with nothing playing (want < -45)`)
@@ -736,7 +764,7 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
     pushLive()
     await sleep(2500)
     live?.close()
-    return 1
+    return { code: 1, detail: `aborted: capture bus not quiet (${silPeak.toFixed(1)} dBFS)` }
   }
   console.log(`silence floor ${silPeak.toFixed(1)} dBFS peak — ok`)
   liveState.phase = 'running'
@@ -744,119 +772,163 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
 
   const midi = MidiRig.open(midiMatch)
   let backup: Uint8Array | null = null
-  const results: AnyResult[] = []
+  const kind = jobKind(job)
+  // results live in point order (index-parallel with `points`) so points
+  // recovered by the end-of-run retry pass slot back into sweep position
+  const slots: (AnyResult | null)[] = points.map(() => null)
+
+  /** One full attempt at a point: record, gate, measure. Throws on failure. */
+  const captureAndMeasure = async (wavPath: string): Promise<AnyFeatures> => {
+    try {
+      await recordWav({
+        deviceIndex: dev.index,
+        seconds: job.captureSec,
+        outPath: wavPath,
+        onRecording: () => playNotes(midi, ch, job),
+      })
+    } catch (err) {
+      throw new CaptureInfraError(err instanceof Error ? err.message : String(err))
+    }
+    const wav = readWav(new Uint8Array(readFileSync(wavPath)))
+    const x = wav.channels[0]
+    const onset = detectOnset(x, wav.sr)
+    let onsetSample: number
+    if (onset) {
+      onsetSample = onset.sample
+    } else if (kind === 'noise') {
+      // a noise point can be legitimately near-silent (cutoff ~0):
+      // fall back to the scheduled note time; window margins absorb
+      // the capture-start skew and the PSD needs no ms precision
+      onsetSample = Math.min(x.length - 1, Math.round((0.2 + job.notes[0].onSec) * wav.sr))
+    } else {
+      throw new Error('no onset found (silent capture?)')
+    }
+    if (onset && onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+    if (onset && onset.peakDbfs < -45 && kind !== 'noise')
+      throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
+    const hw = measureAny(x, wav.sr, onsetSample, job)
+    // phase-jump corruption gate (tonal only: needs a stable tone; the
+    // envelope kind's amplitude ramps would starve the probes)
+    if (kind === 'tonal') {
+      const t = hw as PointFeatures
+      const wFrom = onsetSample + Math.round(0.15 * wav.sr)
+      const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
+      if (wTo - wFrom > 0.3 * wav.sr) {
+        // strict gate: the CoreAudio backend captures a quartz source
+        // with ZERO events (2026-07-10) — any events now are real
+        // corruption. (The old ffmpeg/avfoundation backend dropped
+        // chunks continuously; a looser rate gate briefly papered over
+        // it. Never capture through avfoundation.)
+        const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
+        if (pj.count > 2) {
+          throw new Error(`${pj.count} phase jumps — capture corruption (drops/splices)`)
+        }
+      }
+      // analog voice spread is ~1-3 cents; far beyond that means the
+      // capture timeline itself is broken (sample drops / rate conflict)
+      if (t.strikes.length > 1 && t.centsSpread > 8) {
+        throw new Error(
+          `strike spread ${t.centsSpread.toFixed(1)}¢ — capture dropouts suspected (device rate conflict? other apps on the interface?)`,
+        )
+      }
+    }
+    return hw
+  }
+
+  /** Replica render + live/console bookkeeping for a measured point. */
+  const finishPoint = (i: number, hw: AnyFeatures, note = ''): void => {
+    const pt = points[i]
+    const lp = liveState.points[i]
+    const rep = renderJobPoint(job, pt)
+    const repF = measureAny(rep.samples, rep.sr, rep.onsetSample, job)
+    slots[i] = { point: pt, hw, rep: repF }
+    lp.status = 'done'
+    lp.note = note
+    lp.peakDbfs = hw.peakDbfs
+    if (kind === 'tonal') {
+      const t = hw as PointFeatures
+      const tr = repF as PointFeatures
+      lp.hwCents = t.cents
+      lp.repCents = tr.cents
+      lp.hwSpread = t.centsSpread
+      lp.ladder = t.harmonicsDb
+        .map((db, k): [number, number, number] => [k + 1, db, tr.harmonicsDb[k] ?? NaN])
+        .slice(1)
+      lp.waveHw = t.waveSnap
+      lp.waveRep = tr.waveSnap
+    } else {
+      lp.note = `${note ? note + ' | ' : ''}hw ${summarize(job, hw)} | rep ${summarize(job, repF)}`
+    }
+    pushLive()
+    const spread =
+      kind === 'tonal' && (hw as PointFeatures).strikes.length > 1
+        ? ` ±${((hw as PointFeatures).centsSpread / 2).toFixed(1)}¢×${(hw as PointFeatures).strikes.length}`
+        : ''
+    console.log(
+      `point ${i + 1}/${points.length} ${lp.label} | peak ${hw.peakDbfs.toFixed(1)} dBFS | ` +
+        `hw ${summarize(job, hw)}${spread} | replica ${summarize(job, repF)}`,
+    )
+  }
+
+  const wavName = (i: number, suffix = ''): string =>
+    join(session.rawDir, `point-${String(i).padStart(3, '0')}${suffix}.wav`)
+
   try {
     backup = await snapshotEditBuffer(midi, ch)
     for (const [i, pt] of points.entries()) {
-      const label = pt === null ? 'base' : `${job.sweep!.param}=${pt}`
       const lp = liveState.points[i]
       lp.status = 'running'
       pushLive()
       await pushDump(midi, ch, encodeProgBin(jobProgram(job, pt)))
-      const wavPath = join(session.rawDir, `point-${String(i).padStart(3, '0')}.wav`)
-      const kind = jobKind(job)
-
-      let hw: AnyFeatures | null = null
-      for (let attempt = 1; hw === null; attempt++) {
-        await recordWav({
-          deviceIndex: dev.index,
-          seconds: job.captureSec,
-          outPath: wavPath,
-          onRecording: () => playNotes(midi, ch, job),
-        })
+      for (let attempt = 1; attempt <= 2 && !slots[i]; attempt++) {
+        let hw: AnyFeatures | null = null
         try {
-          const wav = readWav(new Uint8Array(readFileSync(wavPath)))
-          const x = wav.channels[0]
-          const onset = detectOnset(x, wav.sr)
-          let onsetSample: number
-          if (onset) {
-            onsetSample = onset.sample
-          } else if (kind === 'noise') {
-            // a noise point can be legitimately near-silent (cutoff ~0):
-            // fall back to the scheduled note time; window margins absorb
-            // the capture-start skew and the PSD needs no ms precision
-            onsetSample = Math.min(x.length - 1, Math.round((0.2 + job.notes[0].onSec) * wav.sr))
-          } else {
-            throw new Error('no onset found (silent capture?)')
-          }
-          if (onset && onset.peakDbfs > -1) throw new Error(`clipping: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
-          if (onset && onset.peakDbfs < -45 && kind !== 'noise')
-            throw new Error(`very low signal: peak ${onset.peakDbfs.toFixed(1)} dBFS`)
-          hw = measureAny(x, wav.sr, onsetSample, job)
-          // phase-jump corruption gate (tonal only: needs a stable tone; the
-          // envelope kind's amplitude ramps would starve the probes)
-          if (kind === 'tonal') {
-            const t = hw as PointFeatures
-            const wFrom = onsetSample + Math.round(0.15 * wav.sr)
-            const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
-            if (wTo - wFrom > 0.3 * wav.sr) {
-              // strict gate: the CoreAudio backend captures a quartz source
-              // with ZERO events (2026-07-10) — any events now are real
-              // corruption. (The old ffmpeg/avfoundation backend dropped
-              // chunks continuously; a looser rate gate briefly papered over
-              // it. Never capture through avfoundation.)
-              const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
-              if (pj.count > 2) {
-                hw = null
-                throw new Error(`${pj.count} phase jumps — capture corruption (drops/splices)`)
-              }
-            }
-            // analog voice spread is ~1-3 cents; far beyond that means the
-            // capture timeline itself is broken (sample drops / rate conflict)
-            if (hw && t.strikes.length > 1 && t.centsSpread > 8) {
-              const spread = t.centsSpread.toFixed(1)
-              hw = null
-              throw new Error(`strike spread ${spread}¢ — capture dropouts suspected (device rate conflict? other apps on the interface?)`)
-            }
-          }
+          hw = await captureAndMeasure(wavName(i))
         } catch (err) {
+          if (err instanceof CaptureInfraError) throw err // dead rig: abort the job
           const msg = err instanceof Error ? err.message : String(err)
           if (attempt >= 2) {
             // a failed point is data too (e.g. hardware silent at a SHAPE
-            // endpoint) — record it and keep sweeping
-            console.log(`${FAIL} point ${i + 1}/${points.length} ${label} failed twice: ${msg}`)
+            // endpoint) — record it, keep sweeping, retry again at run end
+            console.log(`${FAIL} point ${i + 1}/${points.length} ${lp.label} failed twice: ${msg}`)
             lp.status = 'failed'
-            lp.note = msg
-            pushLive()
-            break
+          } else {
+            console.log(`  point ${i + 1}: ${msg} — retrying once`)
+            lp.status = 'retry'
           }
-          console.log(`  point ${i + 1}: ${msg} — retrying once`)
-          lp.status = 'retry'
           lp.note = msg
           pushLive()
         }
+        // outside the catch: a replica-render bug is a software crash, not a
+        // capture failure — it must not burn hardware retries or be misfiled
+        if (hw) finishPoint(i, hw)
       }
-      if (hw === null) continue
+    }
 
-      const rep = renderJobPoint(job, pt)
-      const repF = measureAny(rep.samples, rep.sr, rep.onsetSample, job)
-      results.push({ point: pt, hw, rep: repF })
-      lp.status = 'done'
-      lp.note = ''
-      lp.peakDbfs = hw.peakDbfs
-      if (kind === 'tonal') {
-        const t = hw as PointFeatures
-        const tr = repF as PointFeatures
-        lp.hwCents = t.cents
-        lp.repCents = tr.cents
-        lp.hwSpread = t.centsSpread
-        lp.ladder = t.harmonicsDb
-          .map((db, k): [number, number, number] => [k + 1, db, tr.harmonicsDb[k] ?? NaN])
-          .slice(1)
-        lp.waveHw = t.waveSnap
-        lp.waveRep = tr.waveSnap
-      } else {
-        lp.note = `hw ${summarize(job, hw)} | rep ${summarize(job, repF)}`
+    // End-of-run recovery pass: transient corruption often clears by the time
+    // the sweep finishes (device rate settles, USB hiccup passes), so failed
+    // points get one more full attempt — fresh patch push, fresh capture to a
+    // '-retry' WAV (the failed capture is kept for forensics). Skipped when
+    // NOTHING succeeded: that's systemic, not transient.
+    const failedIdx = points.map((_, i) => i).filter((i) => !slots[i])
+    if (failedIdx.length > 0 && failedIdx.length < points.length) {
+      console.log(`retrying ${failedIdx.length} failed point(s) at end of run`)
+      for (const i of failedIdx) {
+        const lp = liveState.points[i]
+        lp.status = 'retry'
+        pushLive()
+        let hw: AnyFeatures | null = null
+        try {
+          await pushDump(midi, ch, encodeProgBin(jobProgram(job, points[i])))
+          hw = await captureAndMeasure(wavName(i, '-retry'))
+        } catch (err) {
+          if (err instanceof CaptureInfraError) throw err // dead rig: abort the job
+          lp.status = 'failed'
+          lp.note = err instanceof Error ? err.message : String(err)
+          pushLive()
+        }
+        if (hw) finishPoint(i, hw, 'recovered on end-of-run retry')
       }
-      pushLive()
-      const spread =
-        kind === 'tonal' && (hw as PointFeatures).strikes.length > 1
-          ? ` ±${((hw as PointFeatures).centsSpread / 2).toFixed(1)}¢×${(hw as PointFeatures).strikes.length}`
-          : ''
-      console.log(
-        `point ${i + 1}/${points.length} ${label} | peak ${hw.peakDbfs.toFixed(1)} dBFS | ` +
-          `hw ${summarize(job, hw)}${spread} | replica ${summarize(job, repF)}`,
-      )
     }
   } finally {
     if (backup) {
@@ -869,27 +941,38 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
     midi.close()
   }
 
-  const failed = liveState.points.filter((p) => p.status === 'failed')
-  if (results.length === 0) {
-    console.log(`${FAIL} run produced no usable points (${failed.length} failed) — raw captures kept in ${session.rawDir}`)
-    liveState.phase = 'aborted'
-    liveState.message = 'no usable points'
-    pushLive()
-    await sleep(2500)
-    live?.close()
-    return 1
-  }
-  if (failed.length) {
-    console.log(`${FAIL} ${failed.length}/${points.length} points failed (kept in the report): ${failed.map((p) => p.label).join(', ')}`)
-    liveState.message = `${failed.length} point(s) failed — see notes`
+  const results = slots.filter((r): r is AnyResult => r !== null)
+  // Failed points are FINDINGS, not gaps: they persist in features.json and
+  // the report, stamp a coverage note on every proposal, and fail the run —
+  // a point that silently vanishes from a sweep thins the fit unnoticed.
+  const failures: PointFailure[] = points
+    .map((pt, i) => ({ pt, i }))
+    .filter(({ i }) => slots[i] === null)
+    .map(({ pt, i }) => ({
+      label: liveState.points[i].label,
+      raw: pt,
+      error: liveState.points[i].note || 'unknown failure',
+    }))
+  if (failures.length) {
+    console.log(`${FAIL} ${failures.length}/${points.length} points FAILED — absent from every fit and table below:`)
+    for (const f of failures) console.log(`    ${f.label}: ${f.error}`)
+    liveState.message = `${failures.length} point(s) failed — see notes`
   }
   const proposals = buildProposals(job, results)
+  const coverage = `coverage: ${results.length}/${points.length} planned points${
+    failures.length ? ` — MISSING ${failures.map((f) => f.label).join(', ')}` : ''
+  }`
+  for (const p of proposals) p.notes.unshift(coverage)
   const measuredDate = new Date().toISOString().slice(0, 10)
+  // persisted even when EVERY point failed: the failure record is the most
+  // valuable artifact of a bad run, and history lists sessions by this file
   saveJson(session.dir, 'features.json', {
     job: job.id,
     domain: job.domain,
     kind: jobKind(job),
+    planned: points.length,
     results,
+    pointFailures: failures,
     proposals,
     measuredDate,
   })
@@ -898,16 +981,32 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
     results,
     { dir: session.dir },
     proposals.length ? { measuredDate, items: proposals } : undefined,
+    failures,
   )
   saveText(session.dir, 'report.md', md)
   console.log(`\nreport: ${join(session.dir, 'report.md')}\n`)
+  if (results.length === 0) {
+    console.log(`${FAIL} run produced no usable points (${failures.length} failed) — raw captures kept in ${session.rawDir}`)
+    liveState.phase = 'aborted'
+    liveState.message = 'no usable points'
+    liveState.reportPath = join(session.dir, 'report.md')
+    pushLive()
+    await sleep(2500)
+    live?.close()
+    return { code: 1, detail: `no usable points (${failures.length} failed)` }
+  }
   console.log(md)
   liveState.phase = 'done'
   liveState.reportPath = join(session.dir, 'report.md')
   pushLive()
   await sleep(2500)
   live?.close()
-  return failed.length ? 1 : 0
+  return {
+    code: failures.length ? 1 : 0,
+    detail:
+      `${results.length}/${points.length} points` +
+      (failures.length ? ` — FAILED: ${failures.map((f) => `${f.label} (${f.error})`).join('; ')}` : ''),
+  }
 }
 
 /**

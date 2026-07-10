@@ -155,12 +155,18 @@ describe('measureEnvPoint sustain (synthetic)', () => {
 })
 
 describe('eg-* job specs', () => {
-  it.each(['eg-attack', 'eg-decay', 'eg-release'])('%s loads with 13 sweep points', (id) => {
+  // attack: 13 points; decay/release: 15 (knots 896/980 added when the long
+  // tail blow-up was measured, 2026-07-10)
+  it.each([
+    ['eg-attack', 13],
+    ['eg-decay', 15],
+    ['eg-release', 15],
+  ] as const)('%s loads with %i sweep points', (id, n) => {
     // loadJob must accept the new features.kind/env keys today (unvalidated)
     const job = loadJob(join(JOBS, `${id}.json`))
-    expect(job.sweep!.points).toHaveLength(13)
+    expect(job.sweep!.points).toHaveLength(n)
     expect(job.sweep!.points[0]).toBe(0)
-    expect(job.sweep!.points[12]).toBe(1023)
+    expect(job.sweep!.points[n - 1]).toBe(1023)
     expect(job.features.nominalHz).toBe(440)
     const extra = job.features as Record<string, unknown>
     expect(extra.kind).toBe('envelope')

@@ -154,11 +154,57 @@ case "stream":
   signal(SIGINT) { _ in exit(0) }
   signal(SIGTERM) { _ in exit(0) }
   let stdout = FileHandle.standardOutput
-  // keep a strong reference: a discarded engine is deallocated immediately
-  // and the tap silently stops delivering
-  let engine = startCapture(deviceID: devID, rate: rate, channels: 1) { buf in
-    guard let data = buf.floatChannelData else { return }
-    stdout.write(Data(bytes: data[0], count: Int(buf.frameLength) * 4))
+  // AVAudioSinkNode instead of an input tap: taps accumulate ~4096 frames
+  // per delivery no matter what bufferSize they're asked for (~90 ms —
+  // measured 2026-07-10, capping the scope's visible refresh near 10 fps),
+  // while a sink node runs at the device IO period (~512 frames ≈ 11 ms).
+  // rec mode keeps the tap: file capture wants throughput, not latency.
+  let engine = AVAudioEngine()
+  var dev = devID
+  let au = engine.inputNode.audioUnit!
+  guard AudioUnitSetProperty(
+    au, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+    &dev, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else {
+    fail("cannot select device \(devID)")
+  }
+  let hw = engine.inputNode.inputFormat(forBus: 0)
+  guard hw.sampleRate > 0 else { fail("device \(devID) reports no input format") }
+  // channel 0 only (the xd feeds L/MONO); SRC to the requested rate
+  let monoHw = AVAudioFormat(
+    commonFormat: .pcmFormatFloat32, sampleRate: hw.sampleRate, channels: 1, interleaved: false)!
+  let out = AVAudioFormat(
+    commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false)!
+  let conv = AVAudioConverter(from: monoHw, to: out)!
+  let sink = AVAudioSinkNode { _, frames, abl -> OSStatus in
+    let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: abl))
+    guard let src = buffers.first?.mData?.assumingMemoryBound(to: Float.self),
+      let inBuf = AVAudioPCMBuffer(pcmFormat: monoHw, frameCapacity: frames)
+    else { return noErr }
+    inBuf.frameLength = frames
+    memcpy(inBuf.floatChannelData![0], src, Int(frames) * 4)
+    let cap = AVAudioFrameCount((Double(frames) * rate / hw.sampleRate).rounded(.up)) + 64
+    guard let outBuf = AVAudioPCMBuffer(pcmFormat: out, frameCapacity: cap) else { return noErr }
+    var fed = false
+    conv.convert(to: outBuf, error: nil) { _, status in
+      if fed {
+        status.pointee = .noDataNow
+        return nil
+      }
+      fed = true
+      status.pointee = .haveData
+      return inBuf
+    }
+    if outBuf.frameLength > 0, let d = outBuf.floatChannelData {
+      stdout.write(Data(bytes: d[0], count: Int(outBuf.frameLength) * 4))
+    }
+    return noErr
+  }
+  engine.attach(sink)
+  engine.connect(engine.inputNode, to: sink, format: hw)
+  do {
+    try engine.start()
+  } catch {
+    fail("engine start failed: \(error)")
   }
   defer { engine.stop() }
   RunLoop.main.run()

@@ -18,6 +18,13 @@ export interface PointResult {
   rep: PointFeatures | NoisePointFeatures | EnvPointFeatures
 }
 
+/** A sweep point that produced no measurement (persisted in features.json). */
+export interface PointFailure {
+  label: string
+  raw: number | null
+  error: string
+}
+
 const f1 = (x: number): string => x.toFixed(1)
 const f2 = (x: number): string => x.toFixed(2)
 const sign = (x: number, fmt: (v: number) => string): string => (x >= 0 ? '+' : '') + fmt(x)
@@ -26,13 +33,16 @@ const sign = (x: number, fmt: (v: number) => string): string => (x >= 0 ? '+' : 
  * Render the comparison report. `proposals` is optional and additive: callers
  * that omit it get exactly the pre-proposal output; when present (and
  * non-empty) each Proposal is rendered via renderProposalMd under a
- * '## Proposals' heading, tagged MEASURED(measuredDate).
+ * '## Proposals' heading, tagged MEASURED(measuredDate). `failures` (points
+ * that produced no measurement despite retries) render as a warning section
+ * at the TOP — missing data must be at least as loud as bad data.
  */
 export function renderReport(
   job: CalibJob,
   results: PointResult[],
   meta: { dir: string },
   proposals?: { measuredDate: string; items: Proposal[] },
+  failures?: readonly PointFailure[],
 ): string {
   const lines: string[] = []
   lines.push(`# Calibration report: ${job.id}`)
@@ -40,6 +50,15 @@ export function renderReport(
   lines.push(`Domain: \`${job.domain}\` — ${job.description ?? ''}`)
   lines.push(`Session: \`${meta.dir}\``)
   lines.push('')
+  if (failures && failures.length > 0) {
+    lines.push(`## ⚠ FAILED POINTS — ${failures.length} of ${results.length + failures.length} planned`)
+    lines.push('')
+    for (const f of failures) lines.push(`- \`${f.label}\`: ${f.error}`)
+    lines.push('')
+    lines.push('These raw values are absent from every comparison, fit and proposal below.')
+    lines.push('Diagnose (or re-run) before trusting curve shapes near the gaps.')
+    lines.push('')
+  }
   const kind = job.features.kind ?? 'tonal'
   for (const r of results) {
     const label = r.point === null ? 'base patch' : `${job.sweep!.param} = ${r.point}`

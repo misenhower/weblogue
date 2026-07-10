@@ -103,6 +103,25 @@ SAW 165 Hz locks reproduce in the clean suite; the pitch table was re-measured a
 - The xd occasionally ignores a SysEx dump request (~1 in 10 under rapid traffic):
   requestDump retries once before failing.
 
+### 2026-07-10 · Failed sweep points must be findings, not gaps (Matt's catch)
+
+Points that failed both in-run attempts used to exist only as scrolled-past console lines
+and red monitor rows: features.json and report.md recorded successes only, so a failed
+point silently thinned the downstream fit — nobody reviewing a proposal could tell 15
+planned points from 13 survivors. Matt noticed the failures before the operator did.
+Fixed structurally, so missing data is as loud as bad data:
+
+- **End-of-run recovery pass**: failed points get one more full attempt (fresh patch push,
+  capture to a `-retry` WAV — the failed capture is kept for forensics) after the sweep
+  finishes, since transient corruption often clears; skipped when every point failed
+  (systemic, not transient).
+- **features.json** records `planned` and `pointFailures` (label, raw, error) permanently;
+  the monitor's history view renders them red and flags the session in its list.
+- **report.md** opens with a `⚠ FAILED POINTS` section above everything else.
+- **Every proposal** carries a `coverage: N/M planned points — MISSING …` note, so a
+  thinned fit can't pass review unnoticed.
+- **`run all`** ends with a per-job suite summary; any failed point fails the job line.
+
 ### Meta-lessons
 
 - **Validate detectors against a reference source, not just replica renders.** The

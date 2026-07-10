@@ -20,6 +20,8 @@ interface SessionInfo {
   domain: string
   date: string
   points: number
+  /** points that produced no measurement (features.json pointFailures) */
+  failed?: number
 }
 
 export function startMonitorServer(
@@ -44,7 +46,14 @@ export function startMonitorServer(
         try {
           const job = JSON.parse(readFileSync(join(sessionsDir, name, 'job.json'), 'utf8'))
           const feats = JSON.parse(readFileSync(join(sessionsDir, name, 'features.json'), 'utf8'))
-          info = { name, jobId: job.id, domain: job.domain, date: name.slice(0, 16), points: feats.results?.length ?? 0 }
+          info = {
+            name,
+            jobId: job.id,
+            domain: job.domain,
+            date: name.slice(0, 16),
+            points: feats.results?.length ?? 0,
+            failed: feats.pointFailures?.length ?? 0,
+          }
         } catch {
           /* partial/foreign dir: keep placeholder */
         }
@@ -64,7 +73,10 @@ export function startMonitorServer(
         hw: { cents?: number; centsSpread?: number; peakDbfs: number; harmonicsDb?: number[]; waveSnap?: number[] }
         rep: { cents?: number; harmonicsDb?: number[]; waveSnap?: number[] }
       }
-      const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as { results: RawResult[] }
+      const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as {
+        results: RawResult[]
+        pointFailures?: { label: string; raw: number | null; error: string }[]
+      }
       const points: LivePoint[] = feats.results.map((r) => ({
         label: r.point === null ? 'base patch' : `${job.sweep?.param}=${r.point}`,
         raw: r.point,
@@ -81,6 +93,10 @@ export function startMonitorServer(
         waveHw: r.hw.waveSnap,
         waveRep: r.rep.waveSnap,
       }))
+      // failed points render red in history just like in the live view
+      for (const f of feats.pointFailures ?? []) {
+        points.push({ label: f.label, raw: f.raw, status: 'failed', note: f.error })
+      }
       return {
         job: { id: job.id, domain: job.domain, description: job.description },
         phase: 'done',
@@ -353,7 +369,8 @@ function syncSelect() {
   for (const s of sessions) {
     const o = document.createElement('option')
     o.value = s.name
-    o.textContent = s.date.replace('T', ' ') + '  ' + s.jobId + '  (' + s.points + ' pt)'
+    o.textContent = s.date.replace('T', ' ') + '  ' + s.jobId + '  (' + s.points + ' pt'
+      + (s.failed ? ', \\u2717' + s.failed + ' FAILED' : '') + ')'
     sel.appendChild(o)
   }
   if ([...sel.options].some(o => o.value === cur)) sel.value = cur

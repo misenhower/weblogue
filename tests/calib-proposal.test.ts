@@ -292,4 +292,20 @@ describe('renderReport with proposals', () => {
     expect(md).toContain(renderProposalMd(p, '2026-07-08'))
     expect(md).toContain('MEASURED(2026-07-08)')
   })
+
+  it('renders failed points as a warning section at the top', () => {
+    const md = renderReport(REPORT_JOB, REPORT_RESULTS, { dir: 'sessions/2026-07-09-d3-cutoff' }, undefined, [
+      { label: 'CUTOFF=256', raw: 256, error: '5 phase jumps — capture corruption (drops/splices)' },
+    ])
+    expect(md).toContain('## ⚠ FAILED POINTS — 1 of 3 planned')
+    expect(md).toContain('`CUTOFF=256`: 5 phase jumps')
+    expect(md).toContain('absent from every comparison, fit and proposal below')
+    // the failure block sits ABOVE the first per-point section
+    expect(md.indexOf('FAILED POINTS')).toBeLessThan(md.indexOf('## CUTOFF = 0'))
+  })
+
+  it('is byte-identical when the failures list is empty', () => {
+    const md = renderReport(REPORT_JOB, REPORT_RESULTS, { dir: 'sessions/2026-07-09-d3-cutoff' }, undefined, [])
+    expect(md).toBe(REPORT_BASELINE)
+  })
 })

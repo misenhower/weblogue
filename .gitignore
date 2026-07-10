@@ -12,3 +12,4 @@ calib/sessions/*/raw/
 calib/tmp/
 calib/backups/
 calib/sessions/
+tools/calib/native/.bin/

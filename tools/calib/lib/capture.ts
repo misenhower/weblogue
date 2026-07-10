@@ -1,43 +1,57 @@
 /*
- * Audio capture via ffmpeg's avfoundation input. One spawned ffmpeg process
- * per capture, writing float32 WAV. Devices are addressed by NAME (persisted
- * in calib/rig.json) and resolved to an avfoundation index at runtime, since
- * indices shuffle as devices come and go.
+ * Audio capture via the CoreAudio-native helper (native/calib-rec.swift),
+ * compiled on demand with swiftc. Devices are addressed by NAME (persisted in
+ * calib/rig.json) and resolved to HAL AudioDeviceIDs at runtime.
+ *
+ * History: this module originally shelled out to ffmpeg's avfoundation input,
+ * which silently drops small chunks of the stream (measured up to ~7 losses/s
+ * on a quartz-stable digital source while AVAudioEngine captured the same
+ * device byte-clean — 2026-07-10). Never capture measurement audio through
+ * avfoundation.
  *
  * Absolute capture-start timing is deliberately loose: the measurement
  * protocol derives all timing from audio onsets within a capture (see
  * docs/hardware-calibration.md), so `onRecording` only needs to fire before
  * the stimulus is sent, never at a precise instant.
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const NATIVE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../native')
+const SRC = join(NATIVE_DIR, 'calib-rec.swift')
+const BIN = join(NATIVE_DIR, '.bin/calib-rec')
+
+/** Compile the helper if missing or older than its source; returns the binary path. */
+export function ensureRecorder(): string {
+  const srcTime = statSync(SRC).mtimeMs
+  if (!existsSync(BIN) || statSync(BIN).mtimeMs < srcTime) {
+    mkdirSync(dirname(BIN), { recursive: true })
+    try {
+      execFileSync('swiftc', ['-O', '-o', BIN, SRC], { stdio: 'pipe' })
+    } catch (err) {
+      throw new Error(
+        `cannot compile the CoreAudio capture helper (needs Xcode command-line tools): ${
+          err instanceof Error ? err.message : err
+        }`,
+      )
+    }
+  }
+  return BIN
+}
 
 export interface AudioDevice {
+  /** CoreAudio HAL AudioDeviceID */
   index: number
   name: string
 }
 
-/** Parse `ffmpeg -f avfoundation -list_devices true` audio section. */
 export async function listAudioDevices(): Promise<AudioDevice[]> {
-  const stderr = await new Promise<string>((resolve) => {
-    const p = spawn('ffmpeg', ['-hide_banner', '-f', 'avfoundation', '-list_devices', 'true', '-i', ''])
-    let out = ''
-    p.stderr.on('data', (d: Buffer) => (out += d.toString()))
-    p.on('close', () => resolve(out))
-    p.on('error', () => resolve(out))
-  })
+  const out = execFileSync(ensureRecorder(), ['list']).toString()
   const devices: AudioDevice[] = []
-  let inAudio = false
-  for (const line of stderr.split('\n')) {
-    if (line.includes('AVFoundation audio devices')) {
-      inAudio = true
-      continue
-    }
-    if (line.includes('AVFoundation video devices')) {
-      inAudio = false
-      continue
-    }
-    if (!inAudio) continue
-    const m = line.match(/\[(\d+)\]\s+(.+?)\s*$/)
+  for (const line of out.split('\n')) {
+    const m = line.match(/^(\d+)\t(.+)$/)
     if (m) devices.push({ index: Number(m[1]), name: m[2] })
   }
   return devices
@@ -54,34 +68,57 @@ export async function resolveAudioDevice(nameMatch: string): Promise<AudioDevice
   return hit
 }
 
+export interface RecordOpts {
+  deviceIndex: number
+  seconds: number
+  outPath: string
+  channels?: number // default 2
+  sampleRate?: number // default 48000
+  /** Fires once the recorder is rolling (approximate). */
+  onRecording?: () => void
+}
+
+/** Record a WAV; resolves when the helper exits cleanly, rejects with stderr tail. */
+export function recordWav(opts: RecordOpts): Promise<void> {
+  const { deviceIndex, seconds, outPath } = opts
+  const channels = opts.channels ?? 2
+  const sampleRate = opts.sampleRate ?? 48000
+  const bin = ensureRecorder()
+  return new Promise((resolve, reject) => {
+    const p = spawn(bin, ['rec', String(deviceIndex), String(seconds), String(sampleRate), String(channels), outPath])
+    let stderr = ''
+    let started = false
+    const fireOnRecording = (): void => {
+      if (!started && opts.onRecording) {
+        started = true
+        // small settle so captures keep a quiet pre-roll for the noise floor
+        setTimeout(opts.onRecording, 250)
+      }
+    }
+    p.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString()
+      // the helper prints READY once the first audio buffer has landed
+      if (stderr.includes('READY')) fireOnRecording()
+    })
+    setTimeout(fireOnRecording, 1500) // fallback if READY never arrives
+    p.on('error', reject)
+    p.on('close', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`calib-rec exited ${code}: ${stderr.split('\n').slice(-4).join('\n')}`))
+    })
+  })
+}
+
 /**
  * Stream continuous mono float32 PCM from the device to `onChunk` until
- * stop() is called. Used by the realtime scope; measurements always use
- * recordWav.
+ * stop() is called. Used by the realtime scope; measurements use recordWav.
  */
 export function streamPcm(
   deviceIndex: number,
   onChunk: (samples: Float32Array) => void,
   sampleRate = 48000,
 ): { stop: () => void } {
-  const p = spawn('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-f',
-    'avfoundation',
-    '-thread_queue_size',
-    '4096',
-    '-i',
-    `:${deviceIndex}`,
-    '-ac',
-    '1',
-    '-ar',
-    String(sampleRate),
-    '-f',
-    'f32le',
-    '-',
-  ])
+  const p = spawn(ensureRecorder(), ['stream', String(deviceIndex), String(sampleRate)])
   let pending: Buffer = Buffer.alloc(0)
   p.stdout.on('data', (d: Buffer) => {
     pending = pending.length ? Buffer.concat([pending, d]) : d
@@ -97,57 +134,4 @@ export function streamPcm(
       p.kill('SIGINT')
     },
   }
-}
-
-export interface RecordOpts {
-  deviceIndex: number
-  seconds: number
-  outPath: string
-  channels?: number // default 2
-  sampleRate?: number // default 48000
-  /** Fires once ffmpeg has opened the input and is rolling (approximate). */
-  onRecording?: () => void
-}
-
-/** Record a WAV; resolves when ffmpeg exits cleanly, rejects with stderr tail. */
-export function recordWav(opts: RecordOpts): Promise<void> {
-  const { deviceIndex, seconds, outPath } = opts
-  const channels = opts.channels ?? 2
-  const sampleRate = opts.sampleRate ?? 48000
-  return new Promise((resolve, reject) => {
-    const p = spawn('ffmpeg', [
-      '-hide_banner',
-      '-y',
-      '-f',
-      'avfoundation',
-      '-thread_queue_size',
-      '4096',
-      '-i',
-      `:${deviceIndex}`,
-      '-ac',
-      String(channels),
-      '-ar',
-      String(sampleRate),
-      '-c:a',
-      'pcm_f32le',
-      '-t',
-      String(seconds),
-      outPath,
-    ])
-    let stderr = ''
-    let started = false
-    p.stderr.on('data', (d: Buffer) => {
-      stderr += d.toString()
-      if (!started && opts.onRecording && stderr.includes('Input #0')) {
-        started = true
-        // small grace period: input opened, first buffers in flight
-        setTimeout(opts.onRecording, 150)
-      }
-    })
-    p.on('error', (err) => reject(new Error(`ffmpeg failed to start: ${err.message}`)))
-    p.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`ffmpeg exited ${code}: ${stderr.split('\n').slice(-6).join('\n')}`))
-    })
-  })
 }

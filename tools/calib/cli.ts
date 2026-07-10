@@ -139,7 +139,7 @@ async function cmdCheck(args: Args): Promise<number> {
   const chFlag = flagStr(args, 'channel')
   const ch = chFlag !== null ? Math.max(0, Math.min(15, Number(chFlag) - 1)) : (rigCfg?.midiChannel ?? 0)
   const skipAudio = args.flags.has('skip-audio')
-  const TOTAL = 7
+  const TOTAL = 8
   let failures = 0
 
   // -- 1: MIDI port ----------------------------------------------------------
@@ -202,6 +202,7 @@ async function cmdCheck(args: Args): Promise<number> {
       step(5, TOTAL, 'test capture', SKIP, 'needs the audio interface')
       step(6, TOTAL, 'note capture', SKIP, 'needs the audio interface')
       step(7, TOTAL, 'max level', SKIP, 'needs the audio interface')
+      step(8, TOTAL, 'quartz integrity', SKIP, 'needs the audio interface')
       return failures ? 1 : 0
     }
 
@@ -333,6 +334,50 @@ async function cmdCheck(args: Args): Promise<number> {
     if (!okLoud) {
       failures++
       console.log('  fix: this level would clip during sweeps — back the mixer input gain down and re-run')
+    }
+
+    // -- 8: quartz integrity ----------------------------------------------
+    // The multiengine's VPM Sin1 is digitally clocked: ANY phase jump or
+    // pitch wander in its capture is capture-path corruption. This is the
+    // step that catches a lossy capture backend or USB path — median-pitch
+    // checks (step 6) are blind to splices (learned 2026-07-10).
+    const sinProg = initProgram()
+    sinProg.name = 'CALIB SIN'
+    const SIN1: ReadonlyArray<readonly [keyof typeof P, number]> = [
+      ['VCO1_LEVEL', 0], ['VCO2_LEVEL', 0], ['MULTI_LEVEL', 1023],
+      ['MULTI_TYPE', 1], ['SELECT_VPM', 0], ['SHAPE_VPM', 0], ['SHIFTSHAPE_VPM', 512],
+      ['CUTOFF', 1023], ['RESONANCE', 0], ['DRIVE', 0],
+      ['AMP_ATTACK', 0], ['AMP_SUSTAIN', 1023], ['AMP_RELEASE', 100],
+      ['EG_INT', 512], ['LFO_INT', 512], ['AMP_VELOCITY', 0],
+    ]
+    for (const [k, v] of SIN1) sinProg.params[P[k]] = v
+    await pushDump(midi, ch, encodeProgBin(sinProg))
+    const sinPath = join(tmpDir, 'check-sin.wav')
+    midi.noteOn(69, 100, ch)
+    await sleep(200)
+    await recordWav({ deviceIndex, seconds: 6, outPath: sinPath })
+    midi.noteOff(69, ch)
+    const sinWav = readWav(new Uint8Array(readFileSync(sinPath)))
+    const sx = sinWav.channels[0]
+    const sFrom = Math.round(0.5 * sinWav.sr)
+    const sTo = sx.length - Math.round(0.2 * sinWav.sr)
+    const sF0 = fftPeakHz(sx, sFrom, 16384, sinWav.sr)
+    const sTrack = phasePitchTrack(sx, sinWav.sr, sF0, { from: sFrom, to: sTo })
+    const sCents = Array.from(sTrack.v, (v) => 1200 * Math.log2(v / sF0))
+    const sMean = sCents.reduce((a, b) => a + b, 0) / sCents.length
+    const sSd = Math.sqrt(sCents.reduce((a, c) => a + (c - sMean) ** 2, 0) / sCents.length)
+    const sPj = phaseJumps(sx, sinWav.sr, sF0, sFrom, sTo)
+    const okSin = sPj.count <= 2 && sSd < 0.3
+    step(
+      8,
+      TOTAL,
+      'quartz integrity',
+      okSin ? PASS : FAIL,
+      `digital Sin1: f0 ${sF0.toFixed(2)} Hz, pitch sd ${sSd.toFixed(3)}¢, phase jumps ${sPj.count} in ${((sTo - sFrom) / sinWav.sr).toFixed(1)}s`
+    )
+    if (!okSin) {
+      failures++
+      console.log('  fix: capture path is corrupting audio — check USB path/adapter; never capture via ffmpeg avfoundation')
     }
     return failures ? 1 : 0
   } finally {
@@ -745,18 +790,16 @@ async function runOneJob(args: Args, jobPath: string): Promise<number> {
             const wFrom = onsetSample + Math.round(0.15 * wav.sr)
             const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
             if (wTo - wFrom > 0.3 * wav.sr) {
-              // real USB corruption measured ~10 events/s AND damaged pitch;
-              // the xd's own analog phase jitter produces a few benign events
-              // per capture (spikier than the replica's model — a D8 datum).
-              // Gate on sustained rate; the strike-spread guard catches
-              // timeline damage independently.
+              // strict gate: the CoreAudio backend captures a quartz source
+              // with ZERO events (2026-07-10) — any events now are real
+              // corruption. (The old ffmpeg/avfoundation backend dropped
+              // chunks continuously; a looser rate gate briefly papered over
+              // it. Never capture through avfoundation.)
               const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
-              const perSec = pj.count / ((wTo - wFrom) / wav.sr)
-              if (pj.count >= 8 && perSec > 4) {
+              if (pj.count > 2) {
                 hw = null
-                throw new Error(`${pj.count} phase jumps (${perSec.toFixed(1)}/s) — USB splice/drop suspected`)
+                throw new Error(`${pj.count} phase jumps — capture corruption (drops/splices)`)
               }
-              if (pj.count > 2) console.log(`  point ${i + 1}: note — ${pj.count} phase events (analog jitter range)`)
             }
             // analog voice spread is ~1-3 cents; far beyond that means the
             // capture timeline itself is broken (sample drops / rate conflict)

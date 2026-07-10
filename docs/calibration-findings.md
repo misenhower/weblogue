@@ -122,7 +122,19 @@ Fixed structurally, so missing data is as loud as bad data:
   thinned fit can't pass review unnoticed.
 - **`run all`** ends with a per-job suite summary; any failed point fails the job line.
 
-### Meta-lessons
+### 2026-07-10 · SAW morph sessions look broken but aren't — job disabled until the D2 remodel
+
+Batch-2 SAW sessions confused everyone (including the operator): mid-morph points fail the
+phase-jump gate (the alternating-teeth structure reads as phase steps — false corruption
+flags), upper points measure f0 = 55.00 Hz ±0.3¢ (the true period-doubled fundamental,
+reported as "−1200¢ vs replica"), and the waveform thumbnails render misleadingly because
+the zero-cross-centered trigger has multiple crossings per doubled cycle to choose from.
+None of that is rig failure and none of it is fittable against the current replica model —
+the comparison is apples-to-oranges by construction until the tier-3 SAW remodel lands, so
+the job is `disabled` with a pointer here. The captured data (locked 55 Hz fundamental,
+per-point ladders) is exactly the evidence the remodel needs. Lesson: a measurement whose
+reference model is known-wrong produces reports that look like malfunctions — park the job,
+don't keep re-running it.
 
 - **Validate detectors against a reference source, not just replica renders.** The
   phase-jump detector was tuned on synthetic signals and replica audio; when real captures

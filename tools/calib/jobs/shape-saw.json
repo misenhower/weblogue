@@ -2,6 +2,7 @@
   "id": "shape-saw",
   "domain": "vco.shape",
   "description": "D2: SAW SHAPE morph at A2 — harmonic ladder per step feeds the (g, off) analysis-by-synthesis fit; thumbnails show the morph directly",
+  "disabled": "hardware SAW morph period-doubles (tier-3, findings log 2026-07-08): the replica model must be redesigned before any comparison is meaningful — mid-morph points also false-trigger the phase-jump gate and the zero-cross-centered thumbnails render misleadingly. Re-enable with the D2 remodel.",
   "overrides": {
     "vco1Wave": 2,
     "vco1Level": 1023,

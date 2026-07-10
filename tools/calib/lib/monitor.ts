@@ -11,6 +11,11 @@ import { join } from 'node:path'
 import { ScopeState, attachScopeWs } from './scope'
 import type { LiveState, LivePoint } from './live'
 import { calibDir } from './rig'
+import { loadJob } from './job'
+import { renderJobPoint } from './render'
+import { measureAny, summarize, jobKind } from './domains'
+import type { PointFeatures } from './measure'
+import { XD_PROFILES, setXdProfile } from '../../../src/synths/xd/profiles'
 
 export const MONITOR_PORT = 8077
 
@@ -62,12 +67,23 @@ export function startMonitorServer(
       })
   }
 
-  /** A finished session re-shaped into the same state the live view renders. */
-  const sessionState = (name: string): LiveState | null => {
+  /**
+   * A finished session re-shaped into the same state the live view renders.
+   * With `profile` set (a profiles.ts id), the replica columns are re-rendered
+   * live under that calibration profile instead of the values stored at
+   * capture time — synchronous engine renders, so first view of a long job
+   * stalls the monitor for a few seconds; cached per (session, profile).
+   */
+  const stateCache = new Map<string, LiveState | null>()
+  const sessionState = (name: string, profile?: string | null): LiveState | null => {
     if (!/^[\w.:-]+$/.test(name)) return null
+    const cacheKey = `${name}|${profile ?? ''}`
+    const hit = stateCache.get(cacheKey)
+    if (hit !== undefined) return hit
+    let out: LiveState | null = null
     try {
       const dir = join(sessionsDir, name)
-      const job = JSON.parse(readFileSync(join(dir, 'job.json'), 'utf8'))
+      const job = loadJob(join(dir, 'job.json'))
       interface RawResult {
         point: number | null
         hw: { cents?: number; centsSpread?: number; peakDbfs: number; harmonicsDb?: number[]; waveSnap?: number[] }
@@ -77,27 +93,43 @@ export function startMonitorServer(
         results: RawResult[]
         pointFailures?: { label: string; raw: number | null; error: string }[]
       }
-      const points: LivePoint[] = feats.results.map((r) => ({
-        label: r.point === null ? 'base patch' : `${job.sweep?.param}=${r.point}`,
-        raw: r.point,
-        status: 'done',
-        // non-tonal sessions (noise/envelope kinds) lack these fields — the
-        // page renders blanks for undefined
-        hwCents: r.hw.cents,
-        repCents: r.rep.cents,
-        hwSpread: r.hw.centsSpread,
-        peakDbfs: r.hw.peakDbfs,
-        ladder: (r.hw.harmonicsDb ?? [])
-          .map((db, k): [number, number, number] => [k + 1, db, r.rep.harmonicsDb?.[k] ?? NaN])
-          .slice(1),
-        waveHw: r.hw.waveSnap,
-        waveRep: r.rep.waveSnap,
-      }))
+      const reRender = !!profile && setXdProfile(profile)
+      const points: LivePoint[] = feats.results.map((r) => {
+        let rep = r.rep
+        let note = ''
+        if (reRender) {
+          const rend = renderJobPoint(job, r.point)
+          const f = measureAny(rend.samples, rend.sr, rend.onsetSample, job)
+          rep = f as RawResult['rep']
+          if (jobKind(job) !== 'tonal') {
+            // non-tonal LivePoints carry their comparison in the note text
+            note = `hw ${summarize(job, r.hw as never)} | rep ${summarize(job, f)}`
+          }
+        }
+        return {
+          label: r.point === null ? 'base patch' : `${job.sweep?.param}=${r.point}`,
+          raw: r.point,
+          status: 'done' as const,
+          note,
+          // non-tonal sessions (noise/envelope kinds) lack these fields — the
+          // page renders blanks for undefined
+          hwCents: r.hw.cents,
+          repCents: (rep as PointFeatures).cents,
+          hwSpread: r.hw.centsSpread,
+          peakDbfs: r.hw.peakDbfs,
+          ladder: (r.hw.harmonicsDb ?? [])
+            .map((db, k): [number, number, number] => [k + 1, db, rep.harmonicsDb?.[k] ?? NaN])
+            .slice(1),
+          waveHw: r.hw.waveSnap,
+          waveRep: rep.waveSnap,
+        }
+      })
+      if (reRender) setXdProfile('v0') // the monitor's resting state
       // failed points render red in history just like in the live view
       for (const f of feats.pointFailures ?? []) {
         points.push({ label: f.label, raw: f.raw, status: 'failed', note: f.error })
       }
-      return {
+      out = {
         job: { id: job.id, domain: job.domain, description: job.description },
         phase: 'done',
         points,
@@ -105,8 +137,10 @@ export function startMonitorServer(
         updatedAt: '',
       }
     } catch {
-      return null
+      out = null
     }
+    stateCache.set(cacheKey, out)
+    return out
   }
 
   const srv: Server = createServer((req, res) => {
@@ -130,9 +164,17 @@ export function startMonitorServer(
     }
     if (url.startsWith('/state.json')) {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ run, sessions: listSessions() }))
+      res.end(
+        JSON.stringify({
+          run,
+          sessions: listSessions(),
+          profiles: XD_PROFILES.map((p) => ({ id: p.id, name: p.name })),
+        }),
+      )
     } else if (url.startsWith('/session/')) {
-      const s = sessionState(decodeURIComponent(url.slice('/session/'.length)))
+      const [path, query] = url.split('?')
+      const profile = new URLSearchParams(query ?? '').get('profile')
+      const s = sessionState(decodeURIComponent(path.slice('/session/'.length)), profile)
       res.writeHead(s ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify(s))
     } else if (url.startsWith('/scope.json')) {
@@ -190,6 +232,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>calib moni
 <canvas id="spec" width="760" height="130"></canvas>
 <div class="divider"></div>
 <select id="sess"><option value="live">live / latest run</option></select>
+<select id="prof" title="re-render the replica columns under a calibration profile (history views only)"><option value="">replica: as captured</option></select>
 <div class="sub" id="sub"></div>
 <div id="body"></div>
 <script>
@@ -354,16 +397,39 @@ function ladder(points) {
 const sessCache = new Map()
 let sessions = []
 let lastRun = null
-async function fetchSession(name) {
-  if (sessCache.has(name)) return sessCache.get(name)
+let profilesSig = ''
+let sessionsSig = ''
+let lastView = null // skip re-rendering an unchanged view: rebuilding the DOM
+                    // every poll reset open dropdowns and text selection
+async function fetchSession(name, profile) {
+  const key = name + '|' + (profile || '')
+  if (sessCache.has(key)) return sessCache.get(key)
   try {
-    const s = await (await fetch('/session/' + encodeURIComponent(name), { cache: 'no-store' })).json()
-    if (s) sessCache.set(name, s)
+    const s = await (await fetch('/session/' + encodeURIComponent(name)
+      + (profile ? '?profile=' + encodeURIComponent(profile) : ''), { cache: 'no-store' })).json()
+    if (s) sessCache.set(key, s)
     return s
   } catch { return null }
 }
-function syncSelect() {
+function syncSelect(profiles) {
   const sel = document.getElementById('sess')
+  const prof = document.getElementById('prof')
+  const pSig = JSON.stringify(profiles || [])
+  if (pSig !== profilesSig && document.activeElement !== prof) {
+    profilesSig = pSig
+    while (prof.options.length > 1) prof.remove(1)
+    for (const p of profiles || []) {
+      const o = document.createElement('option')
+      o.value = p.id
+      o.textContent = 'replica: ' + p.name
+      prof.appendChild(o)
+    }
+  }
+  // never mutate the options while the user has the dropdown open/focused,
+  // and only rebuild when the list actually changed
+  const sSig = JSON.stringify(sessions)
+  if (sSig === sessionsSig || document.activeElement === sel) return
+  sessionsSig = sSig
   const cur = sel.value
   while (sel.options.length > 1) sel.remove(1)
   for (const s of sessions) {
@@ -380,20 +446,32 @@ async function stateTick() {
     const st = await (await fetch('/state.json', { cache: 'no-store' })).json()
     sessions = st.sessions || []
     if (st.run) lastRun = st.run
-    syncSelect()
+    syncSelect(st.profiles)
     const sel = document.getElementById('sess').value
+    const prof = document.getElementById('prof').value
     if (sel === 'live') {
-      if (lastRun) renderRun(lastRun, true)
-      else if (sessions.length) renderRun(await fetchSession(sessions[0].name), false)
-      else renderRun(null, false)
+      // live view: profile re-render doesn't apply (data comes from the run)
+      const view = 'live|' + (lastRun ? lastRun.updatedAt : sessions.length ? sessions[0].name : '')
+      if (view !== lastView) {
+        lastView = view
+        if (lastRun) renderRun(lastRun, true)
+        else if (sessions.length) renderRun(await fetchSession(sessions[0].name, ''), false)
+        else renderRun(null, false)
+      }
     } else {
-      renderRun(await fetchSession(sel), false)
+      const view = 'sess|' + sel + '|' + prof
+      if (view !== lastView) {
+        lastView = view
+        renderRun(await fetchSession(sel, prof), false)
+      }
     }
   } catch {
     document.getElementById('status').textContent = 'monitor disconnected'
   }
   setTimeout(stateTick, 1000)
 }
+document.getElementById('sess').addEventListener('change', () => { lastView = null })
+document.getElementById('prof').addEventListener('change', () => { lastView = null })
 connectWs()
 scopeTick()
 stateTick()

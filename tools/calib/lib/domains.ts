@@ -135,6 +135,27 @@ export function sweepValues(
   }
 }
 
+/**
+ * Swept points that measured "successfully" but yielded no usable sweep value
+ * (e.g. a release too short for the follower floor, a railed noise corner) —
+ * one layer below point failures, and just as capable of silently thinning a
+ * fit. The noise kind's max-raw reference point is null BY DESIGN and is not
+ * counted. Returns the raw values, for coverage notes.
+ */
+export function unusableSweepPoints(job: CalibJob, results: AnyResult[], world: 'hw' | 'rep' = 'hw'): number[] {
+  const swept = results.filter((r) => r.point !== null)
+  if (swept.length === 0) return []
+  const { values } = sweepValues(job, swept, world)
+  const refPoint =
+    jobKind(job) === 'noise' ? swept.reduce((a, b) => ((a.point ?? -1) >= (b.point ?? -1) ? a : b)).point : null
+  const out: number[] = []
+  for (let i = 0; i < swept.length; i++) {
+    const v = values[i]
+    if ((v === null || !Number.isFinite(v)) && swept[i].point !== refPoint) out.push(swept[i].point!)
+  }
+  return out
+}
+
 /** Domain-aware Proposal builders — the fits behind the report's review gate. */
 export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' | 'rep' = 'hw'): Proposal[] {
   const swept = results.filter((r) => r.point !== null)

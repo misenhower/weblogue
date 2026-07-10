@@ -11,7 +11,13 @@ import { writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { loadJob } from '../tools/calib/lib/job'
 import { renderJobPoint } from '../tools/calib/lib/render'
-import { measureAny, sweepValues, buildProposals, type AnyResult } from '../tools/calib/lib/domains'
+import {
+  measureAny,
+  sweepValues,
+  buildProposals,
+  unusableSweepPoints,
+  type AnyResult,
+} from '../tools/calib/lib/domains'
 import { cutoffToHz, attackToSec } from '../src/synths/xd/curves'
 
 const JOBS = join(__dirname, '../tools/calib/jobs')
@@ -26,6 +32,48 @@ function selfResults(jobPath: string, points: number[]): { job: ReturnType<typeo
   })
   return { job, results }
 }
+
+describe('unusableSweepPoints (feature-level nulls thin fits silently)', () => {
+  const env = (releaseTimeSec: number | null): AnyResult['hw'] => ({
+    peakDbfs: -20,
+    attackSec: 0.01,
+    decayTimeSec: 0.5,
+    releaseTimeSec,
+    sustainDb: -0.5,
+  })
+  const envJob = {
+    id: 't',
+    domain: 'eg.amp',
+    notes: [{ midi: 69, vel: 100, onSec: 0.3, offSec: 1.5 }],
+    captureSec: 3,
+    sweep: { param: 'ampRelease', points: [0, 512, 1023] },
+    features: { kind: 'envelope', env: 'release', nominalHz: 440 },
+  } as ReturnType<typeof loadJob>
+
+  it('flags null-valued envelope points, not the healthy ones', () => {
+    const results: AnyResult[] = [
+      { point: 0, hw: env(null), rep: env(null) }, // measured, no usable value
+      { point: 512, hw: env(0.75), rep: env(0.75) },
+      { point: 1023, hw: env(16.6), rep: env(16.6) },
+    ]
+    expect(unusableSweepPoints(envJob, results)).toEqual([0])
+    expect(unusableSweepPoints(envJob, results.slice(1))).toEqual([])
+  })
+
+  it('does not count the noise kind\'s by-design-null reference point', () => {
+    const { job, results } = (() => {
+      const j = loadJob(join(JOBS, 'cutoff-sweep.json'))
+      const pts = [512, 1023].map((pt) => {
+        const r = renderJobPoint(j, pt)
+        const f = measureAny(r.samples, r.sr, r.onsetSample, j)
+        return { point: pt, hw: f, rep: f }
+      })
+      return { job: j, results: pts }
+    })()
+    // raw 1023 is the transfer reference (null by design) — not "unusable"
+    expect(unusableSweepPoints(job, results)).toEqual([])
+  })
+})
 
 describe('job kind validation', () => {
   const write = (features: object): string => {

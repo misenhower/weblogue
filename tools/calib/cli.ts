@@ -32,7 +32,16 @@ import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
 import { phaseJumps } from './lib/phasejump'
-import { measureAny, buildProposals, sweepValues, summarize, jobKind, type AnyFeatures, type AnyResult } from './lib/domains'
+import {
+  measureAny,
+  buildProposals,
+  sweepValues,
+  unusableSweepPoints,
+  summarize,
+  jobKind,
+  type AnyFeatures,
+  type AnyResult,
+} from './lib/domains'
 import { renderJobPoint } from './lib/render'
 import { createSession, saveJson, saveText } from './lib/session'
 import { renderReport, type PointFailure, type PointResult } from './lib/report'
@@ -1001,9 +1010,19 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
     liveState.message = `${failures.length} point(s) failed — see notes`
   }
   const proposals = buildProposals(job, results)
-  const coverage = `coverage: ${results.length}/${points.length} planned points${
-    failures.length ? ` — MISSING ${failures.map((f) => f.label).join(', ')}` : ''
-  }`
+  // a point can measure "successfully" yet yield no usable value (feature
+  // null, railed fit) — that thins the fit exactly like a failed point does
+  const unusable = unusableSweepPoints(job, results)
+  if (unusable.length) {
+    console.log(
+      `${FAIL} ${unusable.length} point(s) measured but yielded NO USABLE VALUE (excluded from fits): ` +
+        unusable.map((raw) => `${job.sweep!.param}=${raw}`).join(', '),
+    )
+  }
+  const coverage =
+    `coverage: ${results.length}/${points.length} planned points` +
+    (failures.length ? ` — MISSING ${failures.map((f) => f.label).join(', ')}` : '') +
+    (unusable.length ? ` — NO USABLE VALUE at ${unusable.map((raw) => `${job.sweep!.param}=${raw}`).join(', ')}` : '')
   for (const p of proposals) p.notes.unshift(coverage)
   const measuredDate = new Date().toISOString().slice(0, 10)
   // persisted even when EVERY point failed: the failure record is the most

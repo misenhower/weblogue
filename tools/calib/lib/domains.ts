@@ -10,6 +10,7 @@ import { measurePoint, type PointFeatures } from './measure'
 import { measureNoisePoint, transferDb, fitLpMag, type NoisePointFeatures } from './measure-noise'
 import { measureEnvPoint, type EnvPointFeatures, type EnvSegment } from './measure-env'
 import { proposeCurve, verifyPitchTable, type Proposal, type SweepPoint } from './proposal'
+import { median } from './fit'
 import { attackToSec, decayToSec, releaseToSec, cutoffToHz } from '../../../src/synths/xd/curves'
 
 export type JobKind = 'tonal' | 'noise' | 'envelope'
@@ -89,16 +90,30 @@ export function sweepValues(
     case 'noise': {
       const ref = results.reduce((a, b) => ((a.point ?? -1) >= (b.point ?? -1) ? a : b))
       const refF = pick(ref) as NoisePointFeatures
+      // rail/r2 gate: near-closed-filter captures are noise-floor garbage —
+      // the corner search rails toward its bound with a poor fit
+      const gated = (fit: { fcHz: number; r2: number }): number | null =>
+        fit.fcHz > 40000 || fit.r2 < 0.6 ? null : fit.fcHz
       return {
         unit: 'Hz',
         values: results.map((r) => {
           if (r === ref) return null
           const p = pick(r) as NoisePointFeatures
-          const fit = fitLpMag(p.psdHz, transferDb(p, refF))
-          // near-closed-filter captures are noise-floor garbage: the corner
-          // search rails toward its bound with a poor fit — exclude, don't fit
-          if (fit.fcHz > 40000 || fit.r2 < 0.6) return null
-          return fit.fcHz
+          // Per-strike path: strike k of every point lands on the same voice
+          // (round-robin, repeat a multiple of 4), so transfer k measures
+          // voice k's analog VCF — the point value is the median corner over
+          // voices instead of whichever single voice the note landed on.
+          const n = Math.min(p.strikePsdDb?.length ?? 0, refF.strikePsdDb?.length ?? 0)
+          if (n >= 2) {
+            const corners: number[] = []
+            for (let k = 0; k < n; k++) {
+              const t = p.strikePsdDb![k].map((d, i) => d - refF.strikePsdDb![k][i])
+              const c = gated(fitLpMag(p.psdHz, t))
+              if (c !== null) corners.push(c)
+            }
+            if (corners.length > 0) return median(corners)
+          }
+          return gated(fitLpMag(p.psdHz, transferDb(p, refF)))
         }),
       }
     }

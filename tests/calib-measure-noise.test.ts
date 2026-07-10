@@ -9,6 +9,7 @@ import {
 import type { CalibJob } from '../tools/calib/lib/job'
 import { loadJob } from '../tools/calib/lib/job'
 import { renderJobPoint } from '../tools/calib/lib/render'
+import { sweepValues } from '../tools/calib/lib/domains'
 import { cutoffToHz } from '../src/synths/xd/curves'
 
 const SR = 48000
@@ -178,6 +179,66 @@ describe('corner3Db + fitLpMag on synthetic filters', () => {
     const corner = corner3Db(pt.psdHz, tr)
     expect(corner).not.toBeNull()
     expect(Math.abs(corner! - 1000) / 1000).toBeLessThan(0.08)
+  })
+})
+
+describe('per-strike PSDs (repeated notes = one voice\'s VCF per strike)', () => {
+  /** Two 8 s strikes back to back, each through its own filter corner. */
+  function twoStrikeJob(): CalibJob {
+    return {
+      id: 'noise-strikes-test',
+      domain: 'filter.cutoff',
+      notes: [{ midi: 60, vel: 100, onSec: 0, offSec: 8 }],
+      repeat: 2,
+      repeatEverySec: 8,
+      captureSec: 16,
+      features: { kind: 'noise' },
+    }
+  }
+  function concat(a: Float32Array, b: Float32Array): Float32Array {
+    const out = new Float32Array(a.length + b.length)
+    out.set(a)
+    out.set(b, a.length)
+    return out
+  }
+
+  it('recovers a DIFFERENT corner per strike and sweepValues medians them', () => {
+    const job = twoStrikeJob()
+    // point: strike 1 filtered at 800 Hz, strike 2 at 1200 Hz (per-voice spread)
+    const pt = measureNoisePoint(
+      concat(biquadLp(whiteNoise(8, 0x7777), 800, SR), biquadLp(whiteNoise(8, 0x8888), 1200, SR)),
+      SR,
+      0,
+      job,
+    )
+    const ref = measureNoisePoint(concat(whiteNoise(8, 0x9999), whiteNoise(8, 0xaaaa)), SR, 0, job)
+    expect(pt.strikePsdDb).toHaveLength(2)
+    expect(ref.strikePsdDb).toHaveLength(2)
+    // psdDb stays the first strike's PSD (single-strike compatibility)
+    expect(pt.psdDb).toEqual(pt.strikePsdDb![0])
+    // per-strike transfers see the two different filters, not a blend
+    const corners = [0, 1].map((k) => {
+      const tr = pt.strikePsdDb![k].map((d, i) => d - ref.strikePsdDb![k][i])
+      return fitLpMag(pt.psdHz, tr).fcHz
+    })
+    expect(Math.abs(corners[0] - 800) / 800).toBeLessThan(0.08)
+    expect(Math.abs(corners[1] - 1200) / 1200).toBeLessThan(0.08)
+    // the sweep value is the median across strikes (= mean of two: 1000)
+    const { values } = sweepValues(
+      { ...job, sweep: { param: 'cutoff', points: [512, 1023] } },
+      [
+        { point: 512, hw: pt, rep: pt },
+        { point: 1023, hw: ref, rep: ref },
+      ],
+      'hw',
+    )
+    expect(values[1]).toBeNull() // reference point
+    expect(Math.abs(values[0]! - 1000) / 1000).toBeLessThan(0.08)
+  })
+
+  it('is absent for single-strike jobs (legacy shape unchanged)', () => {
+    const f = measure(whiteNoise(4, 0xbbbb))
+    expect(f.strikePsdDb).toBeUndefined()
   })
 })
 

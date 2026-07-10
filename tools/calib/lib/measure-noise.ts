@@ -28,6 +28,14 @@ export interface NoisePointFeatures {
   psdHz: number[]
   /** Welch PSD in dB per grid bin (welchPsd normalization; cancels in transferDb) */
   psdDb: number[]
+  /**
+   * Per-strike PSDs on the same grid, present when the job repeats the note
+   * (round-robin: strike k lands on a different voice, so per-strike
+   * transfers measure each analog VCF separately — keep `repeat` a multiple
+   * of 4 so strike k pairs with the same voice at every sweep point).
+   * psdDb above stays the FIRST strike's PSD for single-strike compatibility.
+   */
+  strikePsdDb?: number[][]
 }
 
 const TINY = 1e-30
@@ -85,11 +93,29 @@ function reduceToGrid(hz: Float32Array, db: Float32Array): { psdHz: number[]; ps
   return { psdHz, psdDb }
 }
 
+/** One strike's grid PSD over its sustain window (measure.ts convention:
+ *  strike onset + 150 ms past attack/settling, to onset + noteDur − 100 ms,
+ *  at least 300 ms). */
+function strikeGridPsd(
+  x: Float32Array,
+  sr: number,
+  strikeOnset: number,
+  noteDur: number,
+): { psdHz: number[]; psdDb: number[]; from: number; to: number } {
+  const from = Math.min(x.length - 1, strikeOnset + Math.round(0.15 * sr))
+  const to = Math.min(
+    x.length,
+    Math.max(from + Math.round(0.3 * sr), strikeOnset + Math.round((noteDur - 0.1) * sr)),
+  )
+  const psd = welchPsd(x, sr, { from, to })
+  return { ...reduceToGrid(psd.hz, psd.db), from, to }
+}
+
 /**
- * Noise-point features over the FIRST note's sustain window (measure.ts
- * convention: onset + 150 ms past attack/settling, to onset + noteDur − 100 ms,
- * at least 300 ms). Welch PSD -> fixed 256-bin log grid; peak/RMS dBFS over
- * the same window.
+ * Noise-point features. psdDb / peak / rms cover the FIRST note's sustain
+ * window; when the job repeats the note, strikePsdDb additionally carries one
+ * grid PSD per strike (offsets from the detected onset by repeatEverySec, the
+ * same convention measure.ts uses for tonal strikes).
  */
 export function measureNoisePoint(
   x: Float32Array,
@@ -98,21 +124,26 @@ export function measureNoisePoint(
   job: CalibJob,
 ): NoisePointFeatures {
   const noteDur = job.notes[0].offSec - job.notes[0].onSec
-  const from = Math.min(x.length - 1, onsetSample + Math.round(0.15 * sr))
-  const to = Math.min(
-    x.length,
-    Math.max(from + Math.round(0.3 * sr), onsetSample + Math.round((noteDur - 0.1) * sr)),
-  )
-  const psd = welchPsd(x, sr, { from, to })
-  const { psdHz, psdDb } = reduceToGrid(psd.hz, psd.db)
+  const first = strikeGridPsd(x, sr, onsetSample, noteDur)
+  const { from, to } = first
   let acc = 0
   for (let i = from; i < to; i++) acc += x[i] * x[i]
-  return {
+  const f: NoisePointFeatures = {
     peakDbfs: peakDbfs(x.subarray(from, to)),
     rmsDb: 10 * Math.log10(acc / Math.max(1, to - from) + TINY),
-    psdHz,
-    psdDb,
+    psdHz: first.psdHz,
+    psdDb: first.psdDb,
   }
+  const reps = job.repeat ?? 1
+  if (reps > 1 && job.repeatEverySec) {
+    f.strikePsdDb = [first.psdDb]
+    for (let k = 1; k < reps; k++) {
+      const strikeOnset = onsetSample + Math.round(k * job.repeatEverySec * sr)
+      if (strikeOnset >= x.length) break // truncated capture: keep what landed
+      f.strikePsdDb.push(strikeGridPsd(x, sr, strikeOnset, noteDur).psdDb)
+    }
+  }
+  return f
 }
 
 /**

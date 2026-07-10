@@ -223,6 +223,15 @@ The full method per domain (base patch, stimulus, features, fit, pitfalls, time 
 | Sequencer TIE trigger-bit semantics; realtime-rec gate precision | D10 |
 | VPM per-type ratio/feedback voicings | D3 |
 | FX ranges (delay time/feedback, reverb decays, mod-fx rates) — partly subjective | D9 |
+| CROSS MOD depth scale (`XMOD_SCALE` in voice.ts, guessed) — added 2026-07-10 | D2 |
+| SYNC / RING structural spot-checks (verify, don't fit) — added 2026-07-10 | D2 |
+| Mixer level taper (`levelTo01` pow 1.2, guessed) — added 2026-07-10 | D6 |
+
+Technique note (2026-07-10): before widening any sweep's voice coverage, run a per-voice
+spread probe first (one setting, 4 strikes, per-strike feature fit) — the pitch domain
+needed all-voices medians, the EGs don't (firmware-timed), and the VCF is unmeasured.
+The noise pipeline currently analyzes only the first note's window, so voice-aware filter
+sweeps need per-strike PSD support in measure-noise before a repeat bump does anything.
 
 ## What this means for the other synth modes
 

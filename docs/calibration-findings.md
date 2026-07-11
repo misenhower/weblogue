@@ -56,6 +56,17 @@ matters downstream.
 model's per-note offset (±1.5¢) is likely overdone. Full drift decomposition is protocol
 D8.
 
+### 2026-07-10 · The voice bus is AC-coupled into the FX board (INFERRED)
+
+Found via the "Replicant xd" bug: RING of two hard-synced same-pitch saws is essentially
+saw² — mean ≈ +⅓, real DC that the hardware's ring product carries too. On the real xd
+that preset plays fine with reverb; in the replica the DC reached the reverb, whose FDN
+loop amplified it ~5× (the damping filter is a lowpass — DC circulates; the Hadamard has a
++1 eigenvalue), and the output limiter flattened the mix to a rail. Conclusion: the
+hardware must block DC between the analog voice bus and the digital FX — standard
+capacitor coupling into the FX ADC. Replica now models it (src/dsp/dcblock.ts, 5 Hz corner
+INFERRED — measurable someday via an LF sweep if it ever matters).
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

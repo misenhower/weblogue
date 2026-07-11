@@ -54,6 +54,7 @@ import {
 import type { Arp } from '../../dsp/arp'
 import { setXdProfile } from './profiles'
 import { Voice } from './voice'
+import { DcBlock } from '../../dsp/dcblock'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
 import { ReverbFx } from '../../dsp/fx/reverb'
@@ -123,7 +124,10 @@ export class Engine extends EngineBase<Voice> {
 
   private calcSemis = 60 // scratch: semitone of the last noteHz() call
 
-  // FX chain in processing order (spec §1: MOD FX -> DELAY -> REVERB).
+  // FX chain in processing order (spec §1: MOD FX -> DELAY -> REVERB),
+  // behind the hardware's AC-coupled voice-bus -> FX-ADC boundary.
+  private readonly dcL: DcBlock
+  private readonly dcR: DcBlock
   private readonly modfx: ModFx
   private readonly delay: DelayFx
   private readonly reverb: ReverbFx
@@ -131,6 +135,8 @@ export class Engine extends EngineBase<Voice> {
 
   constructor(sampleRate: number) {
     super(sampleRate, BASE_CFG)
+    this.dcL = new DcBlock(this.sr)
+    this.dcR = new DcBlock(this.sr)
     this.modfx = new ModFx(this.sr)
     this.delay = new DelayFx(this.sr)
     this.reverb = new ReverbFx(this.sr)
@@ -675,8 +681,12 @@ export class Engine extends EngineBase<Voice> {
   }
 
   /** Serial FX chain; SERVICE MODE taps the signal between stages (the FX
-   *  pairs are mod L/R, delay L/R — genuinely stereo from the mod fx on). */
+   *  pairs are mod L/R, delay L/R — genuinely stereo from the mod fx on).
+   *  The voice bus is AC-coupled first, like the hardware's FX ADC — see
+   *  src/dsp/dcblock.ts for why skipping this rails the reverb. */
   protected processFx(outL: Float32Array, outR: Float32Array, frames: number): void {
+    this.dcL.process(outL, frames)
+    this.dcR.process(outR, frames)
     for (let f = 0; f < this.fxChain.length; f++) {
       this.fxChain[f].process(outL, outR, frames)
       if (this.taps.on && f + 1 < this.fxChain.length) this.taps.writeFxTap(6 + 2 * f, outL, outR, frames, false)

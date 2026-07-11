@@ -455,6 +455,87 @@ function resolveSession(name: string | undefined): string | null {
   return existsSync(join(dir, 'features.json')) ? dir : null
 }
 
+/**
+ * Re-derive a session's features.json + report.md from its KEPT RAW WAVs
+ * with the current extractor code — no hardware needed. Retroactively
+ * applies extractor fixes (family folding, cycle extraction, ...) to any
+ * session whose raws exist; the capture-time replicaProfile is honored so
+ * replica columns re-render as at capture (--profile overrides). The
+ * original measuredDate is preserved; a remeasuredDate is added.
+ */
+async function cmdRemeasure(args: Args): Promise<number> {
+  const dir = resolveSession(args.rest[0])
+  if (!dir) {
+    console.log('usage: npm run calib -- remeasure <session-dir-or-name> [--profile <id>]')
+    return 1
+  }
+  const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as {
+    replicaProfile?: string
+    measuredDate?: string
+  }
+  const job = loadJob(join(dir, 'job.json'))
+  const profile = flagStr(args, 'profile') ?? feats.replicaProfile ?? 'v0'
+  if (!setXdProfile(profile)) {
+    console.log(`${FAIL} unknown calibration profile "${profile}"`)
+    return 1
+  }
+  const points = jobPoints(job)
+  const results: AnyResult[] = []
+  const failures: PointFailure[] = []
+  for (let i = 0; i < points.length; i++) {
+    const id = String(i).padStart(3, '0')
+    const retry = join(dir, 'raw', `point-${id}-retry.wav`)
+    const plain = join(dir, 'raw', `point-${id}.wav`)
+    const file = existsSync(retry) ? retry : existsSync(plain) ? plain : null
+    const label = points[i] === null ? 'base patch' : `${job.sweep!.param}=${points[i]}`
+    if (!file) {
+      failures.push({ label, raw: points[i] ?? 0, error: 'no raw capture on disk' })
+      continue
+    }
+    const wav = readWav(readFileSync(file))
+    const x = wav.channels[0]
+    const o = detectOnset(x, wav.sr)
+    if (!o) {
+      failures.push({ label, raw: points[i] ?? 0, error: 'no onset in raw capture' })
+      continue
+    }
+    const rend = renderJobPoint(job, points[i])
+    results.push({
+      point: points[i],
+      hw: measureAny(x, wav.sr, o.sample, job),
+      rep: measureAny(rend.samples, rend.sr, rend.onsetSample, job),
+    })
+    console.log(`remeasured ${label}`)
+  }
+  const proposals = buildProposals(job, results)
+  const unusable = unusableSweepPoints(job, results)
+  const coverage =
+    `coverage: ${results.length}/${points.length} planned points` +
+    (failures.length ? ` — MISSING ${failures.map((f) => f.label).join(', ')}` : '') +
+    (unusable.length ? ` — NO USABLE VALUE at ${unusable.map((raw) => `${job.sweep!.param}=${raw}`).join(', ')}` : '')
+  for (const p of proposals) p.notes.unshift(coverage)
+  const measuredDate = feats.measuredDate ?? new Date().toISOString().slice(0, 10)
+  saveJson(dir, 'features.json', {
+    job: job.id,
+    domain: job.domain,
+    kind: jobKind(job),
+    replicaProfile: profile,
+    planned: points.length,
+    results,
+    pointFailures: failures,
+    proposals,
+    measuredDate,
+    remeasuredDate: new Date().toISOString().slice(0, 10),
+  })
+  saveText(
+    dir,
+    'report.md',
+    renderReport(job, results, { dir, profile }, proposals.length ? { measuredDate, items: proposals } : undefined, failures),
+  )
+  console.log(`\nremeasured ${results.length}/${points.length} points (${failures.length} failed) — ${join(dir, 'report.md')}`)
+  return failures.length ? 1 : 0
+}
+
 async function cmdCompare(args: Args): Promise<number> {
   const dir = resolveSession(args.rest[0])
   if (!dir) {
@@ -1160,6 +1241,9 @@ async function main(): Promise<void> {
       break
     case 'monitor':
       code = await cmdMonitor(args)
+      break
+    case 'remeasure':
+      code = await cmdRemeasure(args)
       break
     case 'compare':
       code = await cmdCompare(args)

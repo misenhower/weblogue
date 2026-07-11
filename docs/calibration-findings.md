@@ -81,7 +81,9 @@ xd-output + ProFX coupling chain — higher than expected, likely two-plus real 
 lower corners masquerading as one. It only matters when interpreting slow intra-cycle
 slopes (mean-cycle "bowing"); steps, duty ratios, fold drives, and reset positions are
 robust to it. All SHAPE model fits above ran with this HPF inside the loop, and displayed
-traces invert it per harmonic (exact for periodic means).
+traces invert it per harmonic (exact for periodic means). Full policy — how the corner
+is fitted, why the sim must not replicate it, the monitor's de-bow toggle, and the
+interface-change checklist — lives in hardware-calibration.md ("Capture-chain coupling").
 
 ### 2026-07-08 · VCO PITCH knob: Korg's documented table is not the analog response
 

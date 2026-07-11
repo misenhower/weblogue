@@ -83,6 +83,48 @@ reason. FULL mode should also expose the xd's own remedy: a "run tuning" action 
 the hardware's tuning mode, which re-zeros most of the accumulated offset but leaves a
 small residual (the real tuning routine isn't perfect either).
 
+## Capture-chain coupling ("the bow") and de-bowing
+
+Everything the rig captures passes two capacitor couplings in series — the xd's output
+stage and the audio interface's line input — which act together as a high-pass filter.
+A high-pass can't hold a slowly-changing voltage, so the linear ramps and flat tops of
+low-frequency waveforms sag visibly over each cycle: captured saws/triangles look
+"bowed" while the synth is actually producing straight segments.
+
+Facts and policy (established 2026-07-11, findings log has the evidence):
+
+- **The corner is MEASURED per rig, not assumed**: at SHAPE 0 the waveform is known
+  analytically, so the chain corner is whatever 1-pole makes the known shape best fit
+  the captured mean cycle. Current rig (xd → ProFX): **~40 Hz 1-pole equivalent**
+  (`CAPTURE_HPF_FC` in tools/calib/lib/measure-shape.ts) — likely 2+ real poles
+  masquerading as one; fine at cycle scale. Every session's SHAPE-0 point doubles as a
+  canary: if the known shape stops fitting at the usual floor, the chain changed.
+- **Model fits are chain-aware, never chain-corrupted**: fits run the FORWARD filter on
+  the model candidate (hpfPeriodic) rather than inverting the capture — fitted
+  parameters describe the clean synth. Replica renders use fc = 0 (no coupling).
+- **De-bowing is display/analysis only**: on an exactly periodic mean cycle the chain
+  filter inverts per-harmonic exactly (debowCycle). The monitor's thumbnails default to
+  de-bowed (the synth's waveform) with a "de-bow" checkbox to see the raw capture; the
+  stored features are always raw.
+- **The sim must NOT replicate the bow**: the chain belongs to the rig, its split
+  between the xd's own output cap and the interface is UNMEASURABLE with one series
+  path, and any listener hears the hardware through their own chain anyway. Where
+  coupling audibly matters (DC at the FX bus) the engine models it separately
+  (src/dsp/dcblock.ts, ~5 Hz INFERRED).
+- **Known caveat**: the chain tilts absolute low-frequency harmonic LEVELS (H1 at 55 Hz
+  reads ~1.8 dB low through a 40 Hz corner) — harmonic-ladder comparisons of low notes
+  carry that tilt; ratios and frequencies are unaffected.
+
+**Changing the audio interface** (checklist for a future session):
+1. `npm run calib -- devices --save`, re-check gain staging (`calib check` step 7) and
+   quartz integrity (step 8) — the generation discipline in the findings log applies.
+2. Re-fit the chain corner: one shape-0 capture (any shape job's first point), scan the
+   1-pole corner for best known-shape fit; update `CAPTURE_HPF_FC` with a findings
+   entry. A flat-LF interface should fit well below 40 Hz.
+3. Optional but valuable once: capture the SAME xd output through BOTH interfaces —
+   dividing the responses isolates the xd's own output coupling, the one thing a single
+   series chain can never attribute (bounds the D9 coupling questions).
+
 ## Provenance convention
 
 Tag each tuned constant/table at its definition site:

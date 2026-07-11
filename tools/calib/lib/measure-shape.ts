@@ -327,6 +327,7 @@ export function alignedCycleSnaps(
   hw: ShapeCycle | undefined,
   rep: ShapeCycle | undefined,
   points = 200,
+  debow = false,
 ): { hw: number[]; rep: number[] } | null {
   if (!hw || !rep || hw.cycle.length < points || rep.cycle.length < points) return null
   // common grid regardless of each cycle's stored resolution (sessions from
@@ -342,13 +343,15 @@ export function alignedCycleSnaps(
     }
     return out
   }
-  const h = resample(hw.cycle)
+  const h0 = resample(hw.cycle)
   const r = resample(rep.cycle)
-  // rotate against the capture-coupled version of the replica: the hardware
-  // trace carries the chain's HPF (real phase lead, ~36 deg at 55 Hz), so
-  // correlating clean-vs-bowed finds a genuinely shifted optimum. The
-  // DISPLAYED replica stays clean.
-  const { shift } = fitShifted(h, hpfPeriodic(r, CAPTURE_HPF_FC, hw.f0), 2, true)
+  // debow: show the synth's waveform instead of the rig's view of it (exact
+  // periodic inversion of the fitted chain corner). Raw mode keeps the bow
+  // and instead rotates against the capture-coupled replica — the chain's
+  // HPF adds real phase lead (~36 deg at 55 Hz), so correlating
+  // clean-vs-bowed finds a genuinely shifted optimum.
+  const h = debow ? debowCycle(h0, CAPTURE_HPF_FC, hw.f0) : h0
+  const { shift } = fitShifted(h, debow ? r : hpfPeriodic(r, CAPTURE_HPF_FC, hw.f0), 2, true)
   const norm = (c: readonly number[], rot: number): number[] => {
     let pk = 1e-9
     for (const v of c) pk = Math.max(pk, Math.abs(v))
@@ -359,4 +362,41 @@ export function alignedCycleSnaps(
     return out
   }
   return { hw: norm(h, 0), rep: norm(r, shift) }
+}
+
+/**
+ * Exact inverse of the capture chain's 1-pole coupling on a PERIODIC mean
+ * cycle: divide each DFT harmonic by H(w) = (1 - e^{-jw}) / (1 - R e^{-jw}).
+ * Valid only because the mean cycle is exactly periodic; k=0 (the DC the
+ * chain removed) stays zero. This is the "de-bowing" the display and the
+ * evidence plots use — the fits never need it (they run the FORWARD filter
+ * on the model instead, which is numerically safer).
+ */
+export function debowCycle(cycle: readonly number[], fcHz: number, cycleHz: number): number[] {
+  const N = cycle.length
+  if (!(fcHz > 0)) return cycle.slice()
+  const srEff = N * cycleHz
+  const R = 1 - (2 * Math.PI * fcHz) / srEff
+  const out = new Array<number>(N).fill(0)
+  for (let k = 1; k <= N / 2; k++) {
+    const w = (2 * Math.PI * k) / N
+    let yr = 0
+    let yi = 0
+    for (let n = 0; n < N; n++) {
+      yr += cycle[n] * Math.cos(w * n)
+      yi -= cycle[n] * Math.sin(w * n)
+    }
+    const nr = 1 - Math.cos(w)
+    const ni = Math.sin(w)
+    const dr = 1 - R * Math.cos(w)
+    const di = R * Math.sin(w)
+    const den = nr * nr + ni * ni
+    const hr = (dr * nr + di * ni) / den
+    const hi = (di * nr - dr * ni) / den
+    const xr = yr * hr - yi * hi
+    const xi = yr * hi + yi * hr
+    const scale = k === N / 2 ? 1 : 2
+    for (let n = 0; n < N; n++) out[n] += (scale / N) * (xr * Math.cos(w * n) - xi * Math.sin(w * n))
+  }
+  return out
 }

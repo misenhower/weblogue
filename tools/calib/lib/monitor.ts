@@ -76,9 +76,9 @@ export function startMonitorServer(
    * stalls the monitor for a few seconds; cached per (session, profile).
    */
   const stateCache = new Map<string, LiveState | null>()
-  const sessionState = (name: string, profile?: string | null): LiveState | null => {
+  const sessionState = (name: string, profile?: string | null, debow = true): LiveState | null => {
     if (!/^[\w.:-]+$/.test(name)) return null
-    const cacheKey = `${name}|${profile ?? ''}`
+    const cacheKey = `${name}|${profile ?? ''}|${debow ? 'd' : 'r'}`
     const hit = stateCache.get(cacheKey)
     if (hit !== undefined) return hit
     let out: LiveState | null = null
@@ -124,7 +124,7 @@ export function startMonitorServer(
           ...(() => {
             const hwF = r.hw as PointFeatures
             const repF = rep as PointFeatures
-            const cyc = alignedCycleSnaps(hwF.shapeCycle, repF.shapeCycle)
+            const cyc = alignedCycleSnaps(hwF.shapeCycle, repF.shapeCycle, 200, debow)
             if (cyc) return { waveHw: cyc.hw, waveRep: cyc.rep }
             const al = alignSnaps(r.hw.waveSnap, rep.waveSnap)
             return { waveHw: al.hw, waveRep: al.rep }
@@ -180,8 +180,9 @@ export function startMonitorServer(
       )
     } else if (url.startsWith('/session/')) {
       const [path, query] = url.split('?')
-      const profile = new URLSearchParams(query ?? '').get('profile')
-      const s = sessionState(decodeURIComponent(path.slice('/session/'.length)), profile)
+      const q = new URLSearchParams(query ?? '')
+      const profile = q.get('profile')
+      const s = sessionState(decodeURIComponent(path.slice('/session/'.length)), profile, q.get('debow') !== '0')
       res.writeHead(s ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify(s))
     } else if (url.startsWith('/scope.json')) {
@@ -240,6 +241,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>calib moni
 <div class="divider"></div>
 <select id="sess"><option value="live">live / latest run</option></select>
 <select id="prof" title="re-render the replica columns under a calibration profile (history views only)"><option value="">replica: as captured</option></select>
+<label class="sub" style="margin-left:10px" title="thumbnails show the synth's waveform (capture coupling inverted); untick for the raw bowed capture"><input type="checkbox" id="debow" checked> de-bow</label>
 <div class="sub" id="sub"></div>
 <div id="body"></div>
 <script>
@@ -408,12 +410,12 @@ let profilesSig = ''
 let sessionsSig = ''
 let lastView = null // skip re-rendering an unchanged view: rebuilding the DOM
                     // every poll reset open dropdowns and text selection
-async function fetchSession(name, profile) {
-  const key = name + '|' + (profile || '')
+async function fetchSession(name, profile, debow) {
+  const key = name + '|' + (profile || '') + '|' + (debow ? 'd' : 'r')
   if (sessCache.has(key)) return sessCache.get(key)
   try {
     const s = await (await fetch('/session/' + encodeURIComponent(name)
-      + (profile ? '?profile=' + encodeURIComponent(profile) : ''), { cache: 'no-store' })).json()
+      + '?debow=' + (debow ? '1' : '0') + (profile ? '&profile=' + encodeURIComponent(profile) : ''), { cache: 'no-store' })).json()
     if (s) sessCache.set(key, s)
     return s
   } catch { return null }
@@ -456,20 +458,21 @@ async function stateTick() {
     syncSelect(st.profiles)
     const sel = document.getElementById('sess').value
     const prof = document.getElementById('prof').value
+    const debow = document.getElementById('debow').checked
     if (sel === 'live') {
       // live view: profile re-render doesn't apply (data comes from the run)
       const view = 'live|' + (lastRun ? lastRun.updatedAt : sessions.length ? sessions[0].name : '')
       if (view !== lastView) {
         lastView = view
         if (lastRun) renderRun(lastRun, true)
-        else if (sessions.length) renderRun(await fetchSession(sessions[0].name, ''), false)
+        else if (sessions.length) renderRun(await fetchSession(sessions[0].name, '', debow), false)
         else renderRun(null, false)
       }
     } else {
-      const view = 'sess|' + sel + '|' + prof
+      const view = 'sess|' + sel + '|' + prof + '|' + debow
       if (view !== lastView) {
         lastView = view
-        renderRun(await fetchSession(sel, prof), false)
+        renderRun(await fetchSession(sel, prof, debow), false)
       }
     }
   } catch {

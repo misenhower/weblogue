@@ -127,12 +127,12 @@ export interface XdCalibProfile {
   triFoldLevel?: CurveSpec
   /** TRI: soft-fold knee radius (0 = hard reflection). */
   triFoldKnee?: number
-  /** SAW: raw -> half-rate chopper depth m (0 = plain saw, 1 = full
-   *  alternate-tooth polarity flip = the measured octave-down morph). */
-  sawChopDepth?: CurveSpec
-  /** SAW: raw -> chopper flip phase within the period (0..0.5; 0.5 = the
-   *  mid-ramp zero crossing, where the flip transient vanishes). */
-  sawChopPhase?: CurveSpec
+  /** SAW: raw -> reversal-mirror half-width w (0 = plain saw; 0.5 = full
+   *  alternate-tooth time-mirror = the measured octave-down morph). Over the
+   *  doubled period the wave is saw(phi) except saw(2-phi) inside
+   *  (1-w, 1+w) — a time-mirror window centered on the alternate tooth
+   *  boundary (D2 dense-sweep finding, 2026-07-11). */
+  sawMirrorW?: CurveSpec
 }
 
 /** v0 — the original guessed values, frozen exactly as first shipped. */
@@ -431,12 +431,13 @@ const V3: XdCalibProfile = {
  *        with the knee (r = 0.30; flat basin 0.3-0.4 — weakly identified,
  *        picked with its coherent drive table). SHAPE max renders the
  *        measured pure x3 triple; the fold ceiling tapers ~2x.
- *   SAW  half-rate chopper: exact at both endpoints (m=0 plain saw; m=1,
- *        phi=0.5 = the measured up/down alternate teeth with half-wave
- *        antisymmetry). Depth/phase tables from the D2 waveform fits;
- *        mid-range is the chopper's approximate zone (~40% waveform
- *        residual — the dwell + reversed-slope fine structure isn't in this
- *        model; open item in the findings log).
+ *   SAW  reversal mirror: one parameter w — the wave time-mirrors through a
+ *        window +-w*T centered on the alternate tooth boundary. Fitted on
+ *        the 33-point dense sweep (2026-07-11T07-09): w ~ shape/2 linear
+ *        within +-0.011, saturating at 0.5 by raw ~992; mid-morph waveform
+ *        residuals 17-24% = the rig's edge-smear floor (the chopper's 47-70%
+ *        mid-range gap is gone). w=0 is exactly the plain saw; w=0.5 is the
+ *        measured half-wave-antisymmetric octave-down endpoint.
  */
 const V4: XdCalibProfile = {
   ...V3,
@@ -510,38 +511,45 @@ const V4: XdCalibProfile = {
     ],
   },
   triFoldKnee: 0.3,
-  sawChopDepth: {
-    // depth rises much faster than linear then saturates; 896/1023 pinned to
-    // 1.0 by the structural fact (measured 110 Hz power = exactly zero =
-    // full polarity alternation), not the waveform fit's 0.99 grid point.
-    // Mid-range is the chopper's approximate zone (~40% waveform residual;
-    // the dwell + reversed-slope detail isn't in this model) — flagged in
-    // the findings log as the open D2 item.
+  sawMirrorW: {
+    // dense-sweep fit (33 points; raw 544's capture was weak — re-measure
+    // someday); endpoints pinned by structure: 0 = plain saw, 0.5 = the
+    // measured exact half-wave antisymmetry at SHAPE max
     kind: 'pchip',
     knots: [
       [0, 0],
-      [128, 0.3],
-      [256, 0.55],
-      [384, 0.75],
-      [512, 0.87],
-      [640, 0.95],
-      [768, 0.98],
-      [896, 1.0],
-      [1023, 1.0],
-    ],
-  },
-  sawChopPhase: {
-    kind: 'pchip',
-    knots: [
-      [0, 0.0], // unidentifiable at m = 0; anchored for continuity
-      [128, 0.05],
-      [256, 0.14],
-      [384, 0.2],
-      [512, 0.275],
-      [640, 0.315],
-      [768, 0.38],
-      [896, 0.435],
-      [1023, 0.5], // the mid-ramp crossing (flip transient vanishes)
+      [32, 0.025],
+      [64, 0.0375],
+      [96, 0.055],
+      [128, 0.0675],
+      [160, 0.0875],
+      [192, 0.1025],
+      [224, 0.1125],
+      [256, 0.13],
+      [288, 0.145],
+      [320, 0.16],
+      [352, 0.1725],
+      [384, 0.1875],
+      [416, 0.2075],
+      [448, 0.2225],
+      [480, 0.2375],
+      [512, 0.2525],
+      [544, 0.265],
+      [576, 0.28],
+      [608, 0.295],
+      [640, 0.31],
+      [672, 0.325],
+      [704, 0.3375],
+      [736, 0.3575],
+      [768, 0.3725],
+      [800, 0.385],
+      [832, 0.4],
+      [864, 0.4175],
+      [896, 0.43],
+      [928, 0.445],
+      [960, 0.47],
+      [992, 0.5],
+      [1023, 0.5],
     ],
   },
 }

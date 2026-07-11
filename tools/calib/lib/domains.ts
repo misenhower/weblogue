@@ -16,7 +16,7 @@ import {
   CAPTURE_HPF_FC,
   fitSqrDuty,
   fitTriFold,
-  fitSawChop,
+  fitSawMirror,
   type ShapeFit,
 } from './measure-shape'
 
@@ -306,11 +306,10 @@ function proposeShapeModels(job: CalibJob, swept: AnyResult[], world: 'hw' | 're
       mkProposal('vco.shape TRI — triFoldLevel', 'x', 'profile triFoldLevel table (v4)', fits, (f) => f.level / lv0),
     ]
   }
-  const fits = pts.map((p) => ({ raw: p.raw, fit: fitSawChop(p.f.shapeCycle!, fc) }))
+  const fits = pts.map((p) => ({ raw: p.raw, fit: fitSawMirror(p.f.shapeCycle!, fc) }))
   return [
-    mkProposal('vco.shape SAW — sawChopDepth', 'm', 'profile sawChopDepth table (v4)', fits, (f) => f.param),
-    mkProposal('vco.shape SAW — sawChopPhase', 'phi', 'profile sawChopPhase table (v4)', fits, (f) => f.param2, [
-      'phi is unidentifiable where m ~ 0 (no flip transient) — ignore low-shape rows',
+    mkProposal('vco.shape SAW — sawMirrorW', 'w', 'profile sawMirrorW table (v4)', fits, (f) => f.param, [
+      'reversal-mirror half-width; w ~ shape/2 measured (dense sweep 2026-07-11)',
     ]),
   ]
 }

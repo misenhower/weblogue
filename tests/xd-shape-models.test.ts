@@ -28,8 +28,7 @@ function v4Vco(wave: number, freq: number, shape: number): Vco {
   vco.triDriveFn = (s) => curveAt(V4.triFoldDrive!, s * 1023)
   vco.triLevelFn = (s) => curveAt(V4.triFoldLevel!, s * 1023)
   vco.triKnee = V4.triFoldKnee!
-  vco.sawChopDepthFn = (s) => curveAt(V4.sawChopDepth!, s * 1023)
-  vco.sawChopPhaseFn = (s) => curveAt(V4.sawChopPhase!, s * 1023)
+  vco.sawMirrorWFn = (s) => curveAt(V4.sawMirrorW!, s * 1023)
   vco.pwMin = V4.sqrPwMin
   return vco
 }
@@ -48,11 +47,11 @@ describe('profile schema', () => {
       if (p.id === 'v4') continue
       expect(p.sqrDuty).toBeUndefined()
       expect(p.triFoldDrive).toBeUndefined()
-      expect(p.sawChopDepth).toBeUndefined()
+      expect(p.sawMirrorW).toBeUndefined()
     }
     expect(V4.sqrDuty).toBeDefined()
     expect(V4.triFoldDrive).toBeDefined()
-    expect(V4.sawChopDepth).toBeDefined()
+    expect(V4.sawMirrorW).toBeDefined()
   })
 })
 
@@ -130,7 +129,7 @@ describe('TRI single soft fold (v4)', () => {
   })
 })
 
-describe('SAW half-rate chopper (v4)', () => {
+describe('SAW reversal mirror (v4)', () => {
   it('is exactly the plain saw at SHAPE 0 (m = 0)', () => {
     const a = renderVco(v4Vco(VCO_WAVE.SAW, 110, 0), 0.1)
     const legacy = new Vco(SR)

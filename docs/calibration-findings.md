@@ -229,6 +229,23 @@ to INFERRED-defensive; the D9 behavioral A/B is now the only path to establishin
 hardware's actual coupling. This also closes the last of Matt's "VCO2 looks weird"
 report: every preset was ringing/syncing when it shouldn't.
 
+### 2026-07-11 · SAW morph SOLVED: the reversal-mirror model (1 parameter)
+
+Dense 33-point sweep (2026-07-11T07-09) + model search: the SAW SHAPE morph is a
+TIME-MIRROR — in doubled-period phase the wave is saw(Φ) except saw(2−Φ) inside a window
+±w·T centered on the alternate tooth boundary (the ramp retraces itself through the
+suppressed reset). w(shape) ≈ shape/2, linear within ±0.011, saturating at 0.5 by
+raw ≈ 992. w=0 is exactly the plain saw; w=0.5 is the measured half-wave-antisymmetric
+octave-down endpoint (the earlier chopper's two exact endpoints, now with the middle
+right too). Mid-morph waveform residuals: 17–24% analytic / 16–29% through the engine
+(chopper was 47–70%); the remainder is the rig's edge-smear floor (~8–10%, same as the
+converged SQR fits). Corrections to the earlier decode entry: the window is CENTERED on
+the tooth boundary (not "starting mid-tooth"), and the entry drop + dwell are emergent
+from the mirror, not separate features. v4's sawChopDepth/Phase replaced by the fitted
+33-knot sawMirrorW table; osc.ts sawMirrorSample (wrap + interior edges polyBLEP'd,
+step math taken from the naive form so w→0 degrades exactly into the plain saw);
+raw-544's capture was weak — re-measure that knot someday.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

@@ -203,15 +203,14 @@ export class Vco {
   triLevelFn: ((shape01: number) => number) | null = null
   /** TRI: soft-fold knee radius (0 = hard reflection). */
   triKnee = 0
-  /** SAW: shape -> half-rate chopper depth m (0 = plain saw, 1 = full
-   *  alternate-tooth polarity flip: the measured octave-down morph with
-   *  half-wave antisymmetry at SHAPE max). */
-  sawChopDepthFn: ((shape01: number) => number) | null = null
-  /** SAW: shape -> chopper flip phase in the period (0..~0.5; at 0.5 the
-   *  flip lands on the mid-ramp zero crossing and its transient vanishes). */
-  sawChopPhaseFn: ((shape01: number) => number) | null = null
+  /** SAW: shape -> reversal-mirror half-width w (0 = plain saw; 0.5 = full
+   *  alternate-tooth time-mirror, the measured octave-down morph with exact
+   *  half-wave antisymmetry at SHAPE max). The wave is saw(phi) except
+   *  saw(2-phi) inside a window +-w*T centered on the alternate tooth
+   *  boundary (D2 dense-sweep model, 2026-07-11). */
+  sawMirrorWFn: ((shape01: number) => number) | null = null
 
-  /** Half-rate divider state for the SAW chopper: flips on every wrap. */
+  /** Half-rate divider state for the SAW mirror: flips on every wrap. */
   private chopParity = 1
 
   private phase = 0
@@ -395,18 +394,24 @@ export class Vco {
   }
 
   /**
-   * MEASURED SAW morph (v4+): a half-rate chopper — the saw is multiplied by
-   * (1−m) + m·sq, where sq is a square from the period-parity divider with
-   * its edge at phase `phi` of every period. m = 0 is the plain saw; m = 1
-   * with phi = 0.5 flips alternate teeth entirely (the measured octave-down
-   * morph: exact half-wave antisymmetry, the flip transient vanishing at the
-   * mid-ramp zero crossing). Two BLEP'd edge classes per period: the reset
-   * (step −2·gain, gain continuous across it by construction) and the flip
-   * (step (2·phi−1)·2m·parity). Reverse mode mirrors phase, edge, and
-   * parity; sync uses the naive-step residual like the legacy paths (both
-   * documented approximations on rare paths).
+   * MEASURED SAW morph (v4+): the reversal mirror. In doubled-period phase
+   * PHI in [0,2), the wave is saw(PHI) except saw(2-PHI) inside (1-w, 1+w):
+   * a time-mirror window centered on the alternate tooth boundary — the ramp
+   * literally retraces itself through the suppressed reset. w = 0 is exactly
+   * the plain saw; w = 0.5 is the measured half-wave-antisymmetric
+   * octave-down endpoint. Constant swing, no level compensation. Per-period
+   * naive form with the divider parity p (chopParity, flips per wrap; +1
+   * periods start at the pristine reset, -1 periods at the mirror boundary):
+   *   mirrored(p, t) = p > 0 ? t >= 1-w : t < w
+   *   v(p, t) = mirrored ? 1 - 2t : 2t - 1
+   * BLEP'd edges per period: the wrap (step computed from the naive values,
+   * so the w -> 0 limit degrades smoothly into the plain saw's -2) and the
+   * interior mirror edge (step -2(1-2w) at t = 1-w in +1 periods / t = w in
+   * -1 periods). Slope flips are left un-BLAMP'd (second-order). Reverse
+   * mode mirrors phase and parity; sync uses the naive-step residual — both
+   * documented approximations on rare paths, as in the legacy morphs.
    */
-  private sawChopSample(
+  private sawMirrorSample(
     t: number,
     adt: number,
     shape: number,
@@ -415,53 +420,49 @@ export class Vco {
     syncTau: number,
     pre: number,
   ): number {
-    const mRaw = this.sawChopDepthFn!(shape)
-    const m = mRaw < 0 ? 0 : mRaw > 1 ? 1 : mRaw
-    let phi = this.sawChopPhaseFn ? this.sawChopPhaseFn(shape) : 0.5
-    if (phi < 0) phi = 0
-    else if (phi > 0.75) phi = 0.75
+    const wRaw = this.sawMirrorWFn!(shape)
+    const w = wRaw < 0 ? 0 : wRaw > 0.5 ? 0.5 : wRaw
     let p = this.chopParity
     let u = t
     if (rev && !sync) {
-      // time-mirror: saw(t) = -saw(1-t); the flip edge mirrors too
       u = 1 - t
-      phi = 1 - phi
       p = -p
     }
-    const gPre = 1 - m - m * p // before this period's flip (holds the previous parity)
-    const gPost = 1 - m + m * p
-    let y = (2 * u - 1) * (u < phi ? gPre : gPost)
+    // the window (1-w, 1+w) is EMPTY at w = 0 — the guard keeps the step
+    // evaluation at the exact boundary ph = 1 on the plain-saw side
+    const mirrored = (par: number, ph: number): boolean =>
+      w > EPS_DT && (par > 0 ? ph >= 1 - w : ph < w)
+    const naive = (par: number, ph: number): number => (mirrored(par, ph) ? 1 - 2 * ph : 2 * ph - 1)
+    let y = naive(p, u)
     if (adt > EPS_DT) {
-      // reset edge at phase 0/1 — the surrounding gain is gPre on both sides
-      // (sync replaces the phase-0 correction with the naive-step residual)
+      // wrap edge at phase 0/1 — step from the naive values on each side
       if (u < adt) {
-        if (!sync) y += -2 * gPre * blepAfter(u / adt)
+        if (!sync) y += (naive(p, 0) - naive(-p, 1)) * blepAfter(u / adt)
       } else if (u > 1 - adt) {
-        // the NEXT period's pre-flip gain equals this period's post-flip gain
-        y += -2 * gPost * blepBefore((u - 1) / adt)
+        y += (naive(-p, 0) - naive(p, 1)) * blepBefore((u - 1) / adt)
       }
-      // flip edge at phi: step (2*phi-1)*(gPost-gPre) = (2*phi-1)*2*m*p
-      if (m > EPS_DT) {
-        const step = (2 * phi - 1) * (gPost - gPre)
-        const s = u - phi
-        if (s >= 0) {
-          if (s < adt) y += step * blepAfter(s / adt)
-        } else if (s > -adt) {
-          y += step * blepBefore(s / adt)
+      // interior mirror edge: t = 1-w in +1 periods, t = w in -1 periods
+      if (w > EPS_DT && w < 0.5 - EPS_DT) {
+        const step = -2 * (1 - 2 * w)
+        const eOwn = p > 0 ? 1 - w : w
+        const sOwn = u - eOwn
+        if (sOwn >= 0) {
+          if (sOwn < adt) y += step * blepAfter(sOwn / adt)
+        } else if (sOwn > -adt) {
+          y += step * blepBefore(sOwn / adt)
         }
-        // the next period's flip (opposite parity) can reach back across the
-        // wrap when phi is small
-        const s2 = u - 1 - phi
-        if (s2 > -adt) y += -step * blepBefore(s2 / adt)
+        // the NEXT period's edge can reach back across the wrap when it sits
+        // near the period start (the -1 period's edge at w < adt)
+        if (p > 0 && w < adt) {
+          const s2 = u - (1 + w)
+          if (s2 > -adt) y += step * blepBefore(s2 / adt)
+        }
       }
     }
     if (sync) {
-      // naive step across the sync reset; the OLD period's parity is -p, so
-      // its segment gains are swapped (approximation: the old flip phase is
-      // taken at the current shape)
-      const naive0 = -1 * gPre
-      const naivePre = (2 * pre - 1) * (pre < phi ? gPost : gPre)
-      y += (naive0 - naivePre) * blepAfter(syncTau)
+      // parity already flipped for this period; the pre-reset sample sat in
+      // the OLD period (parity -p) at phase pre (approximation: current w)
+      y += (naive(p, 0) - naive(-p, pre)) * blepAfter(syncTau)
     }
     return y
   }
@@ -486,7 +487,7 @@ export class Vco {
     if (sync) rev = false // sync ticks use forward placement (documented approximation)
 
     if (w === VCO_WAVE.SAW) {
-      if (this.sawChopDepthFn) return this.sawChopSample(t, adt, shape, rev, sync, syncTau, pre)
+      if (this.sawMirrorWFn) return this.sawMirrorSample(t, adt, shape, rev, sync, syncTau, pre)
       // LEGACY morph (v0-v3 + the other synths): SHAPE subtracts a second
       // BLEP'd saw (spec §4: morph toward a square-ish blend, attenuating
       // EVEN harmonics). The edge offset narrows toward half a period as

@@ -429,8 +429,7 @@ export class Voice {
       v.triDriveFn = mk(prof.triFoldDrive)
       v.triLevelFn = mk(prof.triFoldLevel)
       v.triKnee = prof.triFoldKnee ?? 0
-      v.sawChopDepthFn = mk(prof.sawChopDepth)
-      v.sawChopPhaseFn = mk(prof.sawChopPhase)
+      v.sawMirrorWFn = mk(prof.sawMirrorW)
     }
   }
 

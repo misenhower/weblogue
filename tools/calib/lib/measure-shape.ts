@@ -5,7 +5,7 @@
  *
  *   SQR  constant-swing pulse       -> duty d
  *   TRI  single soft fold           -> drive g' (+ global knee radius)
- *   SAW  half-rate chopper          -> depth m, flip phase phi
+ *   SAW  reversal mirror            -> window half-width w
  *
  * Fits run the model through the measurement chain's AC-coupling (a 1-pole
  * HPF at CAPTURE_HPF_FC for hardware captures — fitted from the known
@@ -175,15 +175,14 @@ export function triFoldCycle(drive: number, knee: number): number[] {
   return out
 }
 
-/** Half-rate chopped saw over 2 periods (osc.ts sawChopSample math, naive). */
-export function sawChopCycle(m: number, phi: number): number[] {
+/** Reversal-mirror saw over 2 periods (osc.ts sawMirrorSample math, naive):
+ *  saw(PHI) except saw(2-PHI) inside the (1-w, 1+w) window. */
+export function sawMirrorCycle(w: number): number[] {
   const out = new Array<number>(CYCLE_GRID)
   for (let i = 0; i < CYCLE_GRID; i++) {
     const ph = (2 * i) / CYCLE_GRID // 0..2 periods
-    const saw = 2 * frac(ph) - 1
-    const par = ph < 1 ? 1 : -1
-    const g = frac(ph) < phi ? 1 - m - m * par : 1 - m + m * par
-    out[i] = saw * g
+    const inWin = w > 1e-9 && ph > 1 - w && ph < 1 + w
+    out[i] = inWin ? 2 * frac(2 - ph) - 1 : 2 * frac(ph) - 1
   }
   return out
 }
@@ -225,20 +224,15 @@ export function fitTriFold(cy: ShapeCycle, fcHz: number, knee: number): ShapeFit
   return best
 }
 
-export function fitSawChop(cy: ShapeCycle, fcHz: number): ShapeFit {
-  let best: ShapeFit = { param: 0, param2: 0.5, res: Infinity, level: 0 }
-  for (let m = 0; m <= 1.001; m += 0.05) {
-    for (let phi = 0; phi <= 0.51; phi += 0.025) {
-      const f = fitShifted(cy.cycle, hpfPeriodic(sawChopCycle(m, phi), fcHz, cy.f0), 6)
-      if (f.res < best.res) best = { param: m, param2: phi, res: f.res, level: Math.abs(f.a) }
-      if (m === 0) break // phi meaningless at m = 0
+export function fitSawMirror(cy: ShapeCycle, fcHz: number): ShapeFit {
+  let best: ShapeFit = { param: 0, param2: 0, res: Infinity, level: 0 }
+  const scan = (lo: number, hi: number, step: number, shift: number): void => {
+    for (let w = lo; w <= hi; w += step) {
+      const f = fitShifted(cy.cycle, hpfPeriodic(sawMirrorCycle(w), fcHz, cy.f0), shift)
+      if (f.res < best.res) best = { param: w, param2: 0, res: f.res, level: Math.abs(f.a) }
     }
   }
-  for (let m = Math.max(0, best.param - 0.06); m <= Math.min(1, best.param + 0.06); m += 0.01) {
-    for (let phi = Math.max(0, best.param2 - 0.03); phi <= Math.min(0.55, best.param2 + 0.03); phi += 0.005) {
-      const f = fitShifted(cy.cycle, hpfPeriodic(sawChopCycle(m, phi), fcHz, cy.f0))
-      if (f.res < best.res) best = { param: m, param2: phi, res: f.res, level: Math.abs(f.a) }
-    }
-  }
+  scan(0, 0.5001, 0.02, 6)
+  scan(Math.max(0, best.param - 0.025), Math.min(0.5, best.param + 0.025), 0.0025, 3)
   return best
 }

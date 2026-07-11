@@ -206,10 +206,11 @@ Long unattended runs must never end in silently unusable data:
 - **M4 — Core voice domains**: VCO pitch/portamento, SHAPE, remaining filter, EGs, mod depths + LFO.
   *In progress 2026-07-10: pitch knob (4-voice medians), amp-EG A/D/R tables, and cutoff
   are measured across two independent rounds and shipped as profiles v1/v2/v3 (v3 — the
-  bias-corrected cutoff TABLE — is the app default). Still open in M4: SHAPE (SAW parked on
-  the tier-3 period-doubling remodel; SQR PW law is fittable once the 50%-duty detector gap
-  is closed), portamento, filter drive/keytrack/resonance taper, mod depths + LFO rate,
-  mod-EG.*
+  bias-corrected cutoff TABLE — is the app default). SHAPE is fully characterized
+  2026-07-11 (SAW = alternate-tooth phase reversal; TRI = single soft fold ending at ×3;
+  SQR = constant-swing PWM, duty ≈ linear) — model decisions await review in the findings
+  log before the tier-3 osc.ts work. Still open in M4: portamento, filter
+  drive/keytrack/resonance taper, mod depths + LFO rate, mod-EG.*
 - **M5 — Breadth**: MULTI voicings, LFO-sync semantics, drift (+ the planned realism modes),
   FX (incl. the FX-bus coupling A/B), arp variants; checklist sweep; propagation notes for the
   other synth modes.

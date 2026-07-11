@@ -24,6 +24,64 @@ sub-octave fundamental (f0/2) under the note. The replica's morph (subtract a ha
 shifted second saw) keeps a single period — structurally different. Requires an xd-spec.md
 model decision, then an osc.ts redesign; SHAPE fits are parked until then. Mid-morph points
 also confuse harmonic-tracking measurement (expected until remodeled).
+**Superseded 2026-07-11 by the full decode below.**
+
+### 2026-07-11 · SAW SHAPE decoded: alternate teeth progressively run BACKWARD
+
+Mean-cycle analysis at the true doubled period (40-cycle coherent averages, capture
+AC-coupling inverted per harmonic; session 2026-07-10T08-03) shows the whole morph:
+**every other tooth stays a pristine saw at every SHAPE value**; in the alternate tooth a
+growing time-slice reverses direction — the ramp runs DOWNWARD at the same rate (with a
+brief dwell at the entry), starting mid-tooth and expanding with SHAPE until the entire
+alternate tooth is a falling saw. At SHAPE max the wave is exactly up-tooth/down-tooth:
+measured half-wave antisymmetry — the 110/220 Hz lines vanish to literal zero while the
+55 Hz odd series (55/165/275) carries everything, 165 Hz strongest. This is why pitch
+reads an octave down at high SHAPE, and why NO same-period two-saw model (including the
+replica's `saw(t) − g·saw(t+off)`) can reproduce it: mid-morph the wave simultaneously
+shows fold-surviving double resets AND growing half-wave-antisymmetric content — only the
+reversal explains both. Physical story: alternate-period current-steering into the ramp
+integrator (the divider flips the charge direction over a SHAPE-set window). Proposed
+replica model (tier-3, awaiting review): one saw core; on alternate periods reverse the
+phase direction over a SHAPE-controlled window — osc.ts already has band-limited
+backward-phase machinery from FM. Evidence page: the 2026-07-11 SHAPE artifact (all three
+waves, gallery + fits).
+
+### 2026-07-11 · TRI SHAPE is a SINGLE fold ending at an exact ×3 (tier-3)
+
+New 17-point shape-tri session (2026-07-11T05-35). The triangle folds ONCE at each peak
+(Matt's observation, confirmed): one shape parameter explains the sweep — fold drive g′
+rises smoothly 1.0 → 3.0, the folded tip descends as tip = 2 − g′, crosses zero near
+SHAPE 768, and at max touches the opposite fold level, where the waveform becomes a
+perfect TRIPLE-frequency triangle: the SHAPE-1023 hardware capture is a pure 330 Hz tone
+(note × 3; the harness's 29¢-spread point failure there was the tracker fighting nominal
+110 — model-informed, not rig failure). Hard-reflection fits: 3–4% residual below
+SHAPE 600, drifting to ~22% at high drive — the analog fold knee is SOFT; remodel as a
+single fold with rounded knee. Output level at the fold ceiling tapers ~45% across the
+sweep (part of the model — no loudness compensation in hardware). The replica's sine
+folder (gain 1..8, multiple wraps) is structurally wrong.
+
+### 2026-07-11 · SQR SHAPE: plain PWM at CONSTANT swing — no normalization, real DC
+
+Duty measured by fitting constant-swing pulses (capture HPF in the loop) on the 08-06
+session: 50.8/44.5/38.5/32.3/26.3/20.3/14.0/8.0% at the 9 sweep points — nearly the
+replica's linear 0.5→0 guess, a couple of points wide mid-sweep (fit as a tier-2 table).
+The structural finding is amplitude: the hardware pulse keeps a constant ±swing all the
+way down (measured level ratio 1.00→0.91 across the sweep) where the replica
+peak-normalizes (predicts 0.54 by SHAPE 896) AND subtracts the pulse DC analytically.
+The real signal carries its DC (mean = (2d−1)·swing) through the VCF — biasing the
+filter drive nonlinearity — and only loses it at the AC-coupled FX/output boundary that
+dcblock.ts now models. Proposed change (tier-2, profile-gated so v0–v3 stay
+bit-identical): drop peak normalization and analytic DC removal; land the measured duty
+table.
+
+### 2026-07-11 · Rig note: the capture chain's LF corner fits at ~40 Hz (1-pole equivalent)
+
+Fitting the known plain-triangle bow gives a ~40 Hz single-pole equivalent for the
+xd-output + ProFX coupling chain — higher than expected, likely two-plus real poles at
+lower corners masquerading as one. It only matters when interpreting slow intra-cycle
+slopes (mean-cycle "bowing"); steps, duty ratios, fold drives, and reset positions are
+robust to it. All SHAPE model fits above ran with this HPF inside the loop, and displayed
+traces invert it per harmonic (exact for periodic means).
 
 ### 2026-07-08 · VCO PITCH knob: Korg's documented table is not the analog response
 

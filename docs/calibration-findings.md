@@ -174,6 +174,32 @@ that boundary, so each fix is faithful, not defensive:
   limiter's linear region), as it rides the hardware's analog bus to the output jack.
   Audit pinned by tests/mono-dcblock.test.ts.
 
+### 2026-07-11 · v4: the SHAPE models implemented, fitted, and verified
+
+The three approved models landed in osc.ts behind profile v4 (legacy paths proven
+byte-identical vs HEAD for og/mono/prologue and xd v0–v3, including sync/reset/reverse-FM).
+The D2 pipeline (tools/calib/lib/measure-shape.ts) extracts 2-period mean cycles as
+features for `vco.shape` jobs and fits model parameters with the capture coupling in the
+loop; proposals emit the parameter tables directly. Fitted v4 tables from the existing
+sessions; verification (replica-v4 vs hardware mean cycles, per point):
+
+- **Round-trip**: replica-v4 renders re-measured by the pipeline recover the v4 tables
+  essentially exactly (duty ±0.005, g′ ±0.01, m/phi ±0.01) — implementation ≡ measurement.
+- **SQR**: hw-vs-replica waveform residual 10–13% across the sweep (v3 legacy: 13–38%);
+  that floor is grid + edge-slew, i.e. converged.
+- **TRI**: 6–21% (v3: up to 100%). Knee fitted at r = 0.30 but weakly identified
+  (flat basin 0.3–0.4); the residual growth toward high drive (~20%) is fold fine
+  structure the single-soft-fold doesn't carry — second-order, open.
+- **SAW**: 18–25% at high shape and exact structural endpoints (v3: 90–100%, i.e.
+  uncorrelated); mid-morph 50–70% — the chopper reproduces the period-doubling and
+  polarity structure but not the entry dwell / reversed-slope detail. THE open D2 item;
+  candidates: a denser shape-saw sweep + a reversal-window generator variant.
+
+Jobs: shape-saw re-enabled (the reference model finally matches reality), and shape jobs
+gained `features.nominalRatios` — the pitch gate accepts the morphs' legitimate
+fundamental moves (SAW ×½, TRI ×3), so the old "mid-morph false failures" class is gone.
+v4 is NOT the default pending Matt's listening A/B.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

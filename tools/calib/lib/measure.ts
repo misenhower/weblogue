@@ -8,6 +8,7 @@ import type { CalibJob } from './job'
 import { expandNotes } from './job'
 import { fftPeakHz, phasePitchTrack, harmonicLadder, goertzelC } from './features'
 import { peakDbfs } from './onset'
+import { extractMeanCycle, type ShapeCycle } from './measure-shape'
 
 export interface StrikeFeatures {
   f0Hz: number
@@ -31,6 +32,12 @@ export interface PointFeatures {
    * normalized, 200 points — the dashboard's per-point mini-scope.
    */
   waveSnap: number[]
+  /**
+   * vco.shape jobs only: the mean cycle over ~2 nominal periods (coherent
+   * 30-cycle average, canonical trigger) — the D2 model fits' input, stored
+   * so proposals can be rebuilt from features.json alone.
+   */
+  shapeCycle?: ShapeCycle
 }
 
 /**
@@ -103,7 +110,11 @@ function measureStrike(
   // trust the coarse FFT unless it's wildly off the nominal (harmonic grab).
   // ±1300¢ accepts the full ±1200¢ PITCH-knob sweep range while still
   // rejecting a 3rd-harmonic grab (+1902¢); H2 can't dominate on saw/tri/sqr.
-  const nominal = Math.abs(1200 * Math.log2(coarse / seed)) < 1300 ? coarse : seed
+  // nominalRatios widens the gate for model-informed sweeps whose true
+  // fundamental legitimately moves (SAW doubles down, TRI ends at x3).
+  const ratios = job.features.nominalRatios ?? [1]
+  const accepted = ratios.some((r) => Math.abs(1200 * Math.log2(coarse / (seed * r))) < 1300)
+  const nominal = accepted ? coarse : seed
   const track = phasePitchTrack(x, sr, nominal, { from, to })
   const f0 = median(Array.from(track.v))
   const ladder = harmonicLadder(x, sr, from, f0, job.features.harmonics ?? 8)
@@ -176,11 +187,18 @@ export function measurePoint(
   const kMax = Math.min(...ladders.map((l) => l.length))
   const harmonicsDb = Array.from({ length: kMax }, (_, k) => median(ladders.map((l) => l[k])))
   const snapFrom = Math.min(x.length - 1, onsetSample + Math.round(0.15 * sr))
+  const f0Med = median(strikes.map((s) => s.f0Hz))
   const waveSnap = waveSnapshot(x, sr, snapFrom, strikes[0]?.f0Hz ?? nominal ?? 100)
+  let shapeCycle: ShapeCycle | undefined
+  if (job.domain === 'vco.shape' && nominal && f0Med > 0) {
+    const cyTo = Math.min(x.length, onsetSample + Math.round((noteDur - 0.1) * sr))
+    shapeCycle = extractMeanCycle(x, sr, snapFrom, cyTo, f0Med, nominal) ?? undefined
+  }
   return {
     waveSnap,
+    shapeCycle,
     peakDbfs: peak,
-    f0Hz: median(strikes.map((s) => s.f0Hz)),
+    f0Hz: f0Med,
     cents: median(centsAll),
     centsSpread: strikes.length > 1 ? Math.max(...centsAll) - Math.min(...centsAll) : 0,
     strikes,

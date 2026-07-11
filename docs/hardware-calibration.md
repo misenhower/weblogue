@@ -204,13 +204,13 @@ Long unattended runs must never end in silently unusable data:
   self-calibration tests: the render→measure→fit loop recovers the replica's own curves.
   *DONE 2026-07-10 on hardware (capture generation 2).*
 - **M4 — Core voice domains**: VCO pitch/portamento, SHAPE, remaining filter, EGs, mod depths + LFO.
-  *In progress 2026-07-10: pitch knob (4-voice medians), amp-EG A/D/R tables, and cutoff
-  are measured across two independent rounds and shipped as profiles v1/v2/v3 (v3 — the
-  bias-corrected cutoff TABLE — is the app default). SHAPE is fully characterized
-  2026-07-11 (SAW = alternate-tooth phase reversal; TRI = single soft fold ending at ×3;
-  SQR = constant-swing PWM, duty ≈ linear) — model decisions await review in the findings
-  log before the tier-3 osc.ts work. Still open in M4: portamento, filter
-  drive/keytrack/resonance taper, mod depths + LFO rate, mod-EG.*
+  *In progress 2026-07-11: pitch knob (4-voice medians), amp-EG A/D/R tables, and cutoff
+  are measured and shipped as profiles v1/v2/v3 (v3 — the bias-corrected cutoff TABLE —
+  is the app default). SHAPE is characterized, modeled, FITTED and verified as profile v4
+  (SAW half-rate chopper, TRI single soft fold ending at ×3, SQR constant-swing duty
+  table; v4 non-default pending Matt's A/B; SAW mid-morph fine structure is the open D2
+  item). Still open in M4: portamento, filter drive/keytrack/resonance taper, mod depths
+  + LFO rate, mod-EG.*
 - **M5 — Breadth**: MULTI voicings, LFO-sync semantics, drift (+ the planned realism modes),
   FX (incl. the FX-bus coupling A/B), arp variants; checklist sweep; propagation notes for the
   other synth modes.

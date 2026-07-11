@@ -12,6 +12,13 @@ import { measureEnvPoint, type EnvPointFeatures, type EnvSegment } from './measu
 import { proposeCurve, verifyPitchTable, type Proposal, type SweepPoint } from './proposal'
 import { median } from './fit'
 import { attackToSec, decayToSec, releaseToSec, cutoffToHz } from '../../../src/synths/xd/curves'
+import {
+  CAPTURE_HPF_FC,
+  fitSqrDuty,
+  fitTriFold,
+  fitSawChop,
+  type ShapeFit,
+} from './measure-shape'
 
 export type JobKind = 'tonal' | 'noise' | 'envelope'
 export type AnyFeatures = PointFeatures | NoisePointFeatures | EnvPointFeatures
@@ -209,10 +216,110 @@ function biasCorrectCorners(
   return out
 }
 
+/**
+ * D2 SHAPE-morph proposals: per-point model-parameter fits from the stored
+ * mean cycles (measure-shape.ts), one table per model parameter. The fit
+ * chain matches the world: hardware cycles carry the capture coupling
+ * (CAPTURE_HPF_FC in the loop), replica renders don't. Residuals are
+ * waveform-relative — the tier-3 morph structure was reviewed separately;
+ * these tables are its parameters.
+ */
+function proposeShapeModels(job: CalibJob, swept: AnyResult[], world: 'hw' | 'rep'): Proposal[] {
+  const wave = Number(job.overrides?.['vco1Wave'] ?? 2)
+  const fc = world === 'hw' ? CAPTURE_HPF_FC : 0
+  const pts: { raw: number; f: PointFeatures }[] = []
+  for (const r of swept) {
+    const f = (world === 'hw' ? r.hw : r.rep) as PointFeatures
+    if (f.shapeCycle) pts.push({ raw: r.point!, f })
+  }
+  if (pts.length < 4) return []
+
+  const mkProposal = (
+    domain: string,
+    unit: string,
+    current: string,
+    fits: { raw: number; fit: ShapeFit }[],
+    value: (f: ShapeFit) => number,
+    extraNotes: string[] = [],
+  ): Proposal => {
+    const resMean = fits.reduce((a, p) => a + p.fit.res, 0) / fits.length
+    const resMax = fits.reduce((a, p) => Math.max(a, p.fit.res), 0)
+    return {
+      domain,
+      unit,
+      current,
+      proposed: `monotone-ish table (${fits.length} pts, waveform fit)`,
+      fitResidualPct: resMean * 100,
+      heldOutResidualPct: NaN,
+      table: fits.map((p) => [p.raw, Number(value(p.fit).toPrecision(4))]),
+      notes: [
+        `per-point waveform residual: mean ${(resMean * 100).toFixed(1)}%, worst ${(resMax * 100).toFixed(1)}%`,
+        `fit chain: ${fc > 0 ? `capture coupling ${fc} Hz in the loop` : 'replica (no coupling)'}`,
+        ...extraNotes,
+      ],
+    }
+  }
+
+  if (wave === 0) {
+    // SHAPE-max is measured SILENCE (duty 0) — fitting a pulse to the noise
+    // floor there poisons the table and the swing check
+    const silent = pts.filter((p) => p.f.peakDbfs < -50)
+    const live = pts.filter((p) => p.f.peakDbfs >= -50)
+    const fits = live.map((p) => ({ raw: p.raw, fit: fitSqrDuty(p.f.shapeCycle!, fc) }))
+    const lv = fits.map((p) => p.fit.level).filter((l) => l > 0)
+    const swing = lv.length > 1 ? Math.min(...lv) / Math.max(...lv) : 1
+    const prop = mkProposal(
+      'vco.shape SQR — sqrDuty',
+      'duty',
+      'profile sqrDuty table (v4) / legacy 0.5-0.5*shape',
+      fits,
+      (f) => f.param,
+      [
+        `constant-swing check: min/max fitted level = ${swing.toFixed(2)} (hardware measured ~0.9)`,
+        ...(silent.length
+          ? [`silent point(s) at ${silent.map((p) => p.raw).join(', ')} — recorded as duty 0, excluded from the fit stats`]
+          : []),
+      ],
+    )
+    for (const p of silent) prop.table!.push([p.raw, 0])
+    prop.table!.sort((a, b) => a[0] - b[0])
+    return [prop]
+  }
+  if (wave === 1) {
+    // global knee first (drive refits per candidate), then per-point tables
+    let bestKnee = 0
+    let bestRes = Infinity
+    for (let knee = 0; knee <= 0.31; knee += 0.03) {
+      let acc = 0
+      for (const p of pts) acc += fitTriFold(p.f.shapeCycle!, fc, knee).res
+      if (acc < bestRes) {
+        bestRes = acc
+        bestKnee = knee
+      }
+    }
+    const fits = pts.map((p) => ({ raw: p.raw, fit: fitTriFold(p.f.shapeCycle!, fc, bestKnee) }))
+    const lv0 = fits[0].fit.level || 1
+    return [
+      mkProposal('vco.shape TRI — triFoldDrive', "g'", 'profile triFoldDrive table (v4)', fits, (f) => f.param, [
+        `soft-fold knee fit: r = ${bestKnee.toFixed(2)} (triFoldKnee)`,
+      ]),
+      mkProposal('vco.shape TRI — triFoldLevel', 'x', 'profile triFoldLevel table (v4)', fits, (f) => f.level / lv0),
+    ]
+  }
+  const fits = pts.map((p) => ({ raw: p.raw, fit: fitSawChop(p.f.shapeCycle!, fc) }))
+  return [
+    mkProposal('vco.shape SAW — sawChopDepth', 'm', 'profile sawChopDepth table (v4)', fits, (f) => f.param),
+    mkProposal('vco.shape SAW — sawChopPhase', 'phi', 'profile sawChopPhase table (v4)', fits, (f) => f.param2, [
+      'phi is unidentifiable where m ~ 0 (no flip transient) — ignore low-shape rows',
+    ]),
+  ]
+}
+
 /** Domain-aware Proposal builders — the fits behind the report's review gate. */
 export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' | 'rep' = 'hw'): Proposal[] {
   const swept = results.filter((r) => r.point !== null)
   if (swept.length < 4) return []
+  if (job.domain === 'vco.shape') return proposeShapeModels(job, swept, world)
   const { values } = sweepValues(job, swept, world)
   const pts: SweepPoint[] = []
   for (let i = 0; i < swept.length; i++) {

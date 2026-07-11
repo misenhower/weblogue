@@ -43,6 +43,13 @@ export interface CalibJob {
     kind?: 'tonal' | 'noise' | 'envelope'
     /** which EG segment an envelope job measures */
     env?: 'attack' | 'decay' | 'release' | 'sustain'
+    /**
+     * Fundamental ratios (vs nominalHz) the pitch seed also accepts — for
+     * model-informed sweeps whose true fundamental legitimately moves: the
+     * SAW morph period-doubles (0.5) and the TRI fold ends at an exact
+     * triple (3). Absent = [1].
+     */
+    nominalRatios?: number[]
   }
 }
 

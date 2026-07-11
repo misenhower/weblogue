@@ -1,7 +1,7 @@
 {
   "id": "shape-tri",
   "domain": "vco.shape",
-  "description": "D2: TRI SHAPE fold at A2 — hardware folds exactly once at the waveform peaks (Matt, 2026-07-10); cycle-aligned waveforms feed the single-fold model fit (replica's sine folder wraps more and must be remodeled)",
+  "description": "D2: TRI SHAPE fold at A2 \u2014 mean cycles feed the single-soft-fold fits (drive, level, knee); at SHAPE max the wave is an exact x3 triple, accepted via nominalRatios",
   "overrides": {
     "vco1Wave": 1,
     "vco1Level": 1023,
@@ -20,11 +20,43 @@
   },
   "sweep": {
     "param": "vco1Shape",
-    "points": [0, 64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1023]
+    "points": [
+      0,
+      64,
+      128,
+      192,
+      256,
+      320,
+      384,
+      448,
+      512,
+      576,
+      640,
+      704,
+      768,
+      832,
+      896,
+      960,
+      1023
+    ]
   },
-  "notes": [{ "midi": 45, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
+  "notes": [
+    {
+      "midi": 45,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
   "repeat": 2,
   "repeatEverySec": 1.7,
   "captureSec": 3.6,
-  "features": { "nominalHz": 110, "harmonics": 16 }
+  "features": {
+    "nominalHz": 110,
+    "harmonics": 16,
+    "nominalRatios": [
+      1,
+      3
+    ]
+  }
 }

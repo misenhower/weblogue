@@ -427,16 +427,16 @@ const V3: XdCalibProfile = {
  *   SQR  constant-swing PWM: measured duty table (~linear 50.8% -> 0), real
  *        DC carried to the VCF, no peak normalization (hardware keeps a
  *        constant +-swing; the level ratio measured 1.00 -> 0.91).
- *   TRI  single soft fold: drive g' table (hard-reflection fits; 1023 = 3.0
- *        exactly — the capture there is a pure 330 Hz triple), output-level
- *        table (the fold ceiling tapers ~2x across the sweep). Knee radius
- *        INFERRED pending the D2 knee fit (high-drive residuals say soft).
+ *   TRI  single soft fold: drive g' + output-level tables fitted jointly
+ *        with the knee (r = 0.30; flat basin 0.3-0.4 — weakly identified,
+ *        picked with its coherent drive table). SHAPE max renders the
+ *        measured pure x3 triple; the fold ceiling tapers ~2x.
  *   SAW  half-rate chopper: exact at both endpoints (m=0 plain saw; m=1,
  *        phi=0.5 = the measured up/down alternate teeth with half-wave
- *        antisymmetry). phi follows the measured flip-transient positions
- *        (~shape*T, saturating at the mid-ramp crossing); DEPTH MID-RANGE IS
- *        INFERRED (seeded linear) until the D2 chopper fits land — the
- *        mid-morph transition is the flagged open item.
+ *        antisymmetry). Depth/phase tables from the D2 waveform fits;
+ *        mid-range is the chopper's approximate zone (~40% waveform
+ *        residual — the dwell + reversed-slope fine structure isn't in this
+ *        model; open item in the findings log).
  */
 const V4: XdCalibProfile = {
   ...V3,
@@ -447,75 +447,85 @@ const V4: XdCalibProfile = {
     'v3 plus the measured VCO SHAPE models: SAW half-rate chopper (octave-down morph), ' +
     'TRI single soft fold ending at an exact x3, SQR constant-swing PWM with the measured ' +
     'duty table and real DC. Legacy morphs remain in v0-v3.',
+  // All SHAPE tables below: D2 pipeline fits (measure-shape.ts) over the
+  // sessions named in the header, 2026-07-11.
   sqrDuty: {
     kind: 'pchip',
     knots: [
-      [0, 0.508],
-      [128, 0.445],
-      [256, 0.385],
-      [384, 0.323],
-      [512, 0.263],
-      [640, 0.203],
+      [0, 0.5075],
+      [128, 0.44],
+      [256, 0.38],
+      [384, 0.3225],
+      [512, 0.2625],
+      [640, 0.2025],
       [768, 0.14],
       [896, 0.08],
-      [1023, 0],
+      [1023, 0], // measured silence
     ],
   },
   triFoldDrive: {
+    // coherent with triFoldKnee = 0.30 (drive and knee trade off; the knee
+    // basin is flat 0.3-0.4, so the pair was fitted together)
     kind: 'pchip',
     knots: [
-      [0, 1.06],
-      [64, 1.09],
-      [128, 1.13],
-      [192, 1.17],
-      [256, 1.22],
-      [320, 1.27],
-      [384, 1.34],
-      [448, 1.41],
-      [512, 1.52],
-      [576, 1.62],
-      [640, 1.74],
-      [704, 1.88],
-      [768, 2.04],
-      [832, 2.22],
-      [896, 2.44],
-      [960, 2.68],
-      [1023, 3.0],
+      [0, 1.03],
+      [64, 1.04],
+      [128, 1.07],
+      [192, 1.11],
+      [256, 1.17],
+      [320, 1.25],
+      [384, 1.33],
+      [448, 1.42],
+      [512, 1.55],
+      [576, 1.66],
+      [640, 1.79],
+      [704, 1.93],
+      [768, 2.09],
+      [832, 2.27],
+      [896, 2.47],
+      [960, 2.69],
+      [1023, 2.94], // the fitted exact-x3 endpoint under the soft knee
     ],
   },
   triFoldLevel: {
     kind: 'pchip',
     knots: [
       [0, 1.0],
-      [64, 0.976],
-      [128, 0.948],
-      [192, 0.92],
-      [256, 0.888],
-      [320, 0.854],
-      [384, 0.818],
-      [448, 0.782],
-      [512, 0.747],
-      [576, 0.711],
-      [640, 0.675],
-      [704, 0.641],
-      [768, 0.611],
-      [832, 0.583],
-      [896, 0.561],
-      [960, 0.537],
-      [1023, 0.507],
+      [64, 0.9887],
+      [128, 0.9625],
+      [192, 0.9277],
+      [256, 0.8844],
+      [320, 0.8379],
+      [384, 0.7968],
+      [448, 0.7585],
+      [512, 0.7251],
+      [576, 0.6927],
+      [640, 0.6615],
+      [704, 0.632],
+      [768, 0.6054],
+      [832, 0.5813],
+      [896, 0.5596],
+      [960, 0.5378],
+      [1023, 0.5125],
     ],
   },
-  triFoldKnee: 0.15, // INFERRED (soft analog knee; D2 fit pending)
+  triFoldKnee: 0.3,
   sawChopDepth: {
+    // depth rises much faster than linear then saturates; 896/1023 pinned to
+    // 1.0 by the structural fact (measured 110 Hz power = exactly zero =
+    // full polarity alternation), not the waveform fit's 0.99 grid point.
+    // Mid-range is the chopper's approximate zone (~40% waveform residual;
+    // the dwell + reversed-slope detail isn't in this model) — flagged in
+    // the findings log as the open D2 item.
     kind: 'pchip',
     knots: [
       [0, 0],
-      [128, 0.125], // mid-range INFERRED (seeded ~linear; D2 fits pending)
-      [256, 0.25],
-      [384, 0.375],
-      [512, 0.55],
-      [640, 0.72],
-      [768, 0.88],
+      [128, 0.3],
+      [256, 0.55],
+      [384, 0.75],
+      [512, 0.87],
+      [640, 0.95],
+      [768, 0.98],
       [896, 1.0],
       [1023, 1.0],
     ],
@@ -523,12 +533,15 @@ const V4: XdCalibProfile = {
   sawChopPhase: {
     kind: 'pchip',
     knots: [
-      [0, 0.0],
-      [128, 0.13],
-      [256, 0.245],
-      [384, 0.365],
-      [512, 0.5],
-      [1023, 0.5],
+      [0, 0.0], // unidentifiable at m = 0; anchored for continuity
+      [128, 0.05],
+      [256, 0.14],
+      [384, 0.2],
+      [512, 0.275],
+      [640, 0.315],
+      [768, 0.38],
+      [896, 0.435],
+      [1023, 0.5], // the mid-ramp crossing (flip transient vanishes)
     ],
   },
 }

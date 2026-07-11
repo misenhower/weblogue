@@ -1,8 +1,7 @@
 {
   "id": "shape-saw",
   "domain": "vco.shape",
-  "description": "D2: SAW SHAPE morph at A2 — harmonic ladder per step feeds the (g, off) analysis-by-synthesis fit; thumbnails show the morph directly",
-  "disabled": "hardware SAW morph period-doubles (tier-3, findings log 2026-07-08): the replica model must be redesigned before any comparison is meaningful — mid-morph points also false-trigger the phase-jump gate and the zero-cross-centered thumbnails render misleadingly. Re-enable with the D2 remodel.",
+  "description": "D2: SAW SHAPE morph at A2 \u2014 mean cycles feed the half-rate chopper fits (m, phi); the morph period-doubles (55 Hz fundamental at high SHAPE), which the measurement accepts via nominalRatios",
   "overrides": {
     "vco1Wave": 2,
     "vco1Level": 1023,
@@ -21,11 +20,35 @@
   },
   "sweep": {
     "param": "vco1Shape",
-    "points": [0, 128, 256, 384, 512, 640, 768, 896, 1023]
+    "points": [
+      0,
+      128,
+      256,
+      384,
+      512,
+      640,
+      768,
+      896,
+      1023
+    ]
   },
-  "notes": [{ "midi": 45, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
+  "notes": [
+    {
+      "midi": 45,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
   "repeat": 2,
   "repeatEverySec": 1.7,
   "captureSec": 3.6,
-  "features": { "nominalHz": 110, "harmonics": 16 }
+  "features": {
+    "nominalHz": 110,
+    "harmonics": 16,
+    "nominalRatios": [
+      0.5,
+      1
+    ]
+  }
 }

@@ -130,10 +130,12 @@ least squares for `expMap` endpoints, log-log for power tapers, monotone Fritsch
 for non-analytic shapes, analysis-by-synthesis coordinate descent for tier-2 curve questions).
 
 **Review gate** — a run ends in `report.md` per domain: `sweep raw | hardware | replica current
-| proposed fit | error`, plus an explicit proposal block (e.g. `cutoffToHz: expMap(raw, 16, 21000)
-→ expMap(raw, 22.4, 18700), residual 8¢ RMS — tag MEASURED(2026-07-06)`). Values are applied to
-curves.ts by hand after review; `calib compare` then re-renders the replica against the stored
-hardware features to confirm residuals collapsed, and `calib accept` archives the fit.
+| proposed fit | error`, plus an explicit proposal block with a coverage note (planned points,
+failures, null-valued points). Reviewed values land as a NEW calibration profile version in
+`src/synths/xd/profiles.ts` (never as hand-edits to curves.ts — see "Calibration profiles"
+above); `calib compare <session> --profile <id>` re-renders the replica under that profile
+against the stored hardware features to confirm residuals collapsed, and `calib accept`
+archives the fit as the provenance record.
 
 ## Harness layout (to be built at M1)
 
@@ -200,9 +202,16 @@ Long unattended runs must never end in silently unusable data:
   proposal pipeline with held-out validation (`## Proposals` in report.md), `compare`/`accept`
   commands, and eg-attack/decay/release + cutoff-sweep jobs. Pipeline proven by replica
   self-calibration tests: the render→measure→fit loop recovers the replica's own curves.
+  *DONE 2026-07-10 on hardware (capture generation 2).*
 - **M4 — Core voice domains**: VCO pitch/portamento, SHAPE, remaining filter, EGs, mod depths + LFO.
-- **M5 — Breadth**: MULTI voicings, LFO-sync semantics, drift, FX, arp variants; checklist sweep;
-  propagation notes for the other synth modes.
+  *In progress 2026-07-10: pitch knob (4-voice medians), amp-EG A/D/R tables, and cutoff span
+  are measured across two independent rounds and shipped as profiles v1/v2 (v2 is the app
+  default). Still open in M4: SHAPE (SAW parked on the tier-3 period-doubling remodel; SQR PW
+  law is fittable once the 50%-duty detector gap is closed), portamento, filter drive/keytrack/
+  resonance taper, mod depths + LFO rate, mod-EG.*
+- **M5 — Breadth**: MULTI voicings, LFO-sync semantics, drift (+ the planned realism modes),
+  FX (incl. the FX-bus coupling A/B), arp variants; checklist sweep; propagation notes for the
+  other synth modes.
 
 ## Measurement checklist → protocol domains
 

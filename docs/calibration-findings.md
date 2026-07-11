@@ -30,8 +30,11 @@ also confuse harmonic-tracking measurement (expected until remodeled).
 `raw 356` sounds at ≈ −100¢, not the documented −256¢ — confirmed through BOTH the SysEx
 dump path and the CC path (rules out harness encode bugs). Endpoints (±1200¢) match the
 docs; the mid-range is ~0.39× shallower. Full 15-point measured table captured 2026-07-10
-at ±0.1–0.4¢ per point. Open design question: engine uses the measured curve, display
-keeps Korg's official numbers (what the hardware OLED itself presumably shows).
+at ±0.1–0.4¢ per point; batch 2 re-measured with all-4-voice medians and the deltas repeat
+within 0.2¢. DECIDED (2026-07-10, via calibration profiles): `pitchToCents` stays the
+documented table for DISPLAY (what the hardware OLED shows), `vcoPitchCents` feeds the
+ENGINE from the active profile. Measured tables are recentered so the dead-zone detent is
+exactly 0 — the raw sweeps carry the unit's floating tuning offset (see drift entry below).
 
 ### 2026-07-10 · EG time curves are segmented, far from the guessed expMaps
 
@@ -44,17 +47,38 @@ Measured on the clean capture backend (see rig findings):
 - None of the three curves fit an expMap (fit residuals ~40–70%); all three land as
   tier-2 monotone tables. Attack's table validates at 0.8% held-out residual.
 
-### 2026-07-10 · Filter cutoff span ≈ 25 Hz – 17 kHz
+### 2026-07-10 · Filter cutoff span ≈ 25 Hz – 17.5 kHz
 
-`expMap(raw, 24.7, 16900)` vs the guessed `expMap(raw, 16, 21000)`; held-out residual
-13%, so mild taper deviation remains — acceptable as expMap, revisit if the residual
-matters downstream.
+Three independent sessions converge: `expMap(raw, 24.7, 16900)` → `(26.6, 17500)` →
+`(25.1, 17800)` (the last from 4-strike all-VCF medians; profile v2) vs the guessed
+`expMap(raw, 16, 21000)`. Held-out residual stays 10–13% in every session — a SYSTEMATIC
+taper deviation the expMap family cannot express. OPEN QUESTION for v3: keep expMap or
+switch cutoff to a monotone table like the EGs (the fits would support either).
 
 ### 2026-07-08 · Voice tuning spread is tighter than modeled
 
 4-voice round-robin strikes spread ~1.3¢ on hardware vs ~3.3¢ in the replica — the drift
 model's per-note offset (±1.5¢) is likely overdone. Full drift decomposition is protocol
 D8.
+
+### 2026-07-10 · Drift data gathered in passing (feeds D8 + the realism modes)
+
+- **The whole-unit tuning offset floats**: with PITCH at the dead-zone detent the unit
+  read +2.8¢ (morning session), +2.3¢, +2.2¢ (batch 2), +1.7¢ (late check) across one
+  evening — warm-up / auto-tune state, riding on every voice equally. Belongs to the
+  planned FULL drift-realism mode, never to a knob curve.
+- **Per-voice VCF spread ≈ 3–6% mid-band**: first measurement, from batch 2's per-strike
+  cutoff transfers (corners above ~370 Hz spread 2.2–6.1% across the four filters;
+  low-raw spreads read higher but are inflated by LF fit noise). A per-voice filter
+  offset is a real, measurable character component for the realism modes.
+
+### 2026-07-10 · Batch 2: the rig's numbers repeat
+
+Second full suite, independent captures hours apart: EG time tables agree with the first
+round within a few % (attack held-out 0.38%), the pitch-law deltas within 0.2¢, cutoff
+endpoints within ~7%. Session-to-session repeatability is now demonstrated at or below
+each domain's fit residual — the residuals reflect the hardware and the curve family, not
+capture noise.
 
 ### 2026-07-10 · The voice bus is AC-coupled into the FX board (INFERRED)
 

@@ -32,7 +32,7 @@ import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
 import { phaseJumps } from './lib/phasejump'
-import { shapeCycleConsistency, alignSnaps } from './lib/measure-shape'
+import { shapeCycleConsistency, alignSnaps, alignedCycleSnaps } from './lib/measure-shape'
 import {
   measureAny,
   buildProposals,
@@ -917,9 +917,15 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
       lp.ladder = t.harmonicsDb
         .map((db, k): [number, number, number] => [k + 1, db, tr.harmonicsDb[k] ?? NaN])
         .slice(1)
-      const al = alignSnaps(t.waveSnap, tr.waveSnap)
-      lp.waveHw = al.hw
-      lp.waveRep = al.rep
+      const cyc = alignedCycleSnaps(t.shapeCycle, tr.shapeCycle)
+      if (cyc) {
+        lp.waveHw = cyc.hw
+        lp.waveRep = cyc.rep
+      } else {
+        const al = alignSnaps(t.waveSnap, tr.waveSnap)
+        lp.waveHw = al.hw
+        lp.waveRep = al.rep
+      }
     } else {
       lp.note = `${note ? note + ' | ' : ''}hw ${summarize(job, hw)} | rep ${summarize(job, repF)}`
     }

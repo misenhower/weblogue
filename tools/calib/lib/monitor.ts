@@ -12,7 +12,7 @@ import { ScopeState, attachScopeWs } from './scope'
 import type { LiveState, LivePoint } from './live'
 import { calibDir } from './rig'
 import { loadJob } from './job'
-import { alignSnaps } from './measure-shape'
+import { alignSnaps, alignedCycleSnaps } from './measure-shape'
 import { renderJobPoint } from './render'
 import { measureAny, summarize, jobKind } from './domains'
 import type { PointFeatures } from './measure'
@@ -122,6 +122,10 @@ export function startMonitorServer(
             .map((db, k): [number, number, number] => [k + 1, db, rep.harmonicsDb?.[k] ?? NaN])
             .slice(1),
           ...(() => {
+            const hwF = r.hw as PointFeatures
+            const repF = rep as PointFeatures
+            const cyc = alignedCycleSnaps(hwF.shapeCycle, repF.shapeCycle)
+            if (cyc) return { waveHw: cyc.hw, waveRep: cyc.rep }
             const al = alignSnaps(r.hw.waveSnap, rep.waveSnap)
             return { waveHw: al.hw, waveRep: al.rep }
           })(),

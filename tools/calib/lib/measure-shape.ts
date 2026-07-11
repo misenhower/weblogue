@@ -139,6 +139,7 @@ export function fitShifted(
   hw: readonly number[],
   model: readonly number[],
   step = 3,
+  positiveScale = false,
 ): { a: number; res: number; shift: number } {
   const n = model.length
   let best = { a: 0, res: Infinity, shift: 0 }
@@ -146,6 +147,10 @@ export function fitShifted(
   const evalAt = (sh: number): void => {
     for (let i = 0; i < n; i++) rotated[i] = model[(i + sh) % n]
     const f = fitScale(hw, rotated)
+    // display alignment must reject the negated branch: on half-wave
+    // antisymmetric waves (SAW mirror at w = 0.5) a rotation by one period
+    // fits exactly as well with a < 0 — and the display doesn't negate
+    if (positiveScale && f.a <= 0) return
     if (f.res < best.res) best = { a: f.a, res: f.res, shift: sh }
   }
   for (let sh = 0; sh < n; sh += step) evalAt(sh)
@@ -306,4 +311,52 @@ export function alignSnaps(
   const hwFrom = Math.max(0, -bestK)
   const hwTo = hw.length - Math.max(0, bestK)
   return { hw: hw.slice(hwFrom, hwTo), rep: rep.slice(hwFrom + bestK, hwTo + bestK) }
+}
+
+/**
+ * Display pair for a vco.shape point: both worlds' mean cycles — exactly two
+ * nominal periods each, so the time bases match BY CONSTRUCTION (raw
+ * waveSnaps span 2.5 cycles of each world's own f0 estimate, which diverges
+ * mid-morph when the trackers lock different subharmonics — the panels then
+ * aren't even the same span, and no shift can align them). The replica is
+ * circularly rotated onto the hardware (exact on a periodic buffer: relative
+ * phase between a free-running capture and an offline render carries no
+ * information), both peak-normalized and decimated for the page.
+ */
+export function alignedCycleSnaps(
+  hw: ShapeCycle | undefined,
+  rep: ShapeCycle | undefined,
+  points = 200,
+): { hw: number[]; rep: number[] } | null {
+  if (!hw || !rep || hw.cycle.length < points || rep.cycle.length < points) return null
+  // common grid regardless of each cycle's stored resolution (sessions from
+  // before the 800-grid bump carry 400)
+  const n = points * 2
+  const resample = (c: readonly number[]): number[] => {
+    const out = new Array<number>(n)
+    for (let i = 0; i < n; i++) {
+      const t = (i * c.length) / n
+      const i0 = Math.floor(t)
+      const fr = t - i0
+      out[i] = c[i0 % c.length] * (1 - fr) + c[(i0 + 1) % c.length] * fr
+    }
+    return out
+  }
+  const h = resample(hw.cycle)
+  const r = resample(rep.cycle)
+  // rotate against the capture-coupled version of the replica: the hardware
+  // trace carries the chain's HPF (real phase lead, ~36 deg at 55 Hz), so
+  // correlating clean-vs-bowed finds a genuinely shifted optimum. The
+  // DISPLAYED replica stays clean.
+  const { shift } = fitShifted(h, hpfPeriodic(r, CAPTURE_HPF_FC, hw.f0), 2, true)
+  const norm = (c: readonly number[], rot: number): number[] => {
+    let pk = 1e-9
+    for (const v of c) pk = Math.max(pk, Math.abs(v))
+    const out = new Array<number>(points)
+    for (let i = 0; i < points; i++) {
+      out[i] = Math.round((c[(i * 2 + rot) % n] / pk) * 1000) / 1000
+    }
+    return out
+  }
+  return { hw: norm(h, 0), rep: norm(r, shift) }
 }

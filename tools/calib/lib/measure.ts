@@ -172,13 +172,25 @@ export function measurePoint(
   const notes = expandNotes(job)
   const noteDur = notes[0].offSec - notes[0].onSec
   const nominal = job.features.nominalHz
+  // Multi-ratio jobs (SHAPE morphs): each strike's tracker legitimately
+  // locks whichever member of the subharmonic family is locally strongest
+  // (55/110/165 on the period-doubled saw) — aggregating MIXED locks makes
+  // meaningless medians (two strikes at 165 and 110 average to 137.5, a
+  // frequency the signal doesn't contain, which then decorrelates the mean
+  // cycle into noise). Fold every strike onto the family base first.
+  const ratios = job.features.nominalRatios
+  const base = nominal && ratios?.length ? nominal * Math.min(...ratios) : null
+  const scale = base && nominal ? Math.max(1, Math.round(nominal / base)) : 1
+  const fold = (f: number): number =>
+    base ? (f / Math.max(1, Math.round(f / base))) * scale : f
   const strikes: StrikeFeatures[] = []
   const ladders: number[][] = []
   for (const n of notes) {
     const strikeOnset = onsetSample + Math.round((n.onSec - notes[0].onSec) * sr)
     if (strikeOnset >= x.length - Math.round(0.3 * sr)) break
     const m = measureStrike(x, sr, strikeOnset, noteDur, job)
-    strikes.push({ f0Hz: m.f0, cents: nominal ? 1200 * Math.log2(m.f0 / nominal) : 0 })
+    const f0 = fold(m.f0)
+    strikes.push({ f0Hz: f0, cents: nominal ? 1200 * Math.log2(f0 / nominal) : 0 })
     ladders.push(m.ladder)
   }
   const lastEnd = Math.min(x.length, onsetSample + Math.round((notes[notes.length - 1].offSec - notes[0].onSec) * sr))

@@ -112,6 +112,27 @@ export interface XdCalibProfile {
   lfoMaxPitchCents: number
   lfoMaxCutoffOctaves: number
   lfoMaxShape: number
+  /*
+   * VCO SHAPE morph models, measured 2026-07-11 (D2; findings log + evidence
+   * artifact). ALL OPTIONAL: absent = the original guessed morphs, so v0-v3
+   * and the other synths stay bit-identical. Injected into the shared Vco by
+   * voice.ts (same pattern as sqrPwMin).
+   */
+  /** SQR: raw -> pulse duty (constant-swing pulse, real DC, no peak
+   *  normalization). Presence switches the SQR path to the measured model. */
+  sqrDuty?: CurveSpec
+  /** TRI: raw -> single-fold drive g' (1 = no fold, 3 = exact x3 triple). */
+  triFoldDrive?: CurveSpec
+  /** TRI: raw -> output level at the fold ceiling (1 at raw 0). */
+  triFoldLevel?: CurveSpec
+  /** TRI: soft-fold knee radius (0 = hard reflection). */
+  triFoldKnee?: number
+  /** SAW: raw -> half-rate chopper depth m (0 = plain saw, 1 = full
+   *  alternate-tooth polarity flip = the measured octave-down morph). */
+  sawChopDepth?: CurveSpec
+  /** SAW: raw -> chopper flip phase within the period (0..0.5; 0.5 = the
+   *  mid-ramp zero crossing, where the flip transient vanishes). */
+  sawChopPhase?: CurveSpec
 }
 
 /** v0 — the original guessed values, frozen exactly as first shipped. */
@@ -397,11 +418,127 @@ const V3: XdCalibProfile = {
   },
 }
 
-export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3]
+/*
+ * v4 — v3 + the measured VCO SHAPE morph models (Matt approved the model
+ * decisions 2026-07-11; findings log entries + the evidence artifact carry
+ * the data). Sessions: shape-saw 2026-07-10T08-03, shape-sqr 08-06,
+ * shape-tri 2026-07-11T05-35, all A2 mean cycles with the capture chain's
+ * AC-coupling inverted.
+ *   SQR  constant-swing PWM: measured duty table (~linear 50.8% -> 0), real
+ *        DC carried to the VCF, no peak normalization (hardware keeps a
+ *        constant +-swing; the level ratio measured 1.00 -> 0.91).
+ *   TRI  single soft fold: drive g' table (hard-reflection fits; 1023 = 3.0
+ *        exactly — the capture there is a pure 330 Hz triple), output-level
+ *        table (the fold ceiling tapers ~2x across the sweep). Knee radius
+ *        INFERRED pending the D2 knee fit (high-drive residuals say soft).
+ *   SAW  half-rate chopper: exact at both endpoints (m=0 plain saw; m=1,
+ *        phi=0.5 = the measured up/down alternate teeth with half-wave
+ *        antisymmetry). phi follows the measured flip-transient positions
+ *        (~shape*T, saturating at the mid-ramp crossing); DEPTH MID-RANGE IS
+ *        INFERRED (seeded linear) until the D2 chopper fits land — the
+ *        mid-morph transition is the flagged open item.
+ */
+const V4: XdCalibProfile = {
+  ...V3,
+  id: 'v4',
+  name: 'v4 · + measured SHAPE morphs',
+  date: '2026-07-11',
+  notes:
+    'v3 plus the measured VCO SHAPE models: SAW half-rate chopper (octave-down morph), ' +
+    'TRI single soft fold ending at an exact x3, SQR constant-swing PWM with the measured ' +
+    'duty table and real DC. Legacy morphs remain in v0-v3.',
+  sqrDuty: {
+    kind: 'pchip',
+    knots: [
+      [0, 0.508],
+      [128, 0.445],
+      [256, 0.385],
+      [384, 0.323],
+      [512, 0.263],
+      [640, 0.203],
+      [768, 0.14],
+      [896, 0.08],
+      [1023, 0],
+    ],
+  },
+  triFoldDrive: {
+    kind: 'pchip',
+    knots: [
+      [0, 1.06],
+      [64, 1.09],
+      [128, 1.13],
+      [192, 1.17],
+      [256, 1.22],
+      [320, 1.27],
+      [384, 1.34],
+      [448, 1.41],
+      [512, 1.52],
+      [576, 1.62],
+      [640, 1.74],
+      [704, 1.88],
+      [768, 2.04],
+      [832, 2.22],
+      [896, 2.44],
+      [960, 2.68],
+      [1023, 3.0],
+    ],
+  },
+  triFoldLevel: {
+    kind: 'pchip',
+    knots: [
+      [0, 1.0],
+      [64, 0.976],
+      [128, 0.948],
+      [192, 0.92],
+      [256, 0.888],
+      [320, 0.854],
+      [384, 0.818],
+      [448, 0.782],
+      [512, 0.747],
+      [576, 0.711],
+      [640, 0.675],
+      [704, 0.641],
+      [768, 0.611],
+      [832, 0.583],
+      [896, 0.561],
+      [960, 0.537],
+      [1023, 0.507],
+    ],
+  },
+  triFoldKnee: 0.15, // INFERRED (soft analog knee; D2 fit pending)
+  sawChopDepth: {
+    kind: 'pchip',
+    knots: [
+      [0, 0],
+      [128, 0.125], // mid-range INFERRED (seeded ~linear; D2 fits pending)
+      [256, 0.25],
+      [384, 0.375],
+      [512, 0.55],
+      [640, 0.72],
+      [768, 0.88],
+      [896, 1.0],
+      [1023, 1.0],
+    ],
+  },
+  sawChopPhase: {
+    kind: 'pchip',
+    knots: [
+      [0, 0.0],
+      [128, 0.13],
+      [256, 0.245],
+      [384, 0.365],
+      [512, 0.5],
+      [1023, 0.5],
+    ],
+  },
+}
+
+export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3, V4]
 
 /** The shipped default. Promoting a measured profile is a reviewed change —
  *  v2 promoted 2026-07-10 after Matt's listening A/B; v3 (cutoff table)
- *  promoted the same day on Matt's standing "switch cutoff to a table" call. */
+ *  promoted the same day on Matt's standing call; v4 (SHAPE models) stays
+ *  NON-default until the D2 fits land and Matt A/Bs it. */
 export const XD_DEFAULT_PROFILE = 'v3'
 
 let active: XdCalibProfile = V3

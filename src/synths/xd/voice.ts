@@ -21,7 +21,7 @@ import { AdsrEg, AdEg } from '../../dsp/eg'
 import { Lfo, LFO_MODE } from '../../dsp/lfo'
 import { Drift } from '../../dsp/drift'
 import { XD_FILTER_CFG } from './curves'
-import { activeXdProfile } from './profiles'
+import { activeXdProfile, curveAt, type CurveSpec, type XdCalibProfile } from './profiles'
 
 /** EG TARGET values (params.ts order): CUTOFF, PITCH 2, PITCH. */
 const EGT_CUTOFF = 0
@@ -91,6 +91,8 @@ export class Voice {
   private ring = false
   private xmod2 = 0 // xmod01^2, precomputed
   private prevV1 = 0 // previous-sample VCO1 output (cross-mod source)
+  /** Profile whose SHAPE morph models are currently bound to the VCOs. */
+  private boundProf: XdCalibProfile | null = null
   private lvl1T = 1
   private lvl2T = 0
   private lvlMT = 0
@@ -412,10 +414,31 @@ export class Voice {
     }
   }
 
+  /**
+   * (Re)bind the profile's SHAPE morph models to both VCOs — function refs
+   * over compiled curves, evaluated inside the Vco on the smoothed shape.
+   * Absent fields bind null = the legacy morphs (v0-v3 bit-identical).
+   * Gated on profile identity so it costs nothing per sample.
+   */
+  private bindShapeModels(prof: XdCalibProfile): void {
+    this.boundProf = prof
+    const mk = (spec: CurveSpec | undefined): ((s: number) => number) | null =>
+      spec ? (s: number) => curveAt(spec, s * 1023) : null
+    for (const v of [this.vco1, this.vco2]) {
+      v.sqrDutyFn = mk(prof.sqrDuty)
+      v.triDriveFn = mk(prof.triFoldDrive)
+      v.triLevelFn = mk(prof.triFoldLevel)
+      v.triKnee = prof.triFoldKnee ?? 0
+      v.sawChopDepthFn = mk(prof.sawChopDepth)
+      v.sawChopPhaseFn = mk(prof.sawChopPhase)
+    }
+  }
+
   tick(): number {
     // Calibration-profile scalars (mod depths, SQR PW floor) are read live so
     // a profile switch takes effect without reconstructing voices.
     const prof = activeXdProfile()
+    if (prof !== this.boundProf) this.bindShapeModels(prof)
     // Modulators.
     const drift1C = this.drift1.tick()
     const drift2C = this.drift2.tick()

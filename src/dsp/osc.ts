@@ -80,6 +80,27 @@ function flushDenormal(x: number): number {
   return x > -1e-18 && x < 1e-18 ? 0 : x
 }
 
+/**
+ * Symmetric single wavefold at ±1 with a soft quadratic knee of radius r:
+ * |v| ≤ 1−r passes, a C¹ parabola spans [1−r, 1+r] (peak 1 − r/2, matching
+ * slopes ±1 at both ends), beyond reflects hard (y = 2 − |v|). r = 0 is the
+ * hard fold. Models the xd TRI SHAPE (single fold per peak, measured
+ * 2026-07-11; hard-reflection fits degrade at high drive — the analog knee
+ * is soft).
+ */
+function softFold1(v: number, r: number): number {
+  const s = v < 0 ? -1 : 1
+  const a = s * v
+  if (r > 1e-6) {
+    const lo = 1 - r
+    if (a <= lo) return v
+    const e = a - lo
+    if (e < 2 * r) return s * (lo + e - (e * e) / (2 * r))
+    return s * (2 - a)
+  }
+  return a <= 1 ? v : s * (2 - a)
+}
+
 /** PolyBLEP sawtooth, edge (step of -2) at phase 0/1. t in [0,1]. */
 function sawBl(t: number, adt: number, suppressWrapBlep: boolean): number {
   let y = 2 * t - 1
@@ -164,6 +185,35 @@ export class Vco {
    */
   pwMin = 0.05
 
+  /*
+   * Measured SHAPE morph models (minilogue xd D2, 2026-07-11) — injected by
+   * the synth's voice exactly like pwMin: null keeps the original guessed
+   * morphs bit-identical (the other synths never set these). Each fn maps the
+   * SMOOTHED shape (0..1) to a model parameter; they are compiled profile
+   * curves, cheap per sample.
+   */
+  /** SQR: shape -> pulse duty. Constant-swing pulse with real DC — no
+   *  analytic DC removal, no peak normalization (both unfaithful; measured
+   *  level ratio stays ~1.0 across the sweep where normalization predicts
+   *  0.54). Widths below the BLEP transition fade out as with pwMin = 0. */
+  sqrDutyFn: ((shape01: number) => number) | null = null
+  /** TRI: shape -> single-fold drive g' (1 = none, 3 = exact x3 triple). */
+  triDriveFn: ((shape01: number) => number) | null = null
+  /** TRI: shape -> output level at the fold ceiling (1 at shape 0). */
+  triLevelFn: ((shape01: number) => number) | null = null
+  /** TRI: soft-fold knee radius (0 = hard reflection). */
+  triKnee = 0
+  /** SAW: shape -> half-rate chopper depth m (0 = plain saw, 1 = full
+   *  alternate-tooth polarity flip: the measured octave-down morph with
+   *  half-wave antisymmetry at SHAPE max). */
+  sawChopDepthFn: ((shape01: number) => number) | null = null
+  /** SAW: shape -> chopper flip phase in the period (0..~0.5; at 0.5 the
+   *  flip lands on the mid-ramp zero crossing and its transient vanishes). */
+  sawChopPhaseFn: ((shape01: number) => number) | null = null
+
+  /** Half-rate divider state for the SAW chopper: flips on every wrap. */
+  private chopParity = 1
+
   private phase = 0
   private _wrapped = false
   private _wrapFrac = 0
@@ -244,6 +294,7 @@ export class Vco {
     this._wrapped = false
     this._wrapFrac = 0
     this.lp = 0
+    this.chopParity = 1
   }
 
   /**
@@ -283,6 +334,7 @@ export class Vco {
       this.phase = tau * adt
       this._wrapped = true
       this._wrapFrac = tau
+      this.chopParity = -this.chopParity
       out = this.sampleBlended(this.phase, adt, false, shape, true, tau, pre)
     } else {
       let p = this.phase + dt
@@ -305,6 +357,7 @@ export class Vco {
         else if (wf < 0) wf = 0
         this._wrapFrac = wf
       }
+      if (this._wrapped) this.chopParity = -this.chopParity
       this.phase = p
       out = this.sampleBlended(p, adt, dt < 0, shape, false, 0, 0)
     }
@@ -342,6 +395,78 @@ export class Vco {
   }
 
   /**
+   * MEASURED SAW morph (v4+): a half-rate chopper — the saw is multiplied by
+   * (1−m) + m·sq, where sq is a square from the period-parity divider with
+   * its edge at phase `phi` of every period. m = 0 is the plain saw; m = 1
+   * with phi = 0.5 flips alternate teeth entirely (the measured octave-down
+   * morph: exact half-wave antisymmetry, the flip transient vanishing at the
+   * mid-ramp zero crossing). Two BLEP'd edge classes per period: the reset
+   * (step −2·gain, gain continuous across it by construction) and the flip
+   * (step (2·phi−1)·2m·parity). Reverse mode mirrors phase, edge, and
+   * parity; sync uses the naive-step residual like the legacy paths (both
+   * documented approximations on rare paths).
+   */
+  private sawChopSample(
+    t: number,
+    adt: number,
+    shape: number,
+    rev: boolean,
+    sync: boolean,
+    syncTau: number,
+    pre: number,
+  ): number {
+    const mRaw = this.sawChopDepthFn!(shape)
+    const m = mRaw < 0 ? 0 : mRaw > 1 ? 1 : mRaw
+    let phi = this.sawChopPhaseFn ? this.sawChopPhaseFn(shape) : 0.5
+    if (phi < 0) phi = 0
+    else if (phi > 0.75) phi = 0.75
+    let p = this.chopParity
+    let u = t
+    if (rev && !sync) {
+      // time-mirror: saw(t) = -saw(1-t); the flip edge mirrors too
+      u = 1 - t
+      phi = 1 - phi
+      p = -p
+    }
+    const gPre = 1 - m - m * p // before this period's flip (holds the previous parity)
+    const gPost = 1 - m + m * p
+    let y = (2 * u - 1) * (u < phi ? gPre : gPost)
+    if (adt > EPS_DT) {
+      // reset edge at phase 0/1 — the surrounding gain is gPre on both sides
+      // (sync replaces the phase-0 correction with the naive-step residual)
+      if (u < adt) {
+        if (!sync) y += -2 * gPre * blepAfter(u / adt)
+      } else if (u > 1 - adt) {
+        // the NEXT period's pre-flip gain equals this period's post-flip gain
+        y += -2 * gPost * blepBefore((u - 1) / adt)
+      }
+      // flip edge at phi: step (2*phi-1)*(gPost-gPre) = (2*phi-1)*2*m*p
+      if (m > EPS_DT) {
+        const step = (2 * phi - 1) * (gPost - gPre)
+        const s = u - phi
+        if (s >= 0) {
+          if (s < adt) y += step * blepAfter(s / adt)
+        } else if (s > -adt) {
+          y += step * blepBefore(s / adt)
+        }
+        // the next period's flip (opposite parity) can reach back across the
+        // wrap when phi is small
+        const s2 = u - 1 - phi
+        if (s2 > -adt) y += -step * blepBefore(s2 / adt)
+      }
+    }
+    if (sync) {
+      // naive step across the sync reset; the OLD period's parity is -p, so
+      // its segment gains are swapped (approximation: the old flip phase is
+      // taken at the current shape)
+      const naive0 = -1 * gPre
+      const naivePre = (2 * pre - 1) * (pre < phi ? gPost : gPre)
+      y += (naive0 - naivePre) * blepAfter(syncTau)
+    }
+    return y
+  }
+
+  /**
    * One sample of a given wave at phase t. When sync is true, the standard
    * phase-0 edge correction is suppressed and replaced by a BLEP residual
    * scaled by the true naive step across the sync reset (naive(0) - naive(pre))
@@ -361,10 +486,12 @@ export class Vco {
     if (sync) rev = false // sync ticks use forward placement (documented approximation)
 
     if (w === VCO_WAVE.SAW) {
-      // SHAPE subtracts a second BLEP'd saw (spec §4: morph toward a
-      // square-ish blend, attenuating EVEN harmonics). The edge offset
-      // narrows toward half a period as shape rises, so at max shape the
-      // pair is exactly saw(t) - saw(t+0.5) = a square (odd harmonics only).
+      if (this.sawChopDepthFn) return this.sawChopSample(t, adt, shape, rev, sync, syncTau, pre)
+      // LEGACY morph (v0-v3 + the other synths): SHAPE subtracts a second
+      // BLEP'd saw (spec §4: morph toward a square-ish blend, attenuating
+      // EVEN harmonics). The edge offset narrows toward half a period as
+      // shape rises, so at max shape the pair is exactly
+      // saw(t) - saw(t+0.5) = a square (odd harmonics only).
       const g = shape
       const off = 0.5 + 0.45 * (1 - g)
       // RMS compensation: var(saw - g*saw_off) = (1-g)^2/3 + 4*g*off*(1-off)
@@ -393,16 +520,55 @@ export class Vco {
       if (sync) {
         core += (-1 - triNaive(pre)) * blepAfter(syncTau)
       }
+      if (this.triDriveFn) {
+        // MEASURED model (v4+): single soft fold per peak. Drive g' rises
+        // 1 -> 3 across SHAPE (g' = 3 folds the tip exactly to the opposite
+        // level: a x3 triangle, as captured at SHAPE max); the output level
+        // at the fold ceiling tapers per the profile table. Applied as a
+        // waveshaper on the band-limited core — the C¹ knee keeps the added
+        // spectrum decaying fast.
+        const drive = this.triDriveFn(shape)
+        const level = this.triLevelFn ? this.triLevelFn(shape) : 1
+        return level * softFold1(drive * core, this.triKnee)
+      }
+      // LEGACY folder (v0-v3 + the other synths): smooth sine wavefolder,
+      // gain 1..8, blended in with shape. sin() is C-inf smooth so the
+      // fold's added spectrum decays fast (low aliasing).
       const m = shape
       if (m <= 0.0005) return core
-      // Smooth sine wavefolder: gain 1..8, blended in with shape. sin() is
-      // C-inf smooth so the fold's added spectrum decays fast (low aliasing).
       const foldGain = 1 + 7 * m
       return (1 - m) * core + m * Math.sin(HALF_PI * foldGain * core)
     }
 
-    // SQR: pulse width 50% -> pwMin; both edges BLEP'd; analytic DC removal
-    // (dc = 2*pw - 1) and peak normalization so output stays within [-1, 1].
+    if (this.sqrDutyFn) {
+      // MEASURED model (v4+): constant-swing pulse at the profile's duty
+      // table — the hardware keeps a constant ±swing and carries the pulse's
+      // real DC (mean = 2d−1) to the VCF; the legacy path's DC removal and
+      // peak normalization are both unfaithful. Duty below the BLEP width
+      // fades to the measured SHAPE-max silence.
+      let pw = this.sqrDutyFn(shape)
+      if (!(pw > 0)) return 0
+      if (pw > 0.95) pw = 0.95
+      const minPw = Math.min(adt, 0.45)
+      let fade = 1
+      if (minPw > EPS_DT && pw < minPw) {
+        fade = pw / minPw
+        pw = minPw
+      }
+      if (!rev) {
+        let core = pulseBl(t, adt, pw, sync)
+        if (sync) {
+          const naivePre = pre < pw ? 1 : -1
+          core += (1 - naivePre) * blepAfter(syncTau) // naive(0) = +1
+        }
+        return core * fade
+      }
+      // Time-mirrored pulse: pulse(t; pw) = -pulse(1-t; 1-pw).
+      return -pulseBl(1 - t, adt, 1 - pw, false) * fade
+    }
+    // LEGACY SQR (v0-v3 + the other synths): pulse width 50% -> pwMin; both
+    // edges BLEP'd; analytic DC removal (dc = 2*pw - 1) and peak
+    // normalization so output stays within [-1, 1].
     // Widths below the BLEP transition width can't be rendered: the stock law
     // (pwMin 0.05) clamps there at full amplitude exactly as it always has —
     // that path must stay bit-identical for every synth. Only a calibration

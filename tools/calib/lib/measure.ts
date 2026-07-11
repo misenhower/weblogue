@@ -204,7 +204,12 @@ export function measurePoint(
   let shapeCycle: ShapeCycle | undefined
   if (job.domain === 'vco.shape' && nominal && f0Med > 0) {
     const cyTo = Math.min(x.length, onsetSample + Math.round((noteDur - 0.1) * sr))
-    shapeCycle = extractMeanCycle(x, sr, snapFrom, cyTo, f0Med, nominal) ?? undefined
+    // lockF0: the folded strike median is already phase-tracked on REAL
+    // spectral lines (+-0.2 cents); extractMeanCycle's own re-track would run
+    // at the folded-scaled frequency — a line that VANISHES at high SHAPE
+    // (half-wave antisymmetry kills the whole 110-class), decorrelating the
+    // average into noise/staircases for both worlds
+    shapeCycle = extractMeanCycle(x, sr, snapFrom, cyTo, f0Med, nominal, 30, true) ?? undefined
   }
   return {
     waveSnap,

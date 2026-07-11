@@ -15,6 +15,7 @@
 import type { FromEngine } from '../shared/messages'
 import type { Store } from '../state/store'
 import { fftMag } from './fft'
+import { scopeTrigger } from './scopetrigger'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
@@ -807,13 +808,8 @@ export class DebugPanel {
       const n = data.length
       const win = n > 768 ? 512 : n - Math.floor(n / 3)
       const half = Math.floor(win / 2)
-      let trig = Math.floor(n / 2)
-      for (let x = half + 1; x <= n - (win - half); x++) {
-        if (data[x - 1] <= 0 && data[x] > 0) {
-          trig = x
-          break
-        }
-      }
+      const raw = scopeTrigger(data, 1, n - 1, Math.floor(n / 2))
+      const trig = Math.max(half, Math.min(raw, n - (win - half)))
       this.traceWave(ctx, data, trig, half, win, w, h, this.voiceColors[v], 0.85, 0.18)
       drewAny = true
     }
@@ -978,21 +974,19 @@ export class DebugPanel {
     ctx.lineTo(w, h / 2)
     ctx.stroke()
     ctx.globalAlpha = 1
-    // Center-trigger: lock a rising zero crossing to the horizontal middle
-    // (searching the middle third of the frame), so periodic waveforms hold
-    // still with their trigger point centered; fall back to the frame center.
-    // Stereo cells share the L channel's trigger so inter-channel timing
-    // (ping-pong bounce, chorus width) stays honest.
+    // Center-trigger: lock a canonical rising zero crossing near the
+    // horizontal middle (scopeTrigger: trough-anchored, so multi-crossing
+    // waves — sync ramps, ring products, period-doubled SHAPE teeth — hold
+    // still). The search spans the WHOLE tap (a doubled 110 Hz period is 873
+    // samples; the old centered-only span of ~769 couldn't hold one) and the
+    // display window clamps at the buffer edges instead of forcing the
+    // trigger to the center. Stereo cells share the L channel's trigger so
+    // inter-channel timing (ping-pong bounce, chorus width) stays honest.
     const n = dataL.length
     const win = n > 768 ? 512 : n - Math.floor(n / 3)
     const half = Math.floor(win / 2)
-    let trig = Math.floor(n / 2)
-    for (let x = half + 1; x <= n - (win - half); x++) {
-      if (dataL[x - 1] <= 0 && dataL[x] > 0) {
-        trig = x
-        break
-      }
-    }
+    const raw = scopeTrigger(dataL, 1, n - 1, Math.floor(n / 2))
+    const trig = Math.max(half, Math.min(raw, n - (win - half)))
     if (dataR) this.traceWave(ctx, dataR, trig, half, win, w, h, R_COLOR, 0.9, 0.22)
     this.traceWave(ctx, dataL, trig, half, win, w, h, this.fg, dataR ? 0.9 : 1, dataR ? 0.22 : 0.38)
     if (dataR) this.drawLrLegend(ctx, w)

@@ -13,6 +13,7 @@ import type { Store, ParamSource } from '../state/store'
 import { MOTION_GATE_TIME, type ParamMeta } from '../shared/paramdef'
 import { NUM_MOTION_LANES } from '../shared/program'
 import { bindHold } from './hold'
+import { scopeTrigger } from './scopetrigger'
 import { SEQ_FIELDS, type SeqFieldDef } from './seqfields'
 
 /**
@@ -593,17 +594,11 @@ export class Display {
     } else {
       const n = data.length
       const win = Math.max(16, n >> 1)
-      // find a rising zero crossing that can sit at the window center
-      const lo = win >> 1
-      const hi = n - (win - (win >> 1))
-      let trig = -1
-      for (let i = Math.max(1, lo); i < hi; i++) {
-        if (data[i - 1] <= 0 && data[i] > 0) {
-          trig = i
-          break
-        }
-      }
-      const start = trig >= 0 ? trig - (win >> 1) : (n - win) >> 1
+      // canonical rising zero crossing (scopeTrigger: trough-anchored so
+      // multi-crossing waves hold still); the search spans the whole frame
+      // and the display window clamps at the edges
+      const trig = scopeTrigger(data, 1, n - 1, -1)
+      const start = trig >= 0 ? Math.max(0, Math.min(trig - (win >> 1), n - win)) : (n - win) >> 1
       for (let px = 0; px <= w; px++) {
         const f = start + (px / w) * (win - 1)
         const i0 = Math.floor(f)

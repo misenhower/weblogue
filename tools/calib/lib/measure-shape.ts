@@ -272,3 +272,38 @@ export function fitSawMirror(cy: ShapeCycle, fcHz: number): ShapeFit {
   scan(Math.max(0, best.param - 0.025), Math.min(0.5, best.param + 0.025), 0.0025, 3)
   return best
 }
+
+/**
+ * Align the replica snapshot to the hardware one for display. Relative phase
+ * between a free-running analog capture and an offline render is arbitrary
+ * (every fit in the pipeline is rotation-free for this reason), so the raw
+ * thumbnails land at random horizontal offsets — eyeball-hostile. Crop both
+ * to their best-overlap window (equal lengths, so the page's x-stretch stays
+ * matched). Display-only: stored features are untouched.
+ */
+export function alignSnaps(
+  hw?: number[],
+  rep?: number[],
+): { hw?: number[]; rep?: number[] } {
+  if (!hw || !rep || hw.length !== rep.length || hw.length < 40) return { hw, rep }
+  const n = hw.length
+  const max = Math.floor(n * 0.4)
+  let bestK = 0
+  let bestScore = -Infinity
+  for (let k = -max; k <= max; k++) {
+    let c = 0
+    const iFrom = Math.max(0, -k)
+    const iTo = n - Math.max(0, k)
+    for (let i = iFrom; i < iTo; i++) c += hw[i] * rep[i + k]
+    const ov = iTo - iFrom
+    const score = c / ov + ov * 1e-6 // prefer larger overlap on near-ties
+    if (score > bestScore) {
+      bestScore = score
+      bestK = k
+    }
+  }
+  if (bestK === 0) return { hw, rep }
+  const hwFrom = Math.max(0, -bestK)
+  const hwTo = hw.length - Math.max(0, bestK)
+  return { hw: hw.slice(hwFrom, hwTo), rep: rep.slice(hwFrom + bestK, hwTo + bestK) }
+}

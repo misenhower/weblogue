@@ -12,6 +12,7 @@ import { ScopeState, attachScopeWs } from './scope'
 import type { LiveState, LivePoint } from './live'
 import { calibDir } from './rig'
 import { loadJob } from './job'
+import { alignSnaps } from './measure-shape'
 import { renderJobPoint } from './render'
 import { measureAny, summarize, jobKind } from './domains'
 import type { PointFeatures } from './measure'
@@ -120,8 +121,10 @@ export function startMonitorServer(
           ladder: (r.hw.harmonicsDb ?? [])
             .map((db, k): [number, number, number] => [k + 1, db, rep.harmonicsDb?.[k] ?? NaN])
             .slice(1),
-          waveHw: r.hw.waveSnap,
-          waveRep: rep.waveSnap,
+          ...(() => {
+            const al = alignSnaps(r.hw.waveSnap, rep.waveSnap)
+            return { waveHw: al.hw, waveRep: al.rep }
+          })(),
         }
       })
       if (reRender) setXdProfile('v0') // the monitor's resting state

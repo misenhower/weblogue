@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import { waveSnapshot } from '../tools/calib/lib/measure'
 import { ScopeState } from '../tools/calib/lib/scope'
+import { shapeCycleConsistency } from '../tools/calib/lib/measure-shape'
 
 const SR = 48000
 
@@ -95,5 +96,25 @@ describe('live scope trigger + pitch', () => {
     expect(a.wave.length).toBeGreaterThan(0)
     expect(robustMaxDiff(a.wave, b.wave)).toBeLessThan(0.05)
     expect(robustMaxDiff(a.wave, c.wave)).toBeLessThan(0.05)
+  })
+})
+
+describe('shapeCycleConsistency (shape-job integrity gate)', () => {
+
+  it('passes a clean period-doubled morph and fails a spliced one', () => {
+    const clean = altSaw(SR)
+    const c1 = shapeCycleConsistency(clean, SR, 4800, 43000, 55.07, 110)
+    expect(c1).not.toBeNull()
+    expect(c1!).toBeLessThan(0.05)
+    // splice: delete 60 samples INSIDE one half (a dropped USB chunk;
+    // cycles before/after it misalign and smear that half's average — a
+    // splice exactly at the split boundary would only rotate a whole half,
+    // which the rotation-free comparison forgives by design)
+    const spliced = new Float32Array(SR)
+    spliced.set(clean.subarray(0, 14000), 0)
+    spliced.set(clean.subarray(14060), 14000)
+    const c2 = shapeCycleConsistency(spliced, SR, 4800, 43000, 55.07, 110)
+    expect(c2).not.toBeNull()
+    expect(c2!).toBeGreaterThan(0.1)
   })
 })

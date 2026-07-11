@@ -32,6 +32,7 @@ import { encodeProgBin, decodeProgBin, XD_PROG_BIN_SIZE } from '../../src/synths
 import { loadJob, jobPoints, jobProgram, expandNotes, type CalibJob } from './lib/job'
 import { type PointFeatures } from './lib/measure'
 import { phaseJumps } from './lib/phasejump'
+import { shapeCycleConsistency } from './lib/measure-shape'
 import {
   measureAny,
   buildProposals,
@@ -863,14 +864,27 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
       const wFrom = onsetSample + Math.round(0.15 * wav.sr)
       const wTo = Math.min(x.length, onsetSample + Math.round((job.notes[0].offSec - job.notes[0].onSec - 0.1) * wav.sr))
       if (wTo - wFrom > 0.3 * wav.sr) {
-        // strict gate: the CoreAudio backend captures a quartz source
-        // with ZERO events (2026-07-10) — any events now are real
-        // corruption. (The old ffmpeg/avfoundation backend dropped
-        // chunks continuously; a looser rate gate briefly papered over
-        // it. Never capture through avfoundation.)
-        const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
-        if (pj.count > 2) {
-          throw new Error(`${pj.count} phase jumps — capture corruption (drops/splices)`)
+        if (job.domain === 'vco.shape') {
+          // the morph's own structure false-triggers the tone-model phase
+          // probe (SAW mirror edges read as jumps — 11/33 false FAILs on the
+          // 2026-07-11 dense sweep); integrity for shape jobs = the mean
+          // cycle must reproduce across the two halves of the sustain
+          const cons = shapeCycleConsistency(x, wav.sr, wFrom, wTo, t.f0Hz, job.features.nominalHz ?? t.f0Hz)
+          if (cons !== null && cons > 0.1) {
+            throw new Error(
+              `half-split cycle consistency ${(cons * 100).toFixed(1)}% — capture corruption (drops/splices)`,
+            )
+          }
+        } else {
+          // strict gate: the CoreAudio backend captures a quartz source
+          // with ZERO events (2026-07-10) — any events now are real
+          // corruption. (The old ffmpeg/avfoundation backend dropped
+          // chunks continuously; a looser rate gate briefly papered over
+          // it. Never capture through avfoundation.)
+          const pj = phaseJumps(x, wav.sr, t.f0Hz, wFrom, wTo)
+          if (pj.count > 2) {
+            throw new Error(`${pj.count} phase jumps — capture corruption (drops/splices)`)
+          }
         }
       }
       // analog voice spread is ~1-3 cents; far beyond that means the

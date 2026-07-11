@@ -17,8 +17,11 @@
  */
 import { phasePitchTrack } from './features'
 
-/** Grid points per extracted mean cycle (spans ~2 note periods). */
-export const CYCLE_GRID = 400
+/** Grid points per extracted mean cycle (spans ~2 note periods). 800 keeps
+ *  step-edge features resolvable — at 400 the SAW mirror fits hit a
+ *  resolution floor near w = 0.5 (read 0.48 where the structural truth is
+ *  exactly 0.5; 2026-07-11 rerun comparison). */
+export const CYCLE_GRID = 800
 
 /**
  * 1-pole equivalent corner of the xd-output -> ProFX capture coupling,
@@ -48,12 +51,16 @@ export function extractMeanCycle(
   f0Measured: number,
   nominalHz: number,
   cycles = 30,
+  lockF0 = false,
 ): ShapeCycle | null {
   if (!(f0Measured > 0) || to - from < sr * 0.2) return null
   const k = Math.max(1, Math.round((2 / nominalHz) * f0Measured))
-  const track = phasePitchTrack(x, sr, f0Measured, { from, to })
-  const v = Array.from(track.v).sort((a, b) => a - b)
-  const f0 = v[v.length >> 1]
+  let f0 = f0Measured
+  if (!lockF0) {
+    const track = phasePitchTrack(x, sr, f0Measured, { from, to })
+    const v = Array.from(track.v).sort((a, b) => a - b)
+    f0 = v[v.length >> 1]
+  }
   if (!(f0 > 0)) return null
   const period = (k * sr) / f0
   let minI = from
@@ -185,6 +192,35 @@ export function sawMirrorCycle(w: number): number[] {
     out[i] = inWin ? 2 * frac(2 - ph) - 1 : 2 * frac(ph) - 1
   }
   return out
+}
+
+/**
+ * Capture-integrity check for SHAPE morphs, replacing the phase-jump gate:
+ * morph waveforms legitimately contain intra-cycle steps (the SAW mirror's
+ * window edges false-trigger a tone-model phase probe — 11/33 false FAILs on
+ * the 2026-07-11 dense sweep), but they are strictly periodic — so the mean
+ * cycle extracted from the FIRST and SECOND halves of the sustain must
+ * agree. Real splices/drops decorrelate the halves; the one genuinely weak
+ * capture in that sweep (raw 544, 11.6%) is exactly what this catches.
+ * Returns the relative residual between the half-extractions (null when the
+ * window is too short to split).
+ */
+export function shapeCycleConsistency(
+  x: Float32Array,
+  sr: number,
+  from: number,
+  to: number,
+  f0Measured: number,
+  nominalHz: number,
+): number | null {
+  const mid = Math.floor((from + to) / 2)
+  // ONE period estimate for both halves (lockF0): independent re-tracking
+  // can differ by ~0.2% between halves, which alone smears the mean-cycle
+  // edges into a false ~20% disagreement on clean captures
+  const a = extractMeanCycle(x, sr, from, mid, f0Measured, nominalHz, 15, true)
+  const b = extractMeanCycle(x, sr, mid, to, f0Measured, nominalHz, 15, true)
+  if (!a || !b) return null
+  return fitShifted(a.cycle, b.cycle).res
 }
 
 export interface ShapeFit {

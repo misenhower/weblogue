@@ -67,6 +67,25 @@ hardware must block DC between the analog voice bus and the digital FX — stand
 capacitor coupling into the FX ADC. Replica now models it (src/dsp/dcblock.ts, 5 Hz corner
 INFERRED — measurable someday via an LF sweep if it ever matters).
 
+**Family audit (same date).** The other three synths share the vulnerability class
+wherever an analog voice bus meets digital FX; all real hardware in the family AC-couples
+that boundary, so each fix is faithful, not defensive:
+
+- **og** — SYNC+RING saws parked ~+0.34 of DC on the output. The delay loop's own HPF
+  (≥ 10 Hz) keeps the loop from running away, but the dry bus carried the pedestal
+  straight toward the limiter knee. Fixed: DcBlock pair at the top of its processFx
+  (tests/og-dcblock.test.ts).
+- **prologue** — same-pitch RING (the exclusive switch has no sync, but both VCOs start
+  in phase and drift apart only ~0.15 Hz at C2) railed the shared reverb exactly like the
+  xd. The FX input here is the pair of per-timbre MAIN/SUB stereo buses composed inside
+  processFx, so the coupling is one DcBlock per bus channel — four in all
+  (tests/prologue-dcblock.test.ts).
+- **monologue** — has the DC source (RING) but NO digital FX at all; DRIVE is analog and
+  in-voice on hardware, so DC biasing it is faithful. No FX-ADC boundary exists → no
+  DcBlock; the ring DC legitimately reaches the output (bounded, ~+0.16, well inside the
+  limiter's linear region), as it rides the hardware's analog bus to the output jack.
+  Audit pinned by tests/mono-dcblock.test.ts.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

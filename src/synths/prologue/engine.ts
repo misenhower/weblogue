@@ -88,6 +88,7 @@ import {
 } from '../../dsp/enginebase'
 import type { Arp } from '../../dsp/arp'
 import { Voice } from './voice'
+import { DcBlock } from '../../dsp/dcblock'
 import { ModFx } from '../../dsp/fx/modfx'
 import { DelayFx } from '../../dsp/fx/delay'
 import { ReverbFx } from '../../dsp/fx/reverb'
@@ -262,6 +263,14 @@ export class Engine extends EngineBase<Voice> {
   private busSL = new Float32Array(128)
   private busSR = new Float32Array(128)
 
+  // Per-bus AC coupling into the FX (src/dsp/dcblock.ts): on the hardware
+  // each timbre bus is an analog voice sum capacitor-coupled into the FX
+  // ADC, so the coupling sits on every bus channel where it enters the FX.
+  private readonly dcML: DcBlock
+  private readonly dcMR: DcBlock
+  private readonly dcSL: DcBlock
+  private readonly dcSR: DcBlock
+
   // Shared stereo FX (spec §7): MOD FX -> DELAY-or-REVERB -> L.F. COMP.
   private readonly modfx: ModFx
   private readonly delay: DelayFx
@@ -270,6 +279,10 @@ export class Engine extends EngineBase<Voice> {
 
   constructor(sampleRate: number, numVoices: 8 | 16 = 16) {
     super(sampleRate, makeCfg(numVoices))
+    this.dcML = new DcBlock(this.sr)
+    this.dcMR = new DcBlock(this.sr)
+    this.dcSL = new DcBlock(this.sr)
+    this.dcSR = new DcBlock(this.sr)
     this.modfx = new ModFx(this.sr)
     this.delay = new DelayFx(this.sr)
     this.reverb = new ReverbFx(this.sr)
@@ -1422,12 +1435,20 @@ export class Engine extends EngineBase<Voice> {
    * submix behavior UNCONFIRMED (spec §17 "FX routing submix behavior").
    * Merging only happens while the MOD FX is ON, so the OFF default keeps
    * the buses separate for the delay/reverb stage's routing.
+   *
+   * Each bus is AC-coupled first, like the hardware's per-bus FX ADC — see
+   * src/dsp/dcblock.ts for how a same-pitch RING pedestal otherwise rails
+   * the reverb (the xd "Replicant" bug class).
    */
   protected processFx(outL: Float32Array, outR: Float32Array, frames: number): void {
     const bml = this.busML
     const bmr = this.busMR
     const bsl = this.busSL
     const bsr = this.busSR
+    this.dcML.process(bml, frames)
+    this.dcMR.process(bmr, frames)
+    this.dcSL.process(bsl, frames)
+    this.dcSR.process(bsr, frames)
     let merged = false
     const mfxRouting = Math.round(this.params[P.MODFX_ROUTING])
     if (mfxRouting === 0 && this.params[P.MODFX_ON] >= 0.5) {

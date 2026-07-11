@@ -66,6 +66,7 @@ import {
 } from '../../dsp/enginebase'
 import type { Arp } from '../../dsp/arp'
 import { Voice } from './voice'
+import { DcBlock } from '../../dsp/dcblock'
 import { OgDelayFx } from './delayfx'
 
 const NV = 4
@@ -126,12 +127,17 @@ export class Engine extends EngineBase<Voice> {
   private readonly duck = new Float64Array(NV).fill(1)
   private duckActive = false
 
-  // FX: the HI PASS + DELAY block.
+  // FX: the HI PASS + DELAY block, behind the hardware's AC-coupled
+  // voice-bus -> FX-ADC boundary (src/dsp/dcblock.ts).
+  private readonly dcL: DcBlock
+  private readonly dcR: DcBlock
   private readonly delay: OgDelayFx
   private readonly fxChain: ReadonlyArray<{ process(l: Float32Array, r: Float32Array, n: number): void }>
 
   constructor(sampleRate: number) {
     super(sampleRate, BASE_CFG)
+    this.dcL = new DcBlock(this.sr)
+    this.dcR = new DcBlock(this.sr)
     this.delay = new OgDelayFx(this.sr)
     this.fxChain = [this.delay]
     this.sliderLayer = this.addOffsetLayer((v, out) => this.resolveSlider(v, out))
@@ -621,8 +627,12 @@ export class Engine extends EngineBase<Voice> {
   }
 
   /** FX: pre-delay tap, the HPF+DELAY block, post-delay tap (the OG is
-   *  strictly mono out; the scopes render mono). */
+   *  strictly mono out; the scopes render mono). The voice bus is AC-coupled
+   *  first, like the hardware's FX ADC — see src/dsp/dcblock.ts for how a
+   *  ring+sync DC pedestal otherwise reaches the output limiter. */
   protected processFx(outL: Float32Array, outR: Float32Array, frames: number): void {
+    this.dcL.process(outL, frames)
+    this.dcR.process(outR, frames)
     if (this.taps.on) this.taps.writeFxTap(6, outL, outR, frames, false)
     for (let f = 0; f < this.fxChain.length; f++) this.fxChain[f].process(outL, outR, frames)
     if (this.taps.on) this.taps.writeFxTap(8, outL, outR, frames, false)

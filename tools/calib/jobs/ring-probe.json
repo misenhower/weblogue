@@ -1,0 +1,50 @@
+{
+  "id": "ring-probe",
+  "domain": "vco.ring",
+  "description": "Semantic ground truth for the RING switch: detuned TRI pair (vco2 ~+500 cents) \u2014 ring product creates inharmonic sideband lines at f1\u00b1f2 that the plain mix lacks; identifies which raw value is audibly ON on hardware",
+  "overrides": {
+    "vco1Wave": 1,
+    "vco2Wave": 1,
+    "vco1Level": 1023,
+    "vco2Level": 1023,
+    "multiLevel": 0,
+    "sync": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0,
+    "vco2Pitch": 800
+  },
+  "sweep": {
+    "param": "ring",
+    "points": [
+      0,
+      1
+    ]
+  },
+  "notes": [
+    {
+      "midi": 45,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": {
+    "nominalHz": 110,
+    "harmonics": 16,
+    "nominalRatios": [
+      1,
+      2
+    ]
+  }
+}

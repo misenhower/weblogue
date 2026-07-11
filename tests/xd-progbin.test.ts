@@ -95,13 +95,16 @@ describe('xd prog_bin codec', () => {
     expect((decodeProgBin(encodeProgBin(short)) as Program).name).toBe('Init Program')
   })
 
-  it('writes the spec value transformations (inverted SYNC/RING, 1-based enums)', () => {
+  it('writes the spec value transformations (NORMAL SYNC/RING polarity, 1-based enums)', () => {
+    // TABLE 2's "0,1=ON,OFF" legend is an erratum: hardware truth table
+    // (2026-07-11 byte-probe on Korg's own Init blob) proves 0=OFF, 1=ON —
+    // Korg factory presets store (0,0) for the plain OFF state.
     const p = initProgram()
     p.params[P.SYNC] = 1 // On
     p.params[P.RING] = 0 // Off
     const b = encodeProgBin(p)
-    expect(b[34]).toBe(0) // "0,1=SYNC ON, SYNC OFF": On stores 0
-    expect(b[35]).toBe(1) // Off stores 1
+    expect(b[34]).toBe(1) // On stores 1
+    expect(b[35]).toBe(0) // Off stores 0
     expect(b[21]).toBe(4) // VOICE MODE TYPE: POLY(ours 3) is hw 4
     expect(b[89]).toBe(1) // MOD FX TYPE: CHORUS(ours 0) is hw 1
     expect(b[150]).toBe(13) // PROGRAM TRANSPOSE: ours 12 (=0 Note) is hw 13

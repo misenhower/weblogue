@@ -14,7 +14,9 @@
  *   CC103 MULTI SUB (type)   -> CC_ID_MULTI_SUB         (-103), v = zone 0..15
  *   CC96  MOD FX SUB         -> CC_ID_MODFX_SUB         (-96),  v = raw 0..127
  *
- * Polarity quirks (spec §15): CC80 SYNC and CC81 RING receive INVERTED —
+ * Polarity note: spec §15 claims CC80 SYNC / CC81 RING receive INVERTED —
+ * hardware-DISPROVEN 2026-07-11 (CC probe, findings log): polarity is normal.
+ * Original doc text kept below for the record —
  * 0..63 = ON. FX ON CCs 92/93/94 are normal (>= 64 = ON).
  */
 import { P } from './params'
@@ -127,10 +129,10 @@ export function decodeCc(
       return { kind: 'param', id: P.PORTAMENTO, v }
     // NOTE: CC59 is deliberately unmapped (spec §13); decoding it as a 7-bit
     // VM DEPTH would corrupt 14-bit CC27/CC59 MSB/LSB pairs from DAWs.
-    case 80: // OSC SYNC — INVERTED receive polarity: 0..63 = ON
-      return { kind: 'param', id: P.SYNC, v: v <= 63 ? 1 : 0 }
-    case 81: // RING MOD — INVERTED receive polarity: 0..63 = ON
-      return { kind: 'param', id: P.RING, v: v <= 63 ? 1 : 0 }
+    case 80: // OSC SYNC — normal polarity (spec §15's "inverted" is an erratum)
+      return { kind: 'param', id: P.SYNC, v: v >= 64 ? 1 : 0 }
+    case 81: // RING MOD — normal polarity (spec §15's "inverted" is an erratum)
+      return { kind: 'param', id: P.RING, v: v >= 64 ? 1 : 0 }
     case 92:
       return { kind: 'param', id: P.MODFX_ON, v: v >= 64 ? 1 : 0 }
     case 93:

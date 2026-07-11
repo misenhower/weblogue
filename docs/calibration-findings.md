@@ -200,6 +200,35 @@ gained `features.nominalRatios` — the pitch gate accepts the morphs' legitimat
 fundamental moves (SAW ×½, TRI ×3), so the old "mid-morph false failures" class is gone.
 v4 is NOT the default pending Matt's listening A/B.
 
+### 2026-07-11 · SYNC/RING polarity: the spec's "inverted" claims are ERRATA (Matt's catch)
+
+Matt: "you have the ring switch inverted — init program shows ring on." Hardware truth
+table (encoder-free byte-probe: Korg's own Init Program blob from his dump as the
+container, single-byte edits, FFT-peak readout; VCO2 solo detuned so ring's inharmonic
+sidebands at f1±f2 are unmistakable):
+
+- byte 34 = SYNC, **0 = OFF / 1 = ON** (TABLE 2's "0,1=SYNC ON, SYNC OFF" legend is a doc
+  erratum, like the 336-byte payload line); byte 35 = RING, same normal polarity.
+- CC80/81 are ALSO normal polarity — spec §15's "inverted receive" is equally wrong
+  (CC81=127 rings, CC81=0 doesn't).
+- VCO2 PITCH (bytes 30/31 LE) and OCTAVE (29) map correctly — earlier probe anomalies
+  were entirely the panel-impossible (sync,ring)=(1,1)-bytes state our inverted encoder
+  had been pushing (harmless historically: every calibration job muted VCO2). That state
+  makes the hardware produce strange 55 Hz-odd content — firmware behavior for a combo
+  the panel can't express; never push it.
+
+Fixed in progbin.ts (decode+encode), cc.ts, and calib ccmap.ts; test pins updated.
+**Consequences:** every imported preset stored as (0,0) — most of the bank, including
+"Replicant xd" — had been playing with ring+sync wrongly ENGAGED in the replica.
+Replicant is actually a plain detuned two-saw pad. The replica-side DC chain in the
+Replicant bug (ring product → reverb FDN → limiter rail) was real, but the preset never
+asked for ring — so "hardware plays this RING patch fine ⇒ hardware AC-couples the FX
+input" loses its evidence. The DcBlocks stay (they cure a real failure mode whenever
+ring IS engaged, and coupling remains physically plausible) but their provenance drops
+to INFERRED-defensive; the D9 behavioral A/B is now the only path to establishing the
+hardware's actual coupling. This also closes the last of Matt's "VCO2 looks weird"
+report: every preset was ringing/syncing when it shouldn't.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

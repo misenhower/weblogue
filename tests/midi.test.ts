@@ -167,13 +167,13 @@ describe('decodeCc zone switches', () => {
 })
 
 describe('decodeCc toggles and specials', () => {
-  it('SYNC/RING receive with INVERTED polarity (0-63 = ON)', () => {
-    expect(decodeCc(80, 0, null)).toEqual({ kind: 'param', id: P.SYNC, v: 1 })
-    expect(decodeCc(80, 63, null)).toEqual({ kind: 'param', id: P.SYNC, v: 1 })
-    expect(decodeCc(80, 64, null)).toEqual({ kind: 'param', id: P.SYNC, v: 0 })
-    expect(decodeCc(80, 127, null)).toEqual({ kind: 'param', id: P.SYNC, v: 0 })
-    expect(decodeCc(81, 0, null)).toEqual({ kind: 'param', id: P.RING, v: 1 })
-    expect(decodeCc(81, 127, null)).toEqual({ kind: 'param', id: P.RING, v: 0 })
+  it('SYNC/RING receive with NORMAL polarity (spec §15 "inverted" disproven on hardware 2026-07-11)', () => {
+    expect(decodeCc(80, 0, null)).toEqual({ kind: 'param', id: P.SYNC, v: 0 })
+    expect(decodeCc(80, 63, null)).toEqual({ kind: 'param', id: P.SYNC, v: 0 })
+    expect(decodeCc(80, 64, null)).toEqual({ kind: 'param', id: P.SYNC, v: 1 })
+    expect(decodeCc(80, 127, null)).toEqual({ kind: 'param', id: P.SYNC, v: 1 })
+    expect(decodeCc(81, 0, null)).toEqual({ kind: 'param', id: P.RING, v: 0 })
+    expect(decodeCc(81, 127, null)).toEqual({ kind: 'param', id: P.RING, v: 1 })
   })
 
   it('FX ON switches use normal polarity (>=64 = ON)', () => {
@@ -464,7 +464,7 @@ describe('MidiInput CC handling', () => {
     const { access, calls } = await setup()
     const port = access.portMap.get('a')!
     port.send([0xb0, 84, 127]) // DRIVE 100%
-    port.send([0xb0, 80, 0]) // SYNC inverted -> ON
+    port.send([0xb0, 80, 127]) // SYNC normal polarity -> ON
     expect(calls).toEqual([
       ['param', P.DRIVE, 2],
       ['param', P.SYNC, 1],

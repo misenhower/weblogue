@@ -9,7 +9,7 @@
  *   Zone switches emit a single CC at the ZONE CENTER,
  *   floor((zone*128 + 64) / zones), which survives the decoder's
  *   (v*zones)>>7 for every zone of every switch. Polarity quirks mirror spec
- *   §15: CC80 SYNC / CC81 RING receive INVERTED (ON = 0), FX ON CCs 92/93/94
+ *   §15's CC80/81 "inverted" claim is an erratum (hw-proven 2026-07-11); FX ON CCs 92/93/94
  *   are normal (ON = 127).
  *
  * Pure (no node imports, no fs/process) so the root tsc typechecks it via
@@ -150,10 +150,10 @@ export function encodeParamCc(id: number, raw: number): CcMsg[] | null {
   switch (id) {
     case P.PORTAMENTO: // 0..127 direct
       return [{ cc: 5, value: clampInt(raw, 127) }]
-    case P.SYNC: // INVERTED receive polarity: 0..63 = ON
-      return [{ cc: 80, value: raw >= 1 ? 0 : 127 }]
-    case P.RING: // INVERTED receive polarity: 0..63 = ON
-      return [{ cc: 81, value: raw >= 1 ? 0 : 127 }]
+    case P.SYNC: // normal polarity (spec §15's "inverted" is an erratum, hw-proven 2026-07-11)
+      return [{ cc: 80, value: raw >= 1 ? 127 : 0 }]
+    case P.RING: // normal polarity (spec §15's "inverted" is an erratum, hw-proven 2026-07-11)
+      return [{ cc: 81, value: raw >= 1 ? 127 : 0 }]
     case P.MODFX_ON:
       return [{ cc: 92, value: raw >= 1 ? 127 : 0 }]
     case P.DELAY_ON:

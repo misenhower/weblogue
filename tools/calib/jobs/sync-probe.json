@@ -1,0 +1,51 @@
+{
+  "id": "sync-probe",
+  "domain": "vco.sync",
+  "description": "Semantic ground truth for the SYNC switch: VCO2 solo detuned +~350 cents, sync swept 0/1 \u2014 measured f0 locks to the master only when sync is audibly ON, identifying the raw polarity",
+  "overrides": {
+    "vco1Wave": 2,
+    "vco2Wave": 2,
+    "vco1Level": 0,
+    "vco2Level": 1023,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0,
+    "vco2Pitch": 700,
+    "ring": 0
+  },
+  "sweep": {
+    "param": "sync",
+    "points": [
+      0,
+      1
+    ]
+  },
+  "notes": [
+    {
+      "midi": 45,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": {
+    "nominalHz": 110,
+    "harmonics": 16,
+    "nominalRatios": [
+      1,
+      1.5,
+      2
+    ]
+  }
+}

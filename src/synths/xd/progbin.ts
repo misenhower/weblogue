@@ -49,8 +49,12 @@ const OFF_NAME = 4 // "|  4~15 | ASCII | PROGRAM NAME [12] *note P1 |"
 const NAME_LEN = 12
 const OFF_KEY_TRIG = 18 // "| 18 | 0,1 | KEY TRIG |" — not modeled by the replica
 const OFF_VOICE_MODE_TYPE = 21 // "| 21 | 1~4 | VOICE MODE TYPE *note P3 |" (hw is 1-based, ours 0-based)
-const OFF_SYNC = 34 // "| 34 | 0,1 | SYNC 0,1=SYNC ON, SYNC OFF |" — INVERTED vs our Off/On switch
-const OFF_RING = 35 // "| 35 | 0,1 | RING 0,1=RING ON, RING OFF |" — INVERTED vs our Off/On switch
+// TABLE 2 claims "0,1 = ON, OFF" for SYNC/RING — a DOC ERRATUM. Hardware
+// truth table measured 2026-07-11 (byte-probe on Korg's own Init blob,
+// findings log): 0 = OFF, 1 = ON, normal polarity. Korg's factory presets
+// (incl. Init Program) store (0,0) = both OFF, as sanity predicts.
+const OFF_SYNC = 34
+const OFF_RING = 35
 const OFF_MODFX_TYPE = 89 // "| 89 | 1~5 | MOD FX TYPE *note P12 |" (hw is 1-based, ours 0-based)
 const OFF_MICRO_TUNING = 122 // "| 122 | 0~139 | MICRO TUNING *note P21 |"
 const OFF_TRANSPOSE = 150 // "| 150 | 1~25 | PROGRAM TRANSPOSE -12~+12 Note |" (hw is 1-based, ours 0..24)
@@ -304,9 +308,9 @@ export function decodeProgBin(bytes: Uint8Array): Program | null {
   set(P.MODFX_TYPE, b[OFF_MODFX_TYPE] - 1)
   // "| 150 | 1~25 | PROGRAM TRANSPOSE -12~+12 |": ours 0~24.
   set(P.PROGRAM_TRANSPOSE, b[OFF_TRANSPOSE] - 1)
-  // "0,1=SYNC ON, SYNC OFF": hardware 0 means ON — inverted vs our Off/On.
-  set(P.SYNC, b[OFF_SYNC] === 0 ? 1 : 0)
-  set(P.RING, b[OFF_RING] === 0 ? 1 : 0)
+  // normal polarity (TABLE 2's "0,1=ON,OFF" legend is an erratum — see above)
+  set(P.SYNC, b[OFF_SYNC] ? 1 : 0)
+  set(P.RING, b[OFF_RING] ? 1 : 0)
   set(P.MICRO_TUNING, MICRO_TUNING_FROM_HW.get(b[OFF_MICRO_TUNING]) ?? 0)
 
   // ---- sequencer section ----
@@ -403,8 +407,8 @@ export function encodeProgBin(p: Program): Uint8Array {
   b[OFF_VOICE_MODE_TYPE] = raw(P.VOICE_MODE) + 1 // hw 1~4
   b[OFF_MODFX_TYPE] = raw(P.MODFX_TYPE) + 1 // hw 1~5
   b[OFF_TRANSPOSE] = raw(P.PROGRAM_TRANSPOSE) + 1 // hw 1~25
-  b[OFF_SYNC] = raw(P.SYNC) ? 0 : 1 // hw 0 = SYNC ON (inverted)
-  b[OFF_RING] = raw(P.RING) ? 0 : 1 // hw 0 = RING ON (inverted)
+  b[OFF_SYNC] = raw(P.SYNC) ? 1 : 0
+  b[OFF_RING] = raw(P.RING) ? 1 : 0
   b[OFF_MICRO_TUNING] = MICRO_TUNING_TO_HW[raw(P.MICRO_TUNING)] ?? 0
 
   // ---- sequencer section ----

@@ -115,11 +115,11 @@ describe('directly mapped CCs', () => {
     }
   })
 
-  it('CC80 SYNC / CC81 RING use inverted receive polarity', () => {
-    expect(mustEncode(P.SYNC, 1)).toEqual([{ cc: 80, value: 0 }])
-    expect(mustEncode(P.SYNC, 0)).toEqual([{ cc: 80, value: 127 }])
-    expect(mustEncode(P.RING, 1)).toEqual([{ cc: 81, value: 0 }])
-    expect(mustEncode(P.RING, 0)).toEqual([{ cc: 81, value: 127 }])
+  it('CC80 SYNC / CC81 RING use NORMAL polarity (spec §15 "inverted" disproven on hardware 2026-07-11)', () => {
+    expect(mustEncode(P.SYNC, 1)).toEqual([{ cc: 80, value: 127 }])
+    expect(mustEncode(P.SYNC, 0)).toEqual([{ cc: 80, value: 0 }])
+    expect(mustEncode(P.RING, 1)).toEqual([{ cc: 81, value: 127 }])
+    expect(mustEncode(P.RING, 0)).toEqual([{ cc: 81, value: 0 }])
     for (const id of [P.SYNC, P.RING]) {
       expectRoundTrip(id, 0)
       expectRoundTrip(id, 1)

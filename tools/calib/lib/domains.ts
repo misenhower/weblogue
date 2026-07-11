@@ -156,6 +156,59 @@ export function unusableSweepPoints(job: CalibJob, results: AnyResult[], world: 
   return out
 }
 
+/** Piecewise-linear interpolation through sorted xs, clamped at both ends. */
+function interpClamped(xs: readonly number[], ys: readonly number[], x: number): number {
+  const n = xs.length
+  if (x <= xs[0]) return ys[0]
+  if (x >= xs[n - 1]) return ys[n - 1]
+  let i = 1
+  while (xs[i] < x) i++
+  const t = (x - xs[i - 1]) / (xs[i] - xs[i - 1])
+  return ys[i - 1] + t * (ys[i] - ys[i - 1])
+}
+
+/**
+ * Invert the corner-measurement bias through the replica (analysis-by-
+ * synthesis). The replica renders of this session ran a KNOWN cutoff law
+ * (the active profile), and the identical pipeline measured them — so
+ * ln(true/measured), sampled at the replica's measured corners, IS the
+ * extractor's bias curve (reference-rolloff division, critically-damped
+ * shape, LF fit inflation). Hardware captures pass through the same pipeline
+ * with the same source spectrum and a near-identical filter shape, so
+ * evaluating that curve at each hardware-measured corner recovers the
+ * hardware's true corner. Measured 2026-07-10: the fit reads a true 16 Hz
+ * replica corner as 27 Hz (+70%) and 1.4 kHz as 1.26 kHz (-12%); a table
+ * through UNCORRECTED hw corners left compare at ~12% RMS with
+ * point-dependent sign, i.e. the bias had been transplanted into the knots.
+ */
+function biasCorrectCorners(
+  job: CalibJob,
+  swept: AnyResult[],
+  targetValues: readonly (number | null)[],
+): SweepPoint[] {
+  const rep = sweepValues(job, swept, 'rep').values
+  const bias: { x: number; y: number }[] = []
+  for (let i = 0; i < swept.length; i++) {
+    const m = rep[i]
+    if (m === null || !Number.isFinite(m) || m <= 0) continue
+    bias.push({ x: Math.log(m), y: Math.log(cutoffToHz(swept[i].point!)) - Math.log(m) })
+  }
+  bias.sort((a, b) => a.x - b.x)
+  const bx = bias.map((b) => b.x)
+  const by = bias.map((b) => b.y)
+  const out: SweepPoint[] = []
+  for (let i = 0; i < swept.length; i++) {
+    const m = targetValues[i]
+    if (m === null || !Number.isFinite(m) || m <= 0) continue
+    const lm = Math.log(m)
+    out.push({
+      raw: swept[i].point!,
+      value: bias.length >= 2 ? Math.exp(lm + interpClamped(bx, by, lm)) : m,
+    })
+  }
+  return out
+}
+
 /** Domain-aware Proposal builders — the fits behind the report's review gate. */
 export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' | 'rep' = 'hw'): Proposal[] {
   const swept = results.filter((r) => r.point !== null)
@@ -169,7 +222,14 @@ export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' 
   if (pts.length < 4) return []
 
   if (job.domain === 'filter.cutoff' && jobKind(job) === 'noise') {
-    return [proposeCurve('filter.cutoff — cutoffToHz', 'Hz', pts, cutoffToHz(0), cutoffToHz(1023))]
+    const corrected = biasCorrectCorners(job, swept, values)
+    return [
+      proposeCurve('filter.cutoff — cutoffToHz', 'Hz', corrected, cutoffToHz(0), cutoffToHz(1023), {
+        forceTable:
+          'cutoff is a table, not an expMap (Matt, 2026-07-10); corners are bias-corrected ' +
+          'through the replica inversion (see domains.ts biasCorrectCorners)',
+      }),
+    ]
   }
   if (jobKind(job) === 'envelope') {
     const seg = job.features.env

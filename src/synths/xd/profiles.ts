@@ -350,13 +350,61 @@ const V2: XdCalibProfile = {
   sqrPwMin: 0,
 }
 
-export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2]
+/*
+ * v3 — v2 with the CUTOFF curve switched from expMap to a measured monotone
+ * table (Matt's call, 2026-07-10: every cutoff session showed a systematic
+ * taper deviation the expMap family cannot express). Knots are the
+ * 2026-07-10T23-28 sweep's per-point corners (4-strike all-VCF medians),
+ * BIAS-CORRECTED through the replica inversion (tools/calib/lib/domains.ts
+ * biasCorrectCorners): the corner extractor reads a known 16 Hz replica
+ * corner as 27 Hz and 1.4 kHz as 1.26 kHz, so raw measured corners must not
+ * be transplanted into a profile directly. Corrected tables from the three
+ * independent sessions agree within a few % per knot; held-out residual ~4%.
+ * The raw-1023 knot is EXTRAPOLATED (log-linear through the last three
+ * knots): the max-raw point is the PSD-transfer reference, so its own corner
+ * is unmeasurable by construction — and ~23 kHz is at the rig's 48 kHz
+ * Nyquist anyway. Both engine layers clamp fc to 0.45*fs, so the top knot
+ * just means "wide open".
+ */
+const V3: XdCalibProfile = {
+  ...V2,
+  id: 'v3',
+  name: 'v3 · partial calibration, cutoff table',
+  date: '2026-07-10',
+  notes:
+    'v2 with cutoff as a measured monotone table instead of an expMap — captures the ' +
+    'VCF taper the exponential could not, with corners bias-corrected via replica inversion.',
+  cutoffHz: {
+    kind: 'logPchip',
+    knots: [
+      [0, 24.667],
+      [64, 33.21],
+      [128, 43.319],
+      [192, 71.46],
+      [256, 111.72],
+      [320, 178.77],
+      [384, 281.97],
+      [448, 417.69],
+      [512, 658.35],
+      [576, 1012.5],
+      [640, 1571.5],
+      [704, 2461.6],
+      [768, 3872.9],
+      [832, 6249.8],
+      [896, 9517],
+      [1023, 23223], // extrapolated (see header note)
+    ],
+  },
+}
+
+export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3]
 
 /** The shipped default. Promoting a measured profile is a reviewed change —
- *  v2 promoted 2026-07-10 after Matt's listening A/B (v0 remains selectable). */
-export const XD_DEFAULT_PROFILE = 'v2'
+ *  v2 promoted 2026-07-10 after Matt's listening A/B; v3 (cutoff table)
+ *  promoted the same day on Matt's standing "switch cutoff to a table" call. */
+export const XD_DEFAULT_PROFILE = 'v3'
 
-let active: XdCalibProfile = V2
+let active: XdCalibProfile = V3
 
 export function activeXdProfile(): XdCalibProfile {
   return active

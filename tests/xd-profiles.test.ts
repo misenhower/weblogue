@@ -37,9 +37,9 @@ afterEach(() => {
 const RAWS = [0, 1, 64, 200, 356, 511.5, 512, 700, 938, 1023]
 
 describe('the shipped default', () => {
-  it('is v2 (promoted 2026-07-10 after the listening A/B)', () => {
-    expect(XD_DEFAULT_PROFILE).toBe('v2')
-    expect(activeXdProfile().id).toBe('v2')
+  it('is v3 (v2 promoted 2026-07-10 after the listening A/B; v3 = v2 + cutoff table)', () => {
+    expect(XD_DEFAULT_PROFILE).toBe('v3')
+    expect(activeXdProfile().id).toBe('v3')
   })
 })
 
@@ -149,6 +149,48 @@ describe('profile v2 (batch 2)', () => {
     for (let i = 0; i < 3; i++) {
       expect(Math.abs(Math.log(v2[i] / v1[i]))).toBeLessThan(0.12)
     }
+  })
+})
+
+describe('profile v3 (cutoff table)', () => {
+  it('cutoff passes through every measured knot and stays monotone', () => {
+    setXdProfile('v3')
+    const spec = activeXdProfile().cutoffHz
+    if (spec.kind !== 'logPchip') throw new Error('expected logPchip cutoff in v3')
+    for (const [raw, hz] of spec.knots) {
+      expect(cutoffToHz(raw)).toBeCloseTo(hz, 6)
+    }
+    let prev = cutoffToHz(0)
+    for (let r = 8; r <= 1023; r += 8) {
+      const v = cutoffToHz(r)
+      expect(v).toBeGreaterThanOrEqual(prev)
+      prev = v
+    }
+  })
+
+  it('captures the taper the v2 expMap could not (S-shaped deviation around it)', () => {
+    // The bias-corrected taper crosses the exponential: low-mid corners sit
+    // BELOW the v2 expMap, upper-mid slightly above — a shape no (lo, hi)
+    // pair can express.
+    setXdProfile('v3')
+    const at448 = cutoffToHz(448)
+    const at640 = cutoffToHz(640)
+    setXdProfile('v2')
+    expect(at448).toBeCloseTo(417.69, 1)
+    expect(at448).toBeLessThan(cutoffToHz(448)) // 417.7 vs expMap ~445
+    expect(at640).toBeGreaterThan(cutoffToHz(640)) // 1571.5 vs expMap ~1524
+  })
+
+  it('everything except cutoff is identical to v2', () => {
+    const v2 = XD_PROFILES.find((p) => p.id === 'v2')!
+    const v3 = XD_PROFILES.find((p) => p.id === 'v3')!
+    expect(v3.vcoPitchCents).toBe(v2.vcoPitchCents)
+    expect(v3.egAttackSec).toBe(v2.egAttackSec)
+    expect(v3.egDecaySec).toBe(v2.egDecaySec)
+    expect(v3.egReleaseSec).toBe(v2.egReleaseSec)
+    expect(v3.lfoRateHz).toBe(v2.lfoRateHz)
+    expect(v3.sqrPwMin).toBe(v2.sqrPwMin)
+    expect(v3.cutoffHz).not.toBe(v2.cutoffHz)
   })
 })
 

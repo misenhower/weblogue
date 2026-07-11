@@ -47,13 +47,19 @@ Measured on the clean capture backend (see rig findings):
 - None of the three curves fit an expMap (fit residuals ~40–70%); all three land as
   tier-2 monotone tables. Attack's table validates at 0.8% held-out residual.
 
-### 2026-07-10 · Filter cutoff span ≈ 25 Hz – 17.5 kHz
+### 2026-07-10 · Filter cutoff is a TABLE, not an expMap (span ≈ 25 Hz – ~23 kHz)
 
-Three independent sessions converge: `expMap(raw, 24.7, 16900)` → `(26.6, 17500)` →
-`(25.1, 17800)` (the last from 4-strike all-VCF medians; profile v2) vs the guessed
-`expMap(raw, 16, 21000)`. Held-out residual stays 10–13% in every session — a SYSTEMATIC
-taper deviation the expMap family cannot express. OPEN QUESTION for v3: keep expMap or
-switch cutoff to a monotone table like the EGs (the fits would support either).
+Three independent sessions converge; held-out residual stayed 10–13% under every expMap
+fit — a SYSTEMATIC taper deviation the family cannot express. DECIDED (Matt, 2026-07-10):
+cutoff is a monotone table, like the EGs. Profile v3 carries the 4-strike session's
+per-point corners, bias-corrected through the replica inversion (see the rig finding
+below — raw measured corners must NOT be transplanted directly). The corrected taper is
+S-shaped around the best expMap: low-mid corners sit below it, upper-mid above. Verified:
+`compare --profile v3` collapses the fit session to 0.7% RMS (every point ≤ 2%) and the
+two independent single-voice sessions to 5.4/6.1% — i.e. at the measured per-voice VCF
+spread, which is the floor for single-voice captures. The raw-1023 corner is extrapolated
+(~23 kHz, "wide open"): the max-raw point is the PSD-transfer reference and has no
+transfer of its own.
 
 ### 2026-07-08 · Voice tuning spread is tighter than modeled
 
@@ -175,6 +181,24 @@ Fixed structurally, so missing data is as loud as bad data:
 - **Every proposal** carries a `coverage: N/M planned points — MISSING …` note, so a
   thinned fit can't pass review unnoticed.
 - **`run all`** ends with a per-job suite summary; any failed point fails the job line.
+
+### 2026-07-10 · Measured values must be inverted through the replica before landing in a profile
+
+Found while building the v3 cutoff table. The corner extractor has a large, smooth,
+value-dependent bias: rendering the replica at a KNOWN 16 Hz corner measures 27 Hz
+(+70%); a known 1.4 kHz corner measures 1.26 kHz (−12%) — reference-rolloff division,
+critically-damped shape, and LF fit inflation. Because hardware and replica share the
+extractor, the bias cancels in every COMPARISON — but transplanting hardware-measured
+values into a profile bakes the bias in: a table through the raw measured corners
+"passed through every point" yet left `compare` at ~12% RMS with point-dependent sign.
+Fix: analysis-by-synthesis inversion (`domains.ts biasCorrectCorners`) — the replica
+renders of the same session sample the bias curve (known true law vs measured), and
+evaluating it at each hardware-measured value recovers the true hardware value. Cutoff
+collapsed 13% → 0.7% RMS. Corollary: some share of the EG tables' ~11% held-out
+residuals may be the same effect (the envelope follower has its own floor and shape
+bias) — v1/v2 EG knots are raw measured values. Candidate v4: re-derive the EG tables
+from the existing session data with the same inversion. Lesson: a shared extractor
+makes comparisons unbiased, not measurements.
 
 ### 2026-07-10 · SAW morph sessions look broken but aren't — job disabled until the D2 remodel
 

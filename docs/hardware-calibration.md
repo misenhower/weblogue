@@ -226,6 +226,7 @@ The full method per domain (base patch, stimulus, features, fit, pitfalls, time 
 | CROSS MOD depth scale (`XMOD_SCALE` in voice.ts, guessed) — added 2026-07-10 | D2 |
 | SYNC / RING structural spot-checks (verify, don't fit) — added 2026-07-10 | D2 |
 | Mixer level taper (`levelTo01` pow 1.2, guessed) — added 2026-07-10 | D6 |
+| FX-bus AC coupling behavior: ring+sync chord envelope A/B (validates the dcblock.ts model; the DC itself is unmeasurable — the capture chain is AC-coupled too). Optional: detuned-ring difference-tone LF sweep bounds the corner, needs loopback calibration — added 2026-07-10 | D9 |
 
 Technique note (2026-07-10): before widening any sweep's voice coverage, run a per-voice
 spread probe first (one setting, 4 strikes, per-strike feature fit) — the pitch domain

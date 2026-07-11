@@ -15,7 +15,7 @@
 import type { FromEngine } from '../shared/messages'
 import type { Store } from '../state/store'
 import { fftMag } from './fft'
-import { scopeTrigger } from './scopetrigger'
+import { ScopeLock } from './scopetrigger'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>
 
@@ -808,9 +808,15 @@ export class DebugPanel {
       const n = data.length
       const win = n > 768 ? 512 : n - Math.floor(n / 3)
       const half = Math.floor(win / 2)
-      const raw = scopeTrigger(data, 1, n - 1, Math.floor(n / 2))
-      const trig = Math.max(half, Math.min(raw, n - (win - half)))
-      this.traceWave(ctx, data, trig, half, win, w, h, this.voiceColors[v], 0.85, 0.18)
+      let lock = this.waveLocks.get(1000 + i * 32 + v)
+      if (!lock) {
+        lock = new ScopeLock()
+        this.waveLocks.set(1000 + i * 32 + v, lock)
+      }
+      const pick = lock.pick(data, half, n - win + half + 1, half, win, (n - win) >> 1)
+      const d = pick.frozen ?? data
+      const trig = pick.frozen ? half : pick.start + half
+      this.traceWave(ctx, d, trig, half, win, w, h, this.voiceColors[v], 0.85, 0.18)
       drewAny = true
     }
     if (drewAny) this.drawVoiceLegend(ctx, w)
@@ -957,6 +963,9 @@ export class DebugPanel {
     ctx.globalAlpha = 1
   }
 
+  /** Per-cell frame-coherent trigger locks (keys: cell i; 1000+i*32+v per voice). */
+  private readonly waveLocks = new Map<number, ScopeLock>()
+
   private drawScope(i: number, dataL: Float32Array, dataR?: Float32Array): void {
     const ctx = this.ctxs[i]
     const cv = this.canvases[i]
@@ -974,21 +983,26 @@ export class DebugPanel {
     ctx.lineTo(w, h / 2)
     ctx.stroke()
     ctx.globalAlpha = 1
-    // Center-trigger: lock a canonical rising zero crossing near the
-    // horizontal middle (scopeTrigger: trough-anchored, so multi-crossing
-    // waves — sync ramps, ring products, period-doubled SHAPE teeth — hold
-    // still). The search spans the WHOLE tap (a doubled 110 Hz period is 873
-    // samples; the old centered-only span of ~769 couldn't hold one) and the
-    // display window clamps at the buffer edges instead of forcing the
-    // trigger to the center. Stereo cells share the L channel's trigger so
-    // inter-channel timing (ping-pong bounce, chorus width) stays honest.
+    // Frame-coherent trigger (ScopeLock): candidate crossings are scored
+    // against the previous frame's view so multi-crossing waves — sync
+    // ramps, ring products, period-doubled SHAPE teeth — hold still, and
+    // frames whose locked crossing class doesn't fit the display range
+    // freeze last frame's trace instead of unlocking. Stereo cells share
+    // the L channel's lock so inter-channel timing stays honest.
     const n = dataL.length
     const win = n > 768 ? 512 : n - Math.floor(n / 3)
     const half = Math.floor(win / 2)
-    const raw = scopeTrigger(dataL, 1, n - 1, Math.floor(n / 2))
-    const trig = Math.max(half, Math.min(raw, n - (win - half)))
-    if (dataR) this.traceWave(ctx, dataR, trig, half, win, w, h, R_COLOR, 0.9, 0.22)
-    this.traceWave(ctx, dataL, trig, half, win, w, h, this.fg, dataR ? 0.9 : 1, dataR ? 0.22 : 0.38)
+    let lock = this.waveLocks.get(i)
+    if (!lock) {
+      lock = new ScopeLock()
+      this.waveLocks.set(i, lock)
+    }
+    const pick = lock.pick(dataL, half, n - win + half + 1, half, win, (n - win) >> 1, dataR)
+    const dL = pick.frozen ?? dataL
+    const dR = pick.frozen ? (pick.frozenR ?? undefined) : dataR
+    const trig = pick.frozen ? half : pick.start + half
+    if (dR) this.traceWave(ctx, dR, trig, half, win, w, h, R_COLOR, 0.9, 0.22)
+    this.traceWave(ctx, dL, trig, half, win, w, h, this.fg, dR ? 0.9 : 1, dR ? 0.22 : 0.38)
     if (dataR) this.drawLrLegend(ctx, w)
   }
 

@@ -6,7 +6,7 @@
  * alignments and look mangled.
  */
 import { describe, it, expect } from 'vitest'
-import { scopeTrigger } from '../src/ui/scopetrigger'
+import { scopeTrigger, ScopeLock } from '../src/ui/scopetrigger'
 
 const SR = 48000
 
@@ -53,5 +53,30 @@ describe('scopeTrigger', () => {
     expect(trig).toBeGreaterThan(0)
     expect(Math.abs(x[trig])).toBeLessThan(0.05)
     expect(x[trig + 3]).toBeGreaterThan(x[trig])
+  })
+})
+
+describe('ScopeLock (frame-coherent trigger)', () => {
+  it('holds one crossing class across scrolling frames, freezing when the class is undisplayable', () => {
+    const lock = new ScopeLock()
+    const n = 1280
+    const win = 512
+    const half = 256
+    const tooth = SR / 110
+    const views: number[] = []
+    let frozen = 0
+    for (let f = 0; f < 40; f++) {
+      const x = altSaw(n, f * 0.37 * tooth)
+      const pick = lock.pick(x, half, n - win + half + 1, half, win, (n - win) >> 1)
+      if (pick.frozen) {
+        frozen++
+        continue
+      }
+      // identify the locked class by the value a quarter tooth after start+half
+      views.push(x[pick.start + half + Math.round(tooth / 4)])
+    }
+    expect(views.length).toBeGreaterThan(25)
+    for (const v of views.slice(1)) expect(Math.abs(v - views[0])).toBeLessThan(0.1)
+    expect(frozen).toBeLessThan(15)
   })
 })

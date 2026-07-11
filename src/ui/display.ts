@@ -13,7 +13,7 @@ import type { Store, ParamSource } from '../state/store'
 import { MOTION_GATE_TIME, type ParamMeta } from '../shared/paramdef'
 import { NUM_MOTION_LANES } from '../shared/program'
 import { bindHold } from './hold'
-import { scopeTrigger } from './scopetrigger'
+import { ScopeLock } from './scopetrigger'
 import { SEQ_FIELDS, type SeqFieldDef } from './seqfields'
 
 /**
@@ -561,7 +561,9 @@ export class Display {
     }
   }
 
-  /** Line-only scope, center-triggered on a rising zero crossing. */
+  private readonly scopeLock = new ScopeLock()
+
+  /** Line-only scope, frame-coherent trigger (ScopeLock). */
   private drawScope(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -594,17 +596,18 @@ export class Display {
     } else {
       const n = data.length
       const win = Math.max(16, n >> 1)
-      // canonical rising zero crossing (scopeTrigger: trough-anchored so
-      // multi-crossing waves hold still); the search spans the whole frame
-      // and the display window clamps at the edges
-      const trig = scopeTrigger(data, 1, n - 1, -1)
-      const start = trig >= 0 ? Math.max(0, Math.min(trig - (win >> 1), n - win)) : (n - win) >> 1
+      // frame-coherent trigger (ScopeLock): candidates scored against the
+      // previous frame's view; freezes briefly instead of unlocking
+      const half = win >> 1
+      const pick = this.scopeLock.pick(data, half, n - win + half + 1, half, win, (n - win) >> 1)
+      const drawData = pick.frozen ?? data
+      const start = pick.frozen ? 0 : pick.start
       for (let px = 0; px <= w; px++) {
         const f = start + (px / w) * (win - 1)
         const i0 = Math.floor(f)
         const t = f - i0
-        const a = data[i0] ?? 0
-        const b = data[i0 + 1] ?? a
+        const a = drawData[i0] ?? 0
+        const b = drawData[i0 + 1] ?? a
         let v = a + (b - a) * t
         if (v > 1) v = 1
         else if (v < -1) v = -1

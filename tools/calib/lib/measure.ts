@@ -33,16 +33,30 @@ export interface PointFeatures {
   waveSnap: number[]
 }
 
-function waveSnapshot(x: Float32Array, sr: number, from: number, f0: number, points = 200, cycles = 2.5): number[] {
-  const span = Math.max(8, Math.round((cycles / Math.max(1, f0)) * sr))
-  let s = Math.min(from, Math.max(0, x.length - span - 1))
-  const limit = Math.min(x.length - span - 1, from + Math.round((sr / Math.max(1, f0)) * 4))
-  for (let i = from + 1; i < limit; i++) {
+/**
+ * Waves can cross zero more than once per cycle (period-doubled SAW teeth,
+ * folded TRI), so triggering on "first rising crossing" lands on a different
+ * crossing class per capture and the thumbnails look mis-triggered (Matt's
+ * catch, 2026-07-10). Canonical trigger instead: anchor at the cycle's
+ * GLOBAL minimum (unique per cycle for every wave we render), then start at
+ * the first rising zero crossing after it. Exported for tests.
+ */
+export function waveSnapshot(x: Float32Array, sr: number, from: number, f0: number, points = 200, cycles = 2.5): number[] {
+  const period = Math.max(4, Math.round(sr / Math.max(1, f0)))
+  const span = Math.max(8, Math.round(cycles * period))
+  const base = Math.min(from, Math.max(0, x.length - span - 1))
+  let minI = base
+  const mTo = Math.min(x.length - 1, base + period)
+  for (let i = base + 1; i < mTo; i++) if (x[i] < x[minI]) minI = i
+  let s = minI
+  const cTo = Math.min(x.length - 2, minI + period)
+  for (let i = minI + 1; i <= cTo; i++) {
     if (x[i - 1] <= 0 && x[i] > 0) {
       s = i
       break
     }
   }
+  s = Math.max(0, Math.min(s, x.length - span - 1))
   const out = new Array<number>(points)
   let peak = 1e-9
   for (let p = 0; p < points; p++) {

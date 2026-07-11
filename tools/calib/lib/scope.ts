@@ -10,7 +10,7 @@ import { createServer, type Server } from 'node:http'
 import { createHash } from 'node:crypto'
 import type { Socket } from 'node:net'
 import { fftMag } from '../../../src/ui/fft'
-import { fftPeakHz } from './features'
+import { fftPeakHz, goertzelC } from './features'
 
 export const SCOPE_PORT = 8078
 
@@ -84,13 +84,48 @@ export class ScopeState {
     const peakDb = 20 * Math.log10(peak + 1e-12)
     const rmsDb = 20 * Math.log10(Math.sqrt(acc / x.length) + 1e-12)
 
-    // center trigger: rising zero crossing so the wave view is phase-stable.
-    // search a window that leaves WAVE_N/2 samples on both sides of the hit.
+    // pitch first (the trigger needs the true period). Subharmonic descent as
+    // in measure.ts: on period-doubled/folded waves a harmonic out-peaks H1 —
+    // without it the readout shows the tooth rate, not the fundamental, and
+    // the trigger locks to the wrong period.
+    let f0 = peakDb > -60 ? fftPeakHz(x, x.length - FFT_N, FFT_N, this.sr) : 0
+    if (f0 > 0) {
+      const gFrom = x.length - FFT_N
+      const powerAt = (f: number): number => goertzelC(x, gFrom, x.length, f, this.sr).power
+      const peakPower = powerAt(f0)
+      for (const div of [3, 2]) {
+        const cand = f0 / div
+        if (cand >= 25 && powerAt(cand) > 0.2 * peakPower) {
+          f0 = cand
+          break
+        }
+      }
+    }
+
+    // center trigger: phase-stable wave view. A bare "rising zero crossing"
+    // hops between crossing classes on waves with several crossings per cycle
+    // (period-doubled SAW teeth, folded TRI) — anchor at the cycle's global
+    // minimum and take the first rising crossing after it, one canonical
+    // trigger per cycle. Falls back to the last rising crossing when pitch is
+    // unknown or the period doesn't fit the search window.
     const searchFrom = Math.max(WAVE_N / 2, x.length - WAVE_N * 2)
     const searchTo = x.length - WAVE_N / 2
     let trig = -1
-    for (let i = searchFrom + 1; i < searchTo; i++) {
-      if (x[i - 1] <= 0 && x[i] > 0) trig = i // last crossing wins: freshest view
+    const period = f0 > 0 ? Math.round(this.sr / f0) : 0
+    if (period > 0 && searchTo - 2 * period >= searchFrom) {
+      let minI = searchTo - 2 * period
+      for (let i = minI + 1; i < searchTo - period; i++) if (x[i] < x[minI]) minI = i
+      trig = minI
+      for (let i = minI + 1; i <= minI + period; i++) {
+        if (x[i - 1] <= 0 && x[i] > 0) {
+          trig = i
+          break
+        }
+      }
+    } else {
+      for (let i = searchFrom + 1; i < searchTo; i++) {
+        if (x[i - 1] <= 0 && x[i] > 0) trig = i // last crossing wins: freshest view
+      }
     }
     const start = trig >= 0 ? trig - WAVE_N / 2 : x.length - WAVE_N
     const wave = Array.from(x.subarray(start, start + WAVE_N))
@@ -109,7 +144,6 @@ export class ScopeState {
       spec.push(Math.round(20 * Math.log10(m + 1e-12) * 10) / 10)
     }
 
-    const f0 = peakDb > -60 ? fftPeakHz(x, x.length - FFT_N, FFT_N, this.sr) : 0
     return { sr: this.sr, wave, spec, specLo: SPEC_LO, specHi: SPEC_HI, peakDb, rmsDb, f0 }
   }
 }

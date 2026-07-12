@@ -5,12 +5,22 @@
  * implementation (see docs/xd-spec.md); values that had to be guessed are
  * marked UNCONFIRMED and are calibration targets
  * (docs/hardware-calibration.md). Calibratable curves read the ACTIVE
- * calibration profile (profiles.ts) — the default profile v0 reproduces the
+ * calibration profile (profiles.ts) — legacy profile v0 reproduces the
  * original guessed values exactly.
  */
 import { clamp, lerp } from '../../shared/maps'
 import type { SvfCfg } from '../../dsp/filter'
-import { activeXdProfile, curveAt, DOCUMENTED_PITCH_SEGS } from './profiles'
+import {
+  activeXdProfile,
+  curveAt,
+  DOCUMENTED_PITCH_SEGS,
+  XD_DEFAULT_FILTER_CONFIG,
+  type XdCalibProfile,
+} from './profiles'
+
+function selected(profile?: XdCalibProfile): XdCalibProfile {
+  return profile ?? activeXdProfile()
+}
 
 // ---------------------------------------------------------------------------
 // VCO PITCH knob: raw 0..1023 -> cents -1200..+1200 [MIDIimp note P5, exact]
@@ -31,8 +41,8 @@ export function pitchToCents(raw: number): number {
  * (2026-07-08 finding) — the OLED numbers and the sounding pitch disagree on
  * the real instrument too, so display and engine use separate curves.
  */
-export function vcoPitchCents(raw: number): number {
-  return curveAt(activeXdProfile().vcoPitchCents, raw)
+export function vcoPitchCents(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).vcoPitchCents, raw)
 }
 
 // ---------------------------------------------------------------------------
@@ -54,21 +64,21 @@ export function egIntToPercent(raw: number): number {
 // Envelope times. Hardware seconds are undocumented; profile v0 guessed
 // expMaps from SoS (slowest attack ~3s), v1 carries the measured tables.
 // ---------------------------------------------------------------------------
-export function attackToSec(raw: number): number {
-  return curveAt(activeXdProfile().egAttackSec, raw)
+export function attackToSec(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).egAttackSec, raw)
 }
-export function decayToSec(raw: number): number {
-  return curveAt(activeXdProfile().egDecaySec, raw)
+export function decayToSec(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).egDecaySec, raw)
 }
-export function releaseToSec(raw: number): number {
-  return curveAt(activeXdProfile().egReleaseSec, raw)
+export function releaseToSec(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).egReleaseSec, raw)
 }
 
 // ---------------------------------------------------------------------------
 // Filter
 // ---------------------------------------------------------------------------
-export function cutoffToHz(raw: number): number {
-  return curveAt(activeXdProfile().cutoffHz, raw)
+export function cutoffToHz(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).cutoffHz, raw)
 }
 export function resonanceTo01(raw: number): number {
   return Math.pow(clamp(raw, 0, 1023) / 1023, 1.1)
@@ -76,23 +86,13 @@ export function resonanceTo01(raw: number): number {
 export const KEYTRACK_AMOUNT = [0, 0.5, 1] as const
 
 /** xd filter voicing (fixed 2-pole + 3-position drive; spec §6-7). */
-export const XD_FILTER_CFG: SvfCfg = {
-  kMax: 2.0, // r = 0: critically damped, no resonant hump
-  kMin: 0.025, // r = 1: Q = 40 — rings hard, just shy of self-oscillation
-  resCurve: 1.4, // musical taper: resonance ramps in over the upper half
-  driveGains: [1.0, 2.6, 6.0], // OFF / 50% / 100%
-  driveMakeups: [1.0, 0.7, 0.45],
-  satLevel: 1.25,
-  bassComp: 0.15, // xd keeps its low end at high resonance
-  resLoss: 0,
-  poles: 2,
-}
+export const XD_FILTER_CFG: SvfCfg = XD_DEFAULT_FILTER_CONFIG
 
 // ---------------------------------------------------------------------------
 // LFO [MIDIimp note P11]
 // ---------------------------------------------------------------------------
-export function lfoRateToHz(raw: number): number {
-  return curveAt(activeXdProfile().lfoRateHz, raw)
+export function lfoRateToHz(raw: number, profile?: XdCalibProfile): number {
+  return curveAt(selected(profile).lfoRateHz, raw)
 }
 
 /** BPM-sync divisions in 64-wide zones, values = whole-note fractions. */
@@ -148,9 +148,9 @@ export function programLevelToDb(stored: number): number {
 // ---------------------------------------------------------------------------
 // Portamento: raw 0..127, 0 = off.
 // ---------------------------------------------------------------------------
-export function portamentoToSec(raw: number): number {
+export function portamentoToSec(raw: number, profile?: XdCalibProfile): number {
   if (raw <= 0) return 0
-  return 0.003 * Math.pow(5000 / 3, clamp(raw, 0, 127) / 127) // ~3ms .. ~5s
+  return 0.003 * Math.pow(selected(profile).portamentoMaxSec / 0.003, clamp(raw, 0, 127) / 127)
 }
 
 // ---------------------------------------------------------------------------

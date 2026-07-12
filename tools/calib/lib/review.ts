@@ -3,7 +3,7 @@
  * here so evidence promotion, independent verification, and acceptance form
  * one coherent module instead of three loosely-related command handlers.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { evaluateVerification, type VerificationResult } from './workflow'
 import {
@@ -14,6 +14,9 @@ import {
   verificationDesignReasons,
 } from './evidence'
 import { compareEvidence, readFeatures } from './comparison'
+import { profileLineageProblems } from './lineage'
+import { XD_PROFILES } from '../../../src/synths/xd/profiles'
+import { publishJsonImmutable } from './publish'
 
 function resolveDir(root: string, name: string, kind: 'session' | 'evidence' | 'either'): string | null {
   if (existsSync(join(name, 'features.json'))) return name
@@ -120,7 +123,7 @@ export function verifyCommand(
     verificationOutDir,
     `${basename(candidateDir)}--${basename(verificationDir)}.json`,
   )
-  writeFileSync(verificationOut, JSON.stringify(artifact, null, 2) + '\n')
+  publishJsonImmutable(verificationOut, artifact)
   console.log(`verification ${result.passed ? 'PASS' : 'FAIL'}: ${fmtMetric(result.beforeScore, comparison.unit)} -> ${fmtMetric(result.afterScore, comparison.unit)}`)
   console.log(`artifact: ${relative(root, verificationOut)}`)
   for (const reason of result.reasons) console.log(`- ${reason}`)
@@ -144,4 +147,18 @@ export function acceptCommand(root: string, candidateName: string, verificationN
   const out = acceptEvidence(root, candidateDir, verificationPath)
   console.log(`accepted -> ${relative(root, out)}`)
   return out
+}
+
+export function validateProfileCommand(root: string, profileId: string): number {
+  const profile = XD_PROFILES.find((candidate) => candidate.id === profileId)
+  if (!profile) throw new Error(`unknown calibration profile: ${profileId}`)
+  const digest = profileDigest(profileId)!
+  const problems = profileLineageProblems(root, profile, XD_PROFILES, digest)
+  if (problems.length === 0) {
+    console.log(`profile ${profileId} lineage PASS (${digest.slice(0, 12)})`)
+    return 0
+  }
+  console.log(`profile ${profileId} lineage FAIL`)
+  for (const problem of problems) console.log(`- ${problem}`)
+  return 1
 }

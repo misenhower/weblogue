@@ -13,6 +13,8 @@ That command copies only `job.json`, `meta.json`, `features.json`, and
 machine-specific absolute paths from the report. Fitting evidence is also bound
 to the candidate profile ID and content digest. Measurement payloads are
 immutable; verification artifacts live separately in `calib/verifications/`.
+Promotion is transactional: the bundle is checksummed and validated in a
+temporary directory, then atomically renamed into place.
 Delete and deliberately re-promote evidence if the extractor changes and the
 session is remeasured.
 

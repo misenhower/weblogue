@@ -13,4 +13,5 @@ docs/hardware/
 calib/tmp/
 calib/backups/
 calib/sessions/
+calib/rig.local.json
 tools/calib/native/.bin/

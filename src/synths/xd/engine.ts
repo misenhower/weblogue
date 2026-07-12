@@ -52,7 +52,7 @@ import {
   type OffsetResolution,
 } from '../../dsp/enginebase'
 import type { Arp } from '../../dsp/arp'
-import { setXdProfile } from './profiles'
+import { XdCalibrationState, XD_DEFAULT_PROFILE } from './profiles'
 import { Voice } from './voice'
 import { DcBlock } from '../../dsp/dcblock'
 import { ModFx } from '../../dsp/fx/modfx'
@@ -96,11 +96,12 @@ const MODFX_SUB_PARAM = [
 ]
 
 /** Family-shared engine wiring (dsp/enginebase.ts), bound to the xd tables. */
-const BASE_CFG: EngineBaseConfig<Voice> = {
+function baseCfg(calibration: XdCalibrationState): EngineBaseConfig<Voice> {
+  return {
   params: PARAMS,
   motionMeta: MOTION_META,
   numVoices: NV,
-  createVoice: (sr, i) => new Voice(sr, i),
+  createVoice: (sr, i) => new Voice(sr, i, calibration),
   ids: {
     voiceMode: P.VOICE_MODE,
     bendRangePlus: P.BEND_RANGE_PLUS,
@@ -109,11 +110,13 @@ const BASE_CFG: EngineBaseConfig<Voice> = {
     portamentoBpm: P.PORTAMENTO_BPM,
     portamentoMode: P.PORTAMENTO_MODE,
   },
-  portamentoToSec,
+  portamentoToSec: (raw) => portamentoToSec(raw, calibration.profile),
   arp: { voiceMode: VM_ARP },
+  }
 }
 
 export class Engine extends EngineBase<Voice> {
+  private readonly calibration: XdCalibrationState
   /** The xd always has an arpeggiator (BASE_CFG.arp). */
   declare readonly arp: Arp
 
@@ -133,8 +136,10 @@ export class Engine extends EngineBase<Voice> {
   private readonly reverb: ReverbFx
   private readonly fxChain: ReadonlyArray<{ process(l: Float32Array, r: Float32Array, n: number): void }>
 
-  constructor(sampleRate: number) {
-    super(sampleRate, BASE_CFG)
+  constructor(sampleRate: number, profileId: string = XD_DEFAULT_PROFILE) {
+    const calibration = new XdCalibrationState(profileId)
+    super(sampleRate, baseCfg(calibration))
+    this.calibration = calibration
     this.dcL = new DcBlock(this.sr)
     this.dcR = new DcBlock(this.sr)
     this.modfx = new ModFx(this.sr)
@@ -155,7 +160,7 @@ export class Engine extends EngineBase<Voice> {
    * scalars (mod depths, SQR PW floor) read the profile live and need no push.
    */
   setCalibProfile(id: string): void {
-    if (setXdProfile(id)) this.applyAllParams()
+    if (this.calibration.set(id)) this.applyAllParams()
   }
 
   /* ----------------------------------------------------------- joystick -- */
@@ -241,12 +246,12 @@ export class Engine extends EngineBase<Voice> {
         for (let i = 0; i < NV; i++) vs[i].setVcoOctave(1, Math.pow(2, Math.round(e) - 1))
         break
       case P.VCO1_PITCH: {
-        const c = vcoPitchCents(e)
+        const c = vcoPitchCents(e, this.calibration.profile)
         for (let i = 0; i < NV; i++) vs[i].setVcoPitchCents(0, c)
         break
       }
       case P.VCO2_PITCH: {
-        const c = vcoPitchCents(e)
+        const c = vcoPitchCents(e, this.calibration.profile)
         for (let i = 0; i < NV; i++) vs[i].setVcoPitchCents(1, c)
         break
       }
@@ -306,7 +311,7 @@ export class Engine extends EngineBase<Voice> {
         break
       }
       case P.CUTOFF: {
-        const hz = cutoffToHz(e)
+        const hz = cutoffToHz(e, this.calibration.profile)
         for (let i = 0; i < NV; i++) vs[i].setCutoff(hz)
         break
       }
@@ -327,17 +332,17 @@ export class Engine extends EngineBase<Voice> {
       case P.AMP_DECAY:
       case P.AMP_SUSTAIN:
       case P.AMP_RELEASE: {
-        const a = attackToSec(this.effectiveParam(P.AMP_ATTACK))
-        const d = decayToSec(this.effectiveParam(P.AMP_DECAY))
+        const a = attackToSec(this.effectiveParam(P.AMP_ATTACK), this.calibration.profile)
+        const d = decayToSec(this.effectiveParam(P.AMP_DECAY), this.calibration.profile)
         const s = this.effectiveParam(P.AMP_SUSTAIN) / 1023
-        const r = releaseToSec(this.effectiveParam(P.AMP_RELEASE))
+        const r = releaseToSec(this.effectiveParam(P.AMP_RELEASE), this.calibration.profile)
         for (let i = 0; i < NV; i++) vs[i].setAmpEg(a, d, s, r)
         break
       }
       case P.EG_ATTACK:
       case P.EG_DECAY: {
-        const a = attackToSec(this.effectiveParam(P.EG_ATTACK))
-        const d = decayToSec(this.effectiveParam(P.EG_DECAY))
+        const a = attackToSec(this.effectiveParam(P.EG_ATTACK), this.calibration.profile)
+        const d = decayToSec(this.effectiveParam(P.EG_DECAY), this.calibration.profile)
         for (let i = 0; i < NV; i++) vs[i].setModEgTimes(a, d)
         break
       }
@@ -552,7 +557,7 @@ export class Engine extends EngineBase<Voice> {
   private refreshLfoFreq(): void {
     const mode = Math.round(this.effectiveParam(P.LFO_MODE))
     const raw = this.effectiveParam(P.LFO_RATE)
-    const hz = mode === 2 ? lfoBpmToHz(raw, this.bpm) : lfoRateToHz(raw)
+    const hz = mode === 2 ? lfoBpmToHz(raw, this.bpm) : lfoRateToHz(raw, this.calibration.profile)
     for (let i = 0; i < NV; i++) this.voices[i].setLfoFreq(hz)
   }
 

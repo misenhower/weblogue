@@ -1,6 +1,7 @@
 {
   "id": "shape-saw",
   "domain": "vco.shape",
+  "profileFields": ["sawMirrorW"],
   "description": "D2: SAW SHAPE morph at A2 \u2014 mean cycles feed the half-rate chopper fits (m, phi); the morph period-doubles (55 Hz fundamental at high SHAPE), which the measurement accepts via nominalRatios",
   "overrides": {
     "vco1Wave": 2,

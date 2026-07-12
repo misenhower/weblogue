@@ -71,7 +71,7 @@ export function fastTanh(x: number): number {
 }
 
 export class SvfFilter {
-  private readonly cfg: SvfCfg
+  private cfg: SvfCfg
   private readonly maxCutoff: number
   /** pi / (2*fs): cutoff-to-g prewarp factor at the 2x oversampled rate. */
   private readonly piOver2Fs: number
@@ -85,6 +85,7 @@ export class SvfFilter {
   private kTarget: number
   private driveGainTarget = 1
   private makeupTarget = 1
+  private drivePosition = 0
   private mix4Target = 0 // 0 = 2-pole, 1 = 4-pole
 
   // --- smoothed parameter values ---
@@ -142,8 +143,17 @@ export class SvfFilter {
     let pos = Math.round(d)
     if (pos < 0) pos = 0
     if (pos >= gains.length) pos = gains.length - 1
+    this.drivePosition = pos
     this.driveGainTarget = gains[pos]
     this.makeupTarget = makeups[pos] ?? 1
+  }
+
+  /** Apply a versioned voicing without discarding filter state. */
+  configure(cfg: SvfCfg): void {
+    this.cfg = cfg
+    this.setResonance(this.resTarget)
+    this.setDrive(this.drivePosition)
+    this.setPoles(cfg.poles)
   }
 
   /** Pole count: 2 (12 dB/oct) or 4 (24 dB/oct); crossfaded, click-free. */

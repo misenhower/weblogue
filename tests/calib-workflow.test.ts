@@ -7,11 +7,17 @@ import {
   verificationThreshold,
   type VerificationPoint,
 } from '../tools/calib/lib/workflow'
-import { acceptEvidence, promoteEvidence } from '../tools/calib/lib/evidence'
+import { acceptEvidence, promoteEvidence, validateAcceptedResult } from '../tools/calib/lib/evidence'
+import { profileLineageProblems } from '../tools/calib/lib/lineage'
 import { verifyCommand } from '../tools/calib/lib/review'
 import { renderJobPoint } from '../tools/calib/lib/render'
 import { measureAny, type AnyResult } from '../tools/calib/lib/domains'
-import { setXdProfile, XD_DEFAULT_PROFILE } from '../src/synths/xd/profiles'
+import {
+  setXdProfile,
+  XD_PROFILES,
+  XD_DEFAULT_PROFILE,
+  type XdCalibProfile,
+} from '../src/synths/xd/profiles'
 import type { CalibJob } from '../tools/calib/lib/job'
 
 const point = (before: number, after: number): VerificationPoint => ({
@@ -122,6 +128,68 @@ describe('calibration verification gate', () => {
 })
 
 describe('canonical calibration evidence', () => {
+  it('requires real accepted results for every field changed by an R2 profile', () => {
+    const root = mkdtempSync(join(tmpdir(), 'calib-lineage-'))
+    const base = XD_PROFILES.find((profile) => profile.id === 'v3')!
+    const candidate: XdCalibProfile = {
+      ...base,
+      id: 'v5',
+      procedure: { id: 'xd-hardware-calibration' as const, revision: 2 },
+      cutoffHz: { kind: 'expMap' as const, lo: 18, hi: 19_000 },
+      lfoMaxPitchCents: base.lfoMaxPitchCents + 1,
+      lineage: {
+        baseProfile: 'v3',
+        evidence: {
+          cutoffHz: 'calib/results/v5/filter.cutoff.json',
+        },
+      },
+    }
+    mkdirSync(join(root, 'calib', 'results', 'v5'), { recursive: true })
+    writeFileSync(
+      join(root, 'calib', 'results', 'v5', 'filter.cutoff.json'),
+      JSON.stringify({
+        profile: 'v5',
+        profileDigest: 'candidate-digest',
+        procedure: candidate.procedure,
+        profileFields: ['cutoffHz'],
+      }),
+    )
+
+    const missing = profileLineageProblems(root, candidate, [base, candidate], 'candidate-digest')
+    expect(missing).toContain('changed field lfoMaxPitchCents has no accepted result')
+    expect(missing.some((problem) => problem.includes('does not reference candidate evidence'))).toBe(true)
+    candidate.lineage!.evidence.lfoMaxPitchCents = 'calib/results/v5/vco.lfo.json'
+    writeFileSync(
+      join(root, 'calib', 'results', 'v5', 'vco.lfo.json'),
+      JSON.stringify({
+        profile: 'v5',
+        profileDigest: 'candidate-digest',
+        procedure: candidate.procedure,
+        profileFields: ['lfoMaxPitchCents'],
+      }),
+    )
+    const fabricated = profileLineageProblems(root, candidate, [base, candidate], 'candidate-digest')
+    expect(fabricated.some((problem) => problem.includes('does not reference candidate evidence'))).toBe(true)
+  })
+
+  it('rejects a profile whose R2 base has invalid lineage', () => {
+    const root = mkdtempSync(join(tmpdir(), 'calib-lineage-base-'))
+    const legacy = XD_PROFILES.find((profile) => profile.id === 'v3')!
+    const invalidBase: XdCalibProfile = {
+      ...legacy,
+      id: 'v5',
+      procedure: { id: 'xd-hardware-calibration', revision: 2 },
+    }
+    const child: XdCalibProfile = {
+      ...invalidBase,
+      id: 'v6',
+      lineage: { baseProfile: 'v5', evidence: {} },
+    }
+    expect(profileLineageProblems(root, child, [legacy, invalidBase, child], 'child-digest')).toContain(
+      'base v5: procedure-R2+ profile has no lineage',
+    )
+  })
+
   it('promotes only derived artifacts and records their checksums', () => {
     const root = mkdtempSync(join(tmpdir(), 'calib-evidence-'))
     const session = join(root, 'calib', 'sessions', '2026-07-12T12-00-cutoff')
@@ -132,7 +200,13 @@ describe('canonical calibration evidence', () => {
         JSON.stringify({
           name,
           ...(name === 'meta.json'
-            ? { procedure: { id: 'xd-hardware-calibration', revision: 2 } }
+            ? {
+                procedure: { id: 'xd-hardware-calibration', revision: 2 },
+                rig: {
+                  hardwareUnit: { unitId: 'xd-unit-1' },
+                  captureChain: { interface: 'test interface', sampleRateHz: 48_000 },
+                },
+              }
             : {}),
         }) + '\n',
       )
@@ -212,6 +286,7 @@ describe('canonical calibration evidence', () => {
     const verificationPath = join(root, 'calib', 'verifications', 'fit-session--verify-session.json')
     expect(() => acceptEvidence(root, candidate, verificationPath)).toThrow(/not found/)
     expect(verifyCommand(root, candidate, verificationDir, 'v4').passed).toBe(true)
+    expect(() => verifyCommand(root, candidate, verificationDir, 'v4')).toThrow(/already exists/)
     const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
     // Acceptance must reproduce the comparison from checksummed evidence,
     // not trust editable point/result fields in this review artifact.
@@ -219,11 +294,29 @@ describe('canonical calibration evidence', () => {
     verification.result = { passed: true, afterScore: 999 }
     writeFileSync(verificationPath, JSON.stringify(verification))
     const accepted = acceptEvidence(root, candidate, verificationPath)
-    expect(accepted).toBe(join(root, 'calib', 'results', 'v4', 'vco.pitch.json'))
+    expect(accepted).toBe(join(root, 'calib', 'results', 'v4', 'vco1-pitch-knob.json'))
     const result = JSON.parse(readFileSync(accepted, 'utf8'))
     expect(result.profile).toBe('v4')
     expect(result.evidence).toBe('calib/evidence/fit-session')
     expect(result.verification.evidence).toBe('calib/evidence/verify-session')
+    expect(validateAcceptedResult(root, accepted)).toEqual([])
+    const acceptedFields = result.profileFields
+    result.profileFields = ['driftConfig']
+    writeFileSync(accepted, JSON.stringify(result))
+    expect(validateAcceptedResult(root, accepted)).toContain(
+      'accepted result fields do not match recomputed acceptance inputs',
+    )
+    result.profileFields = acceptedFields
+    writeFileSync(accepted, JSON.stringify(result))
+    const acceptedProposals = result.proposals
+    result.proposals = [{ proposed: 'tampered' }]
+    writeFileSync(accepted, JSON.stringify(result))
+    expect(validateAcceptedResult(root, accepted)).toContain(
+      'accepted result fields do not match recomputed acceptance inputs',
+    )
+    result.proposals = acceptedProposals
+    writeFileSync(accepted, JSON.stringify(result))
+    expect(() => acceptEvidence(root, candidate, verificationPath)).toThrow(/already exists/)
 
     verification.unit = 'Hz'
     writeFileSync(verificationPath, JSON.stringify(verification))

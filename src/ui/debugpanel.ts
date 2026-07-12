@@ -14,7 +14,7 @@
  */
 import type { FromEngine } from '../shared/messages'
 import type { Store } from '../state/store'
-import { fftMag } from './fft'
+import { fftMag } from '../dsp/fft'
 import { ScopeLock } from './scopetrigger'
 
 type DbgMsg = Extract<FromEngine, { t: 'dbg' }>

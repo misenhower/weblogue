@@ -1,6 +1,7 @@
 {
   "id": "shape-tri",
   "domain": "vco.shape",
+  "profileFields": ["triFoldDrive", "triFoldLevel", "triFoldKnee"],
   "description": "D2: TRI SHAPE fold at A2 \u2014 mean cycles feed the single-soft-fold fits (drive, level, knee); at SHAPE max the wave is an exact x3 triple, accepted via nominalRatios",
   "overrides": {
     "vco1Wave": 1,

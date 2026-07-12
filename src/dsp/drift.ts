@@ -16,21 +16,35 @@
  * tick() returns cents; no allocation on the audio path.
  */
 
-const WALK_CENTS = 2.5
-const WALK_TAU = 0.35 // seconds, slew toward the walk target
-const WALK_MIN_INTERVAL = 0.3 // seconds between new walk targets
-const WALK_MAX_INTERVAL = 1.0
-const NOTE_OFFSET_CENTS = 1.5
-const JITTER_CUTOFF = 30 // Hz, one-pole lowpass on the jitter noise
-const JITTER_DRIVE = 2.0 // pre-filter noise amplitude (post-filter ~±0.15 pk)
-const JITTER_CLAMP = 0.2 // hard bound on the jitter component
+export interface DriftConfig {
+  walkCents: number
+  walkTauSec: number
+  walkMinIntervalSec: number
+  walkMaxIntervalSec: number
+  noteOffsetCents: number
+  jitterCutoffHz: number
+  jitterDrive: number
+  jitterClampCents: number
+}
+
+export const DEFAULT_DRIFT_CONFIG: DriftConfig = {
+  walkCents: 2.5,
+  walkTauSec: 0.35,
+  walkMinIntervalSec: 0.3,
+  walkMaxIntervalSec: 1.0,
+  noteOffsetCents: 1.5,
+  jitterCutoffHz: 30,
+  jitterDrive: 2.0,
+  jitterClampCents: 0.2,
+}
 const FLUSH = 1e-9
 
 export class Drift {
   private readonly sr: number
   private readonly seed: number
-  private readonly walkCoef: number
-  private readonly jitterCoef: number
+  private config: DriftConfig
+  private walkCoef: number
+  private jitterCoef: number
   private rngState: number
   private walk = 0
   private walkTarget = 0
@@ -38,12 +52,20 @@ export class Drift {
   private noteOffset = 0
   private jitter = 0
 
-  constructor(sampleRate: number, seed: number) {
+  constructor(sampleRate: number, seed: number, config: DriftConfig = DEFAULT_DRIFT_CONFIG) {
     this.sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
     this.seed = (Number.isFinite(seed) ? seed : 0) >>> 0
     this.rngState = this.seed
-    this.walkCoef = 1 - Math.exp(-1 / (WALK_TAU * this.sr))
-    this.jitterCoef = 1 - Math.exp((-2 * Math.PI * JITTER_CUTOFF) / this.sr)
+    this.config = config
+    this.walkCoef = 0
+    this.jitterCoef = 0
+    this.configure(config)
+  }
+
+  configure(config: DriftConfig): void {
+    this.config = config
+    this.walkCoef = 1 - Math.exp(-1 / (Math.max(1e-6, config.walkTauSec) * this.sr))
+    this.jitterCoef = 1 - Math.exp((-2 * Math.PI * Math.max(0, config.jitterCutoffHz)) / this.sr)
   }
 
   /** mulberry32 — deterministic, uniform in [0, 1) */
@@ -56,7 +78,7 @@ export class Drift {
 
   /** Draw a fresh persistent offset for the new note (±1.5 cents). */
   noteOn(): void {
-    this.noteOffset = (this.rand() * 2 - 1) * NOTE_OFFSET_CENTS
+    this.noteOffset = (this.rand() * 2 - 1) * this.config.noteOffsetCents
   }
 
   reset(): void {
@@ -72,9 +94,10 @@ export class Drift {
   tick(): number {
     // slow random walk: retarget every 0.3..1 s, one-pole slew toward it
     if (--this.walkCounter <= 0) {
-      this.walkTarget = (this.rand() * 2 - 1) * WALK_CENTS
+      const cfg = this.config
+      this.walkTarget = (this.rand() * 2 - 1) * cfg.walkCents
       const interval =
-        WALK_MIN_INTERVAL + (WALK_MAX_INTERVAL - WALK_MIN_INTERVAL) * this.rand()
+        cfg.walkMinIntervalSec + (cfg.walkMaxIntervalSec - cfg.walkMinIntervalSec) * this.rand()
       this.walkCounter = (interval * this.sr) | 0
     }
     let w = this.walk + this.walkCoef * (this.walkTarget - this.walk)
@@ -83,9 +106,10 @@ export class Drift {
     this.walk = w
 
     // fast jitter: lowpassed white noise, hard-limited
-    const j = this.jitter + this.jitterCoef * ((this.rand() * 2 - 1) * JITTER_DRIVE - this.jitter)
+    const cfg = this.config
+    const j = this.jitter + this.jitterCoef * ((this.rand() * 2 - 1) * cfg.jitterDrive - this.jitter)
     this.jitter = j
-    const jc = j > JITTER_CLAMP ? JITTER_CLAMP : j < -JITTER_CLAMP ? -JITTER_CLAMP : j
+    const jc = j > cfg.jitterClampCents ? cfg.jitterClampCents : j < -cfg.jitterClampCents ? -cfg.jitterClampCents : j
 
     return w + this.noteOffset + jc
   }

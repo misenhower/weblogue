@@ -1,7 +1,7 @@
 /*
  * Rig identity: which MIDI port and audio device this machine's calibration
- * setup uses, persisted (committed) in calib/rig.json so sessions are
- * reproducible. Devices are stored by name and resolved at runtime.
+ * setup uses. Machine-local routing lives in ignored rig.local.json; stable
+ * unit/capture provenance lives in committed rigs/<unit-id>.json.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -32,50 +32,80 @@ export interface RigConfig {
   notes?: string
 }
 
+interface LocalRigConfig {
+  unitId?: string
+  midiPort: string
+  midiChannel: number
+  audioDevice: string | null
+}
+
+type RigIdentity = Pick<RigConfig, 'hardwareUnit' | 'captureChain' | 'notes'>
+
 export function calibDir(root: string): string {
   return join(root, 'calib')
 }
 
 export function rigPath(root: string): string {
-  return join(calibDir(root), 'rig.json')
+  return join(calibDir(root), 'rig.local.json')
+}
+
+export function rigIdentityPath(root: string, unitId: string): string {
+  if (!/^[a-zA-Z0-9._-]+$/.test(unitId)) throw new Error(`invalid rig unit id: ${unitId}`)
+  return join(calibDir(root), 'rigs', `${unitId}.json`)
 }
 
 export function loadRig(root: string): RigConfig | null {
   const p = rigPath(root)
   if (!existsSync(p)) return null
-  const parsed = JSON.parse(readFileSync(p, 'utf8')) as Partial<RigConfig>
+  const parsed = JSON.parse(readFileSync(p, 'utf8')) as Partial<LocalRigConfig>
   if (typeof parsed.midiPort !== 'string') return null
+  let identity: RigIdentity = {}
+  if (typeof parsed.unitId === 'string') {
+    const identityPath = rigIdentityPath(root, parsed.unitId)
+    if (existsSync(identityPath)) {
+      identity = JSON.parse(readFileSync(identityPath, 'utf8')) as RigIdentity
+      if (identity.hardwareUnit?.unitId !== parsed.unitId) {
+        throw new Error(`rig identity ${identityPath} does not match selected unit ${parsed.unitId}`)
+      }
+    }
+  }
   return {
     midiPort: parsed.midiPort,
     midiChannel: typeof parsed.midiChannel === 'number' ? parsed.midiChannel : 0,
     audioDevice: typeof parsed.audioDevice === 'string' ? parsed.audioDevice : null,
     hardwareUnit:
-      parsed.hardwareUnit &&
-      typeof parsed.hardwareUnit.model === 'string' &&
-      typeof parsed.hardwareUnit.unitId === 'string'
+      identity.hardwareUnit &&
+      typeof identity.hardwareUnit.model === 'string' &&
+      typeof identity.hardwareUnit.unitId === 'string'
         ? {
-            model: parsed.hardwareUnit.model,
-            unitId: parsed.hardwareUnit.unitId,
-            firmware: typeof parsed.hardwareUnit.firmware === 'string' ? parsed.hardwareUnit.firmware : null,
+            model: identity.hardwareUnit.model,
+            unitId: identity.hardwareUnit.unitId,
+            firmware: typeof identity.hardwareUnit.firmware === 'string' ? identity.hardwareUnit.firmware : null,
           }
         : undefined,
     captureChain:
-      parsed.captureChain &&
-      typeof parsed.captureChain.interface === 'string' &&
-      typeof parsed.captureChain.sampleRateHz === 'number'
+      identity.captureChain &&
+      typeof identity.captureChain.interface === 'string' &&
+      typeof identity.captureChain.sampleRateHz === 'number'
         ? {
-            interface: parsed.captureChain.interface,
-            sampleRateHz: parsed.captureChain.sampleRateHz,
-            synthOutput: parsed.captureChain.synthOutput ?? 'unknown',
-            interfaceInput: parsed.captureChain.interfaceInput ?? 'unknown',
-            recorder: parsed.captureChain.recorder ?? 'unknown',
+            interface: identity.captureChain.interface,
+            sampleRateHz: identity.captureChain.sampleRateHz,
+            synthOutput: identity.captureChain.synthOutput ?? 'unknown',
+            interfaceInput: identity.captureChain.interfaceInput ?? 'unknown',
+            recorder: identity.captureChain.recorder ?? 'unknown',
           }
         : undefined,
-    notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+    notes: typeof identity.notes === 'string' ? identity.notes : undefined,
   }
 }
 
 export function saveRig(root: string, rig: RigConfig): void {
   mkdirSync(calibDir(root), { recursive: true })
-  writeFileSync(rigPath(root), JSON.stringify(rig, null, 2) + '\n')
+  const local: LocalRigConfig = {
+    ...(rig.hardwareUnit?.unitId ? { unitId: rig.hardwareUnit.unitId } : {}),
+    midiPort: rig.midiPort,
+    midiChannel: rig.midiChannel,
+    audioDevice: rig.audioDevice,
+  }
+  writeFileSync(rigPath(root), JSON.stringify(local, null, 2) + '\n')
 }

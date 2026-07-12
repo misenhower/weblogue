@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fftMag } from '../src/ui/fft'
+import { fftMag } from '../src/dsp/fft'
 
 describe('fftMag', () => {
   it('peaks at the sine frequency bin with near-unity magnitude', () => {

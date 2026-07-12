@@ -20,8 +20,7 @@ import { SvfFilter } from '../../dsp/filter'
 import { AdsrEg, AdEg } from '../../dsp/eg'
 import { Lfo, LFO_MODE } from '../../dsp/lfo'
 import { Drift } from '../../dsp/drift'
-import { XD_FILTER_CFG } from './curves'
-import { activeXdProfile, curveAt, type CurveSpec, type XdCalibProfile } from './profiles'
+import { XdCalibrationState, curveAt, type CurveSpec, type XdCalibProfile } from './profiles'
 
 /** EG TARGET values (params.ts order): CUTOFF, PITCH 2, PITCH. */
 const EGT_CUTOFF = 0
@@ -53,6 +52,7 @@ function pow2(x: number): number {
 }
 
 export class Voice {
+  private readonly calibration: XdCalibrationState
   private readonly sr: number
   private readonly maxFreq: number
   private readonly levelCoef: number // ~2 ms one-pole for mixer levels
@@ -121,21 +121,22 @@ export class Voice {
 
   private voiceGain = 1
 
-  constructor(sampleRate: number, voiceIndex: number) {
+  constructor(sampleRate: number, voiceIndex: number, calibration: XdCalibrationState) {
     const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
     this.sr = sr
+    this.calibration = calibration
     this.maxFreq = sr * 0.45
     this.levelCoef = 1 - Math.exp(-1 / (0.002 * sr))
     this.vco1 = new Vco(sr)
     this.vco2 = new Vco(sr)
     this.multi = new MultiEngine(sr)
-    this.filter = new SvfFilter(sr, XD_FILTER_CFG)
+    this.filter = new SvfFilter(sr, calibration.profile.filterConfig)
     this.ampEg = new AdsrEg(sr)
     this.modEg = new AdEg(sr)
     this.lfo = new Lfo(sr)
     const vi = (voiceIndex | 0) + 1
-    this.drift1 = new Drift(sr, vi * 2 * 0x9e3779b9)
-    this.drift2 = new Drift(sr, (vi * 2 + 1) * 0x9e3779b9)
+    this.drift1 = new Drift(sr, vi * 2 * 0x9e3779b9, calibration.profile.driftConfig)
+    this.drift2 = new Drift(sr, (vi * 2 + 1) * 0x9e3779b9, calibration.profile.driftConfig)
   }
 
   /* ------------------------------------------------------------- events -- */
@@ -420,8 +421,11 @@ export class Voice {
    * Absent fields bind null = the legacy morphs (v0-v3 bit-identical).
    * Gated on profile identity so it costs nothing per sample.
    */
-  private bindShapeModels(prof: XdCalibProfile): void {
+  private bindProfile(prof: XdCalibProfile): void {
     this.boundProf = prof
+    this.filter.configure(prof.filterConfig)
+    this.drift1.configure(prof.driftConfig)
+    this.drift2.configure(prof.driftConfig)
     const mk = (spec: CurveSpec | undefined): ((s: number) => number) | null =>
       spec ? (s: number) => curveAt(spec, s * 1023) : null
     for (const v of [this.vco1, this.vco2]) {
@@ -436,8 +440,8 @@ export class Voice {
   tick(): number {
     // Calibration-profile scalars (mod depths, SQR PW floor) are read live so
     // a profile switch takes effect without reconstructing voices.
-    const prof = activeXdProfile()
-    if (prof !== this.boundProf) this.bindShapeModels(prof)
+    const prof = this.calibration.profile
+    if (prof !== this.boundProf) this.bindProfile(prof)
     // Modulators.
     const drift1C = this.drift1.tick()
     const drift2C = this.drift2.tick()

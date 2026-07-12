@@ -1,0 +1,6 @@
+{
+  "unitId": "xd-unit-1",
+  "midiPort": "minilogue xd",
+  "midiChannel": 0,
+  "audioDevice": "your interface input name"
+}

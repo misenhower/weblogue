@@ -1,7 +1,7 @@
 /*
  * Audio capture via the CoreAudio-native helper (native/calib-rec.swift),
  * compiled on demand with swiftc. Devices are addressed by NAME (persisted in
- * calib/rig.json) and resolved to HAL AudioDeviceIDs at runtime.
+ * calib/rig.local.json) and resolved to HAL AudioDeviceIDs at runtime.
  *
  * History: this module originally shelled out to ffmpeg's avfoundation input,
  * which silently drops small chunks of the stream (measured up to ~7 losses/s

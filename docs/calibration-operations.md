@@ -9,7 +9,7 @@ belong in [calibration-findings.md](calibration-findings.md).
 | Command | Purpose |
 |---|---|
 | `npm run typecheck:calib` | Typecheck the Node calibration harness only; no hardware is touched. `check:calib` remains as a compatibility alias. |
-| `npm run calib -- devices --save` | Discover MIDI/audio devices and update their names in `calib/rig.json` while preserving unit metadata. |
+| `npm run calib -- devices --save` | Discover MIDI/audio devices and update ignored local routing in `calib/rig.local.json`; committed unit metadata is untouched. |
 | `npm run calib -- check` | Exercise the physical rig: MIDI, patch round-trip, capture level, onset/pitch, and quartz integrity. |
 | `npm run calib -- run <job> --dry` | Print a job's patch/note/capture schedule without touching hardware. |
 | `npm run calib -- run <job> [--profile <id>]` | Capture one exploratory session. Add `--temperature <C> --warmup <minutes> --tuning <description>` for provenance. |
@@ -18,6 +18,7 @@ belong in [calibration-findings.md](calibration-findings.md).
 | `npm run calib -- evidence <session> [--candidate-profile <id>]` | Promote four derived artifacts into a small, trackable evidence bundle. Bind fitting evidence to the frozen profile ID/content with `--candidate-profile`; raw WAVs stay local. |
 | `npm run calib -- verify <candidate-evidence> --session <verification-evidence> --profile <id>` | Re-render a candidate against a separate promoted capture set and persist the threshold decision. |
 | `npm run calib -- accept <candidate-evidence> --verification <artifact>` | Recheck evidence hashes, profile identity, procedure revision, design, and metrics before writing an accepted result. |
+| `npm run calib -- validate-profile <id>` | Require every field changed by an R2+ profile to name a matching accepted result. Run before making it the default. |
 | `npm run calib -- monitor` / `scope` | Inspect live or historical captures. |
 | `npm run calib -- restore` | Restore a saved edit-buffer backup. |
 
@@ -33,6 +34,9 @@ uses this lifecycle:
 1. Run fitting jobs. Repeat questionable domains and review their reports.
 2. Freeze the candidate profile in `src/synths/xd/profiles.ts`, non-default,
    and declare the procedure that produced it (for example procedure R2).
+   Predeclare its base and every predictable accepted-result path now—for
+   example `calib/results/v5/eg-attack.json`. Lineage is part of the profile
+   digest, so adding paths after verification would correctly invalidate it.
 3. Promote the chosen fitting session with
    `calib evidence <session> --candidate-profile <id>`. This freezes the
    profile ID/content and procedure revision before validation data exists.
@@ -47,7 +51,8 @@ uses this lifecycle:
    captured baseline, and its domain metric must meet the protocol threshold.
 7. Run `calib accept --verification ...`, then review/commit the evidence,
    verification, and numeric result.
-8. Perform and archive the musical listening A/B before promoting the profile
+8. Run `calib validate-profile <id>`; it must pass before promotion.
+9. Perform and archive the musical listening A/B before promoting the profile
    to the app default. This subjective promotion gate is deliberately manual;
    `calib accept` certifies measurement thresholds, not listening approval.
 
@@ -58,12 +63,18 @@ the provenance pattern for the next complete generation.
 Profile versions use `vN`; measurement procedures use `RN`. Evidence and
 verification must agree on the procedure ID/revision, and the candidate profile
 is content-hashed so changing it requires a fresh verification artifact.
+Every R2+ job that can alter the emulation declares exact `profileFields`.
+The candidate profile declares `lineage.baseProfile` plus one accepted-result
+path per changed field; `validate-profile` compares the actual structural diff
+and rejects missing, surplus, wrong-profile, or wrong-procedure provenance.
 
 ## Unit and session identity
 
-`calib/rig.json` gives the physical unit a stable local alias. A serial number
-is unnecessary; use one only if the owner is comfortable publishing it. Fill
-in firmware when known. Each serious run should also record:
+Ignored `calib/rig.local.json` selects machine-specific MIDI/audio routing and
+a unit alias; copy `calib/rig.local.example.json` to start. The committed
+`calib/rigs/<unit-id>.json` gives that physical unit stable capture provenance.
+A serial number is unnecessary; use one only if the owner is comfortable
+publishing it. Fill in firmware when known. Each serious run should also record:
 
 - warm-up minutes;
 - room temperature;

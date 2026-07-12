@@ -1,6 +1,7 @@
 {
   "id": "eg-attack",
   "domain": "eg.amp",
+  "profileFields": ["egAttackSec"],
   "description": "D5: AMP EG attack staircase — 10-90% rise of the tone envelope per step; note held past the ~3 s hardware max attack (docs/xd-spec.md)",
   "overrides": {
     "vco1Wave": 2,

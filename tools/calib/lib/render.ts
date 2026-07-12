@@ -4,6 +4,7 @@
  * through the xd Engine (headless, deterministic — drift/noise are seeded).
  */
 import { Engine } from '../../../src/synths/xd/engine'
+import { activeXdProfile } from '../../../src/synths/xd/profiles'
 import type { CalibJob } from './job'
 import { jobProgram, expandNotes } from './job'
 
@@ -18,8 +19,12 @@ export interface RenderResult {
 }
 
 /** Render one job point through the replica; returns the L channel. */
-export function renderJobPoint(job: CalibJob, point: number | null): RenderResult {
-  const e = new Engine(RENDER_SR)
+export function renderJobPoint(
+  job: CalibJob,
+  point: number | null,
+  profileId: string = activeXdProfile().id,
+): RenderResult {
+  const e = new Engine(RENDER_SR, profileId)
   e.loadProgram(jobProgram(job, point))
 
   const total = Math.round(job.captureSec * RENDER_SR)

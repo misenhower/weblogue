@@ -2,7 +2,7 @@
  * Calibration harness CLI (docs/hardware-calibration.md). Run from the repo
  * root via `npm run calib -- <command>`:
  *
- *   devices [--save]          list MIDI ports + audio devices; --save writes calib/rig.json
+ *   devices [--save]          list MIDI/audio devices; --save writes ignored rig.local.json
  *   check [--midi <match>] [--audio <match>] [--channel <1-16>] [--skip-audio]
  *                             rig smoke test: 6 steps, fail-fast with named fixes
  *
@@ -49,7 +49,8 @@ import { renderReport, type PointFailure, type PointResult } from './lib/report'
 import { startLiveServer, type LiveState } from './lib/live'
 import { ScopeState, startScopeServer } from './lib/scope'
 import { startMonitorServer, MONITOR_PORT } from './lib/monitor'
-import { acceptCommand, compareCommand, evidenceCommand, verifyCommand } from './lib/review'
+import { acceptCommand, compareCommand, evidenceCommand, validateProfileCommand, verifyCommand } from './lib/review'
+import { runCalibrationSweep, withRestoredState } from './lib/runner'
 
 const ROOT = process.cwd()
 
@@ -219,7 +220,7 @@ async function cmdCheck(args: Args): Promise<number> {
 
     // -- 4: audio device -----------------------------------------------------
     if (skipAudio || !audioMatch) {
-      step(4, TOTAL, 'audio device', SKIP, skipAudio ? '--skip-audio' : 'no audioDevice configured (calib/rig.json) — fine for M1')
+      step(4, TOTAL, 'audio device', SKIP, skipAudio ? '--skip-audio' : 'no audioDevice configured (calib/rig.local.json) — fine for M1')
       step(5, TOTAL, 'test capture', SKIP, 'needs the audio interface')
       step(6, TOTAL, 'note capture', SKIP, 'needs the audio interface')
       step(7, TOTAL, 'max level', SKIP, 'needs the audio interface')
@@ -456,7 +457,7 @@ async function cmdScope(args: Args): Promise<number> {
 // compare — re-render the replica against a stored session's hardware
 // features (run after hand-applying proposed values to curves.ts: residuals
 // should collapse). accept — archive the session's proposals as the
-// provenance record in calib/results/<profile>/<domain>.json.
+// provenance record in calib/results/<profile>/<job-id>.json.
 // ---------------------------------------------------------------------------
 function resolveSession(name: string | undefined): string | null {
   if (!name) return null
@@ -882,7 +883,6 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
   pushLive()
 
   const midi = MidiRig.open(midiMatch)
-  let backup: Uint8Array | null = null
   const kind = jobKind(job)
   // results live in point order (index-parallel with `points`) so points
   // recovered by the end-of-run retry pass slot back into sweep position
@@ -1005,72 +1005,50 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
     join(session.rawDir, `point-${String(i).padStart(3, '0')}${suffix}.wav`)
 
   try {
-    backup = await snapshotEditBuffer(midi, ch)
-    for (const [i, pt] of points.entries()) {
-      const lp = liveState.points[i]
-      lp.status = 'running'
-      pushLive()
-      const blob = encodeProgBin(jobProgram(job, pt))
-      await pushDump(midi, ch, blob)
-      if (i === 0) await verifyEditBuffer(midi, ch, blob)
-      for (let attempt = 1; attempt <= 2 && !slots[i]; attempt++) {
-        let hw: AnyFeatures | null = null
-        try {
-          hw = await captureAndMeasure(wavName(i))
-        } catch (err) {
-          if (err instanceof CaptureInfraError) throw err // dead rig: abort the job
-          const msg = err instanceof Error ? err.message : String(err)
-          if (attempt >= 2) {
-            // a failed point is data too (e.g. hardware silent at a SHAPE
-            // endpoint) — record it, keep sweeping, retry again at run end
-            console.log(`${FAIL} point ${i + 1}/${points.length} ${lp.label} failed twice: ${msg}`)
-            lp.status = 'failed'
-          } else {
-            console.log(`  point ${i + 1}: ${msg} — retrying once`)
-            lp.status = 'retry'
-          }
-          lp.note = msg
-          pushLive()
+    await withRestoredState(
+      () => snapshotEditBuffer(midi, ch),
+      async () => {
+        const sweep = await runCalibrationSweep<AnyFeatures>({
+          pointCount: points.length,
+          prepare: async (i, phase) => {
+            const lp = liveState.points[i]
+            lp.status = phase === 'recovery' ? 'retry' : 'running'
+            pushLive()
+            const blob = encodeProgBin(jobProgram(job, points[i]))
+            await pushDump(midi, ch, blob)
+            if (i === 0 && phase === 'initial') await verifyEditBuffer(midi, ch, blob)
+          },
+          capture: async (i, phase) => {
+            return captureAndMeasure(wavName(i, phase === 'recovery' ? '-retry' : ''))
+          },
+          commit: (i, hw, phase) => {
+            finishPoint(i, hw, phase === 'recovery' ? 'recovered on end-of-run retry' : '')
+          },
+          isInfrastructureError: (error) => error instanceof CaptureInfraError,
+          onFailure: (i, error, willRetry, phase) => {
+            const lp = liveState.points[i]
+            const msg = error instanceof Error ? error.message : String(error)
+            if (phase === 'initial' && willRetry) {
+              console.log(`  point ${i + 1}: ${msg} — retrying once`)
+              lp.status = 'retry'
+            } else {
+              if (phase === 'initial') {
+                console.log(`${FAIL} point ${i + 1}/${points.length} ${lp.label} failed twice: ${msg}`)
+              }
+              lp.status = 'failed'
+            }
+            lp.note = msg
+            pushLive()
+          },
+        })
+        if (sweep.recovered.length > 0) {
+          console.log(`recovered ${sweep.recovered.length} failed point(s) at end of run`)
         }
-        // outside the catch: a replica-render bug is a software crash, not a
-        // capture failure — it must not burn hardware retries or be misfiled
-        if (hw) finishPoint(i, hw)
-      }
-    }
-
-    // End-of-run recovery pass: transient corruption often clears by the time
-    // the sweep finishes (device rate settles, USB hiccup passes), so failed
-    // points get one more full attempt — fresh patch push, fresh capture to a
-    // '-retry' WAV (the failed capture is kept for forensics). Skipped when
-    // NOTHING succeeded: that's systemic, not transient.
-    const failedIdx = points.map((_, i) => i).filter((i) => !slots[i])
-    if (failedIdx.length > 0 && failedIdx.length < points.length) {
-      console.log(`retrying ${failedIdx.length} failed point(s) at end of run`)
-      for (const i of failedIdx) {
-        const lp = liveState.points[i]
-        lp.status = 'retry'
-        pushLive()
-        let hw: AnyFeatures | null = null
-        try {
-          await pushDump(midi, ch, encodeProgBin(jobProgram(job, points[i])))
-          hw = await captureAndMeasure(wavName(i, '-retry'))
-        } catch (err) {
-          if (err instanceof CaptureInfraError) throw err // dead rig: abort the job
-          lp.status = 'failed'
-          lp.note = err instanceof Error ? err.message : String(err)
-          pushLive()
-        }
-        if (hw) finishPoint(i, hw, 'recovered on end-of-run retry')
-      }
-    }
+      },
+      (backup) => pushDump(midi, ch, backup).then(() => undefined),
+      () => console.log(`${FAIL} failed to restore the edit buffer — re-push with: npm run calib -- restore`),
+    )
   } finally {
-    if (backup) {
-      try {
-        await pushDump(midi, ch, backup)
-      } catch {
-        console.log(`${FAIL} failed to restore the edit buffer — re-push with: npm run calib -- restore`)
-      }
-    }
     midi.close()
   }
 
@@ -1237,9 +1215,12 @@ async function main(): Promise<void> {
     case 'accept':
       code = await cmdAccept(args)
       break
+    case 'validate-profile':
+      code = args.rest[0] ? validateProfileCommand(ROOT, args.rest[0]) : 1
+      break
     default:
       console.log(
-        'usage: npm run calib -- <devices | check | run | remeasure | compare | evidence | verify | accept | monitor | scope | restore> (see docs/calibration-operations.md)'
+        'usage: npm run calib -- <devices | check | run | remeasure | compare | evidence | verify | accept | validate-profile | monitor | scope | restore> (see docs/calibration-operations.md)'
       )
       code = args.cmd === 'help' ? 0 : 1
   }

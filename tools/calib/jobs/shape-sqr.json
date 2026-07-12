@@ -1,6 +1,7 @@
 {
   "id": "shape-sqr",
   "domain": "vco.shape",
+  "profileFields": ["sqrDuty", "sqrPwMin"],
   "description": "D2: SQR pulse-width vs SHAPE at A2 — duty cycle from the |sin(pi k d)| harmonic nulls; answers d(0)=50%? and d(1023) (replica guesses 5%)",
   "overrides": {
     "vco1Wave": 0,

@@ -1,6 +1,7 @@
 {
   "id": "vco1-pitch-knob",
   "domain": "vco.pitch",
+  "profileFields": ["vcoPitchCents"],
   "description": "D1: PITCH knob curve at the documented MIDIimp breakpoints — verifies pitchToCents segments (DOCUMENTED-exact; flag >3¢, don't refit)",
   "overrides": {
     "vco1Wave": 2,

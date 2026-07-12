@@ -8,7 +8,7 @@
  * Track.t holds window-CENTER times in seconds. Scratch buffers are hoisted
  * out of frame loops (repo DSP style); precision beats speed.
  */
-import { fftMag } from '../../../src/ui/fft'
+import { fftMag } from '../../../src/dsp/fft'
 
 export interface Track {
   t: Float32Array

@@ -1,6 +1,7 @@
 {
   "id": "shape-saw-dense",
   "domain": "vco.shape",
+  "profileFields": ["sawMirrorW"],
   "description": "D2: dense SAW SHAPE sweep (33 points) \u2014 feeds the mid-morph model refinement (the chopper's ~50-70% waveform residual zone: entry dwell + reversed-slope structure)",
   "overrides": {
     "vco1Wave": 2,

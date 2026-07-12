@@ -5,26 +5,27 @@
  * docs/xd-spec.md): v0 is the pre-calibration snapshot, and each reviewed
  * hardware-calibration round lands as a NEW profile instead of overwriting
  * curves.ts — so any version can be A/B'd from the settings drawer at any
- * time. curves.ts, voice.ts and the SQR pulse-width law all read the ACTIVE
- * profile; the default stays v0 until a measured profile is promoted after
- * review (docs/hardware-calibration.md 'Review gate').
+ * time. Each engine owns an explicit profile selection; the UI realm keeps a
+ * separate selection for display curves. The shipped default advances only
+ * after measurement and listening review (currently v3;
+ * docs/hardware-calibration.md 'Review gate').
  *
- * The active profile is per JS realm: the UI thread and the AudioWorklet each
- * hold their own module instance, and both are switched on a change (app.ts
- * persists the choice and sends {t:'calibProfile'}; Engine.setCalibProfile
- * re-applies all params so cached physical values re-derive).
+ * app.ts persists the choice and sends {t:'calibProfile'};
+ * Engine.setCalibProfile changes only that engine and re-applies all params
+ * so cached physical values re-derive.
  *
  * v1-v4 are legacy PARTIAL rounds retained for listening A/B while a future
  * complete generation is designed. They predate the canonical evidence +
  * independent verification gate and must not be treated as accepted
  * provenance or as the template for v5+.
  *
- * Not yet in the schema (join when their domains are measured): filter
- * voicing XD_FILTER_CFG (protocol D4), drift constants in src/dsp/drift.ts
- * (D8 — constructed per voice, needs its own injection path), portamento.
+ * Filter voicing, drift constants, and portamento range are already schema
+ * fields, ready for D4/D8/portamento evidence without new injection paths.
  */
 import { clamp, lerp, expMap } from '../../shared/maps'
 import { monotoneCubic } from '../../shared/monotone'
+import type { SvfCfg } from '../../dsp/filter'
+import { DEFAULT_DRIFT_CONFIG, type DriftConfig } from '../../dsp/drift'
 
 /** A raw(0..1023) -> physical-value curve, in one of the fitted families. */
 export type CurveSpec =
@@ -104,6 +105,12 @@ export interface XdCalibProfile {
   /** Measurement-method revision. v1-v4 are attributed to legacy R1;
    *  future complete profiles must declare their actual revision. */
   procedure?: { id: 'xd-hardware-calibration'; revision: number }
+  /** R2+ provenance: the profile it builds on and the accepted result that
+   * authorizes every changed emulation field. */
+  lineage?: {
+    baseProfile: string
+    evidence: Partial<Record<XdCalibrationField, string>>
+  }
   /** VCO PITCH knob -> cents as the ENGINE plays it (display stays documented). */
   vcoPitchCents: CurveSpec
   egAttackSec: CurveSpec
@@ -120,6 +127,11 @@ export interface XdCalibProfile {
   lfoMaxPitchCents: number
   lfoMaxCutoffOctaves: number
   lfoMaxShape: number
+  /** Filter, drift, and glide are included now so future D4/D8/portamento
+   * measurements can enter the same versioned provenance gate. */
+  filterConfig: SvfCfg
+  driftConfig: DriftConfig
+  portamentoMaxSec: number
   /*
    * VCO SHAPE morph models, measured 2026-07-11 (D2; findings log + evidence
    * artifact). ALL OPTIONAL: absent = the original guessed morphs, so v0-v3
@@ -143,7 +155,57 @@ export interface XdCalibProfile {
   sawMirrorW?: CurveSpec
 }
 
+/** Fields whose values affect the emulation and therefore need accepted
+ * evidence when a procedure-R2+ profile changes them. Metadata is excluded. */
+export const XD_CALIBRATION_FIELDS = [
+  'vcoPitchCents',
+  'egAttackSec',
+  'egDecaySec',
+  'egReleaseSec',
+  'cutoffHz',
+  'sqrPwMin',
+  'egMaxPitchCents',
+  'egMaxCutoffOctaves',
+  'lfoRateHz',
+  'lfoMaxPitchCents',
+  'lfoMaxCutoffOctaves',
+  'lfoMaxShape',
+  'filterConfig',
+  'driftConfig',
+  'portamentoMaxSec',
+  'sqrDuty',
+  'triFoldDrive',
+  'triFoldLevel',
+  'triFoldKnee',
+  'sawMirrorW',
+] as const satisfies readonly (keyof XdCalibProfile)[]
+
+export type XdCalibrationField = (typeof XD_CALIBRATION_FIELDS)[number]
+
+/** Structural field diff used by the provenance gate. Profile values are
+ * JSON data, so stable JSON equality is the appropriate comparison here. */
+export function profileChangedFields(
+  base: XdCalibProfile,
+  candidate: XdCalibProfile,
+): XdCalibrationField[] {
+  return XD_CALIBRATION_FIELDS.filter(
+    (field) => JSON.stringify(base[field]) !== JSON.stringify(candidate[field]),
+  )
+}
+
 /** v0 — the original guessed values, frozen exactly as first shipped. */
+export const XD_DEFAULT_FILTER_CONFIG: SvfCfg = {
+  kMax: 2.0,
+  kMin: 0.025,
+  resCurve: 1.4,
+  driveGains: [1.0, 2.6, 6.0],
+  driveMakeups: [1.0, 0.7, 0.45],
+  satLevel: 1.25,
+  bassComp: 0.15,
+  resLoss: 0,
+  poles: 2,
+}
+
 const V0: XdCalibProfile = {
   id: 'v0',
   name: 'v0 · original guesses',
@@ -161,6 +223,9 @@ const V0: XdCalibProfile = {
   lfoMaxPitchCents: 1200,
   lfoMaxCutoffOctaves: 7,
   lfoMaxShape: 1,
+  filterConfig: XD_DEFAULT_FILTER_CONFIG,
+  driftConfig: DEFAULT_DRIFT_CONFIG,
+  portamentoMaxSec: 5,
 }
 
 /*
@@ -564,7 +629,15 @@ const V4: XdCalibProfile = {
   },
 }
 
-export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3, V4]
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+    Object.freeze(value)
+  }
+  return value
+}
+
+export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3, V4].map(deepFreeze)
 
 /** The shipped default. Promoting a measured profile is a reviewed change —
  *  v2 promoted 2026-07-10 after Matt's listening A/B; v3 (cutoff table)
@@ -572,16 +645,39 @@ export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3, V4]
  *  NON-default until the D2 fits land and Matt A/Bs it. */
 export const XD_DEFAULT_PROFILE = 'v3'
 
-let active: XdCalibProfile = V3
+export function resolveXdProfile(id: string): XdCalibProfile | null {
+  return XD_PROFILES.find((profile) => profile.id === id) ?? null
+}
+
+/** Mutable selection owned by one engine or UI realm. The profile value it
+ * exposes is immutable configuration; selections no longer leak between
+ * independent offline engines. */
+export class XdCalibrationState {
+  private current: XdCalibProfile
+
+  constructor(id: string = XD_DEFAULT_PROFILE) {
+    this.current = resolveXdProfile(id) ?? V3
+  }
+
+  get profile(): XdCalibProfile {
+    return this.current
+  }
+
+  set(id: string): boolean {
+    const profile = resolveXdProfile(id)
+    if (!profile) return false
+    this.current = profile
+    return true
+  }
+}
+
+const realmCalibration = new XdCalibrationState()
 
 export function activeXdProfile(): XdCalibProfile {
-  return active
+  return realmCalibration.profile
 }
 
 /** Switch this realm's active profile; returns false for an unknown id. */
 export function setXdProfile(id: string): boolean {
-  const p = XD_PROFILES.find((p) => p.id === id)
-  if (!p) return false
-  active = p
-  return true
+  return realmCalibration.set(id)
 }

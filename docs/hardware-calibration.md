@@ -135,7 +135,7 @@ Tag each tuned constant/table at its definition site:
 `MEASURED(YYYY-MM-DD)` / `DOCUMENTED(source)` / `INFERRED`. The spec already uses
 UNCONFIRMED; carrying provenance into the code tells future sessions which values are safe
 to re-derive and which are hardware facts. A fit only earns MEASURED after the review +
-verify loop below; the accepted fit is archived in `calib/results/<profile>/<domain>.json`.
+verify loop below; the accepted fit is archived in `calib/results/<profile>/<job-id>.json`.
 
 ## The rig
 
@@ -159,7 +159,8 @@ demand by capture.ts) writing float WAV at 48 kHz, one file per sweep point. **N
 through ffmpeg's avfoundation input** — it silently drops stream chunks at a condition-dependent
 rate and masqueraded as several different hardware problems before the 2026-07-10 diagnosis (full
 story + proof chain in [calibration-findings.md](calibration-findings.md)). Devices are stored by
-*name* in `calib/rig.json` and resolved to HAL ids at runtime. Rig hygiene: gain (harness warns
+*name* in ignored `calib/rig.local.json` and resolved to HAL ids at runtime; stable unit/capture
+provenance is committed in `calib/rigs/<unit-id>.json`. Rig hygiene: gain (harness warns
 outside −40..−1 dBFS peak), keep the interface out of aggregate devices and never the system
 default in/out. Capture integrity is enforced, not assumed: `calib check` step 8 captures the
 xd's crystal-clocked VPM Sin1 and requires ≤2 phase jumps and <0.3¢ pitch sd; per-point run
@@ -193,7 +194,7 @@ pieces — feature extraction, fits, CC/SysEx codecs — are plain modules cover
 
 ```
 tools/calib/
-  cli.ts                # subcommands: devices, check, run <job> [--dry], render, compare, accept
+  cli.ts                # command dispatch + hardware-specific presentation
   lib/midi.ts           # @julusian/midi: port-by-name, CC/note/SysEx send, awaitSysEx(pred, timeout)
   lib/ccmap.ts          # param key → CC encoder; unit-tested as a round-trip through synths/xd/cc.ts decodeCc
   lib/sysex7.ts         # Korg 7↔8-bit codec + func 40/10 framing (length derived, see erratum)
@@ -206,13 +207,17 @@ tools/calib/
   lib/session.ts  lib/fit.ts  lib/report.ts
   lib/review.ts          # diagnostic compare + independent verify + gated accept
   lib/evidence.ts        # explicit derived-artifact promotion; never copies raw WAVs
+  lib/runner.ts          # tested retry/recovery + edit-buffer restoration orchestration
+  lib/lineage.ts         # changed-field -> accepted-result profile provenance gate
   jobs/*.json           # committed, reviewable measurement specs
 calib/
-  rig.json              # committed rig identity (device/port names, channel, gain notes)
+  rig.local.json        # ignored machine routing + selected unit alias
+  rig.local.example.json
+  rigs/<unit-id>.json   # committed synth/capture-chain provenance
   sessions/<ts>-<job>/  # exploratory/local: frozen job + meta + features + report + raw WAVs
   evidence/<session>/   # explicitly promoted derived artifacts + SHA-256 manifest; committed
   verifications/*.json  # independent before/after metrics; committed, separate from evidence
-  results/<profile>/<domain>.json # accepted fits — preserved by profile generation
+  results/<profile>/<job-id>.json # accepted fits — multiple jobs may share a domain
 ```
 
 The native recorder is compiled from Swift on demand. Measurement/fitting code otherwise uses the

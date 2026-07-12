@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { PARAM_BY_KEY, clampParam } from '../../../src/synths/xd/params'
 import { initProgram } from '../../../src/synths/xd/program'
 import type { Program } from '../../../src/shared/program'
+import { XD_CALIBRATION_FIELDS, type XdCalibrationField } from '../../../src/synths/xd/profiles'
 
 export interface JobNote {
   midi: number
@@ -20,6 +21,8 @@ export interface CalibJob {
   id: string
   domain: string
   description?: string
+  /** Exact versioned profile fields this job can authorize on acceptance. */
+  profileFields?: XdCalibrationField[]
   /** param key -> raw value, applied over initProgram() */
   overrides?: Record<string, number>
   /** optional single-param sweep; absent = one point at the base patch */
@@ -53,6 +56,26 @@ export interface CalibJob {
   }
 }
 
+/** Trusted mapping from measurement design to fields it can authorize.
+ * A job may describe these fields for review, but cannot expand this set. */
+export function expectedProfileFields(job: CalibJob): XdCalibrationField[] {
+  if (job.domain === 'filter.cutoff') return ['cutoffHz']
+  if (job.domain === 'eg.amp') {
+    if (job.features?.env === 'attack') return ['egAttackSec']
+    if (job.features?.env === 'decay') return ['egDecaySec']
+    if (job.features?.env === 'release') return ['egReleaseSec']
+    return []
+  }
+  if (job.domain === 'vco.pitch' && job.sweep?.param === 'vco1Pitch') return ['vcoPitchCents']
+  if (job.domain === 'vco.shape') {
+    const wave = Number(job.overrides?.vco1Wave)
+    if (wave === 0) return ['sqrDuty', 'sqrPwMin']
+    if (wave === 1) return ['triFoldDrive', 'triFoldLevel', 'triFoldKnee']
+    if (wave === 2) return ['sawMirrorW']
+  }
+  return []
+}
+
 /** The note plan with repeats expanded to absolute times. */
 export function expandNotes(job: CalibJob): JobNote[] {
   const reps = job.repeat ?? 1
@@ -73,7 +96,19 @@ export function loadJob(path: string): CalibJob {
     throw new Error(`${path}: ${msg}`)
   }
   if (!job.id || typeof job.id !== 'string') fail('missing "id"')
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(job.id)) fail('"id" must be a safe lowercase file slug')
   if (!job.domain || typeof job.domain !== 'string') fail('missing "domain"')
+  if (job.profileFields !== undefined) {
+    if (!Array.isArray(job.profileFields) || job.profileFields.length === 0) fail('empty "profileFields"')
+    for (const field of job.profileFields) {
+      if (!(XD_CALIBRATION_FIELDS as readonly string[]).includes(field)) fail(`unknown profile field "${field}"`)
+    }
+    const declared = [...new Set(job.profileFields)].sort()
+    const expected = expectedProfileFields(job).sort()
+    if (JSON.stringify(declared) !== JSON.stringify(expected)) {
+      fail(`profileFields must exactly match trusted mapping: ${expected.join(', ') || '(none)'}`)
+    }
+  }
   if (!Array.isArray(job.notes) || job.notes.length === 0) fail('missing "notes"')
   for (const n of job.notes) {
     if (!(n.midi >= 0 && n.midi <= 127)) fail(`bad note midi ${n.midi}`)

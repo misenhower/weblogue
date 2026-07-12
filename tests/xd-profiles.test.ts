@@ -10,6 +10,7 @@ import { expMap } from '../src/shared/maps'
 import {
   XD_PROFILES,
   XD_DEFAULT_PROFILE,
+  profileChangedFields,
   setXdProfile,
   activeXdProfile,
   curveAt,
@@ -50,6 +51,23 @@ describe('the shipped default', () => {
         revision: 1,
       })
     }
+  })
+
+  it('reports every calibrated field changed from a profile base', () => {
+    const base = XD_PROFILES.find((profile) => profile.id === 'v3')!
+    const candidate = {
+      ...base,
+      id: 'v5',
+      cutoffHz: { kind: 'expMap' as const, lo: 18, hi: 19_000 },
+      lfoMaxPitchCents: base.lfoMaxPitchCents + 1,
+    }
+    expect(profileChangedFields(base, candidate)).toEqual(['cutoffHz', 'lfoMaxPitchCents'])
+  })
+
+  it('freezes registered profile data so a verified digest cannot mutate at runtime', () => {
+    const profile = XD_PROFILES.find((candidate) => candidate.id === 'v3')!
+    expect(Object.isFrozen(profile)).toBe(true)
+    expect(Object.isFrozen(profile.cutoffHz)).toBe(true)
   })
 })
 
@@ -246,6 +264,19 @@ describe('SQR pulse-width floor (profile sqrPwMin)', () => {
 })
 
 describe('Engine.setCalibProfile re-applies params live', () => {
+  it('keeps explicitly configured engine profiles independent of realm-global UI state', () => {
+    const render = (engine: Engine): number => {
+      engine.loadProgram(initProgram())
+      engine.setParam(P.AMP_ATTACK, 512)
+      engine.noteOn(57, 100)
+      return rms(renderEngine(engine, 0.12), Math.round(0.06 * SR), Math.round(0.1 * SR))
+    }
+    const v0 = new Engine(SR, 'v0')
+    const v1 = new Engine(SR, 'v1')
+    setXdProfile('v4')
+    expect(render(v1)).toBeLessThan(render(v0) * 0.5)
+  })
+
   it('v1 attack (0.59 s) leaves the first 100 ms much quieter than v0 (32 ms)', () => {
     const render = (profile: string): number => {
       const e = new Engine(SR)

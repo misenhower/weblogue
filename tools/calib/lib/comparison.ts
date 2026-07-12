@@ -1,7 +1,7 @@
 /* Reproducible hardware-vs-profile comparison from a promoted evidence set. */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { setXdProfile } from '../../../src/synths/xd/profiles'
+import { resolveXdProfile } from '../../../src/synths/xd/profiles'
 import { loadJob } from './job'
 import { renderJobPoint } from './render'
 import { measureAny, sweepValues, unusableSweepPoints, type AnyResult } from './domains'
@@ -30,11 +30,11 @@ export function readFeatures(dir: string): StoredFeatures {
 
 /** Re-render one stored capture set under a candidate profile. */
 export function compareEvidence(dir: string, profile: string): Comparison {
-  if (!setXdProfile(profile)) throw new Error(`unknown calibration profile "${profile}"`)
+  if (!resolveXdProfile(profile)) throw new Error(`unknown calibration profile "${profile}"`)
   const job = loadJob(join(dir, 'job.json'))
   const features = readFeatures(dir)
   const fresh: AnyResult[] = features.results.map((stored) => {
-    const render = renderJobPoint(job, stored.point)
+    const render = renderJobPoint(job, stored.point, profile)
     return {
       point: stored.point,
       hw: stored.hw,

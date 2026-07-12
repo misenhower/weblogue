@@ -171,8 +171,7 @@ describe('SAW reversal mirror (v4)', () => {
 
 describe('engine wiring (voice.ts bindShapeModels)', () => {
   function engineRender(profile: string, wave: number, shape: number): Float32Array {
-    setXdProfile(profile)
-    const e = new Engine(SR)
+    const e = new Engine(SR, profile)
     e.setParam(P.VCO1_WAVE, wave)
     e.setParam(P.VCO1_SHAPE, shape)
     e.setParam(P.VCO1_LEVEL, 1023)

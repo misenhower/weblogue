@@ -9,7 +9,7 @@
 import { createServer, type Server } from 'node:http'
 import { createHash } from 'node:crypto'
 import type { Socket } from 'node:net'
-import { fftMag } from '../../../src/ui/fft'
+import { fftMag } from '../../../src/dsp/fft'
 import { fftPeakHz, goertzelC } from './features'
 
 export const SCOPE_PORT = 8078

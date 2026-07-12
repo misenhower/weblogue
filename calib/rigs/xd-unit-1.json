@@ -1,7 +1,4 @@
 {
-  "midiPort": "minilogue xd",
-  "midiChannel": 0,
-  "audioDevice": "ProFX",
   "hardwareUnit": {
     "model": "Korg minilogue xd",
     "unitId": "xd-unit-1",

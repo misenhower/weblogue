@@ -4,11 +4,21 @@
  * gitignored session directory and can be retained or archived separately.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { evaluateVerification, type VerificationPoint } from './workflow'
 import { XD_PROFILES } from '../../../src/synths/xd/profiles'
 import { compareEvidence } from './comparison'
+import { loadJob } from './job'
+import { publishJsonImmutable } from './publish'
+import { repoRelativePath, resolveRepoPath } from './repo-path'
 
 const DERIVED_FILES = ['job.json', 'meta.json', 'features.json', 'report.md'] as const
 
@@ -39,6 +49,11 @@ export interface EvidenceManifest {
   candidateProfile?: string | null
   candidateProfileDigest?: string | null
   procedure?: { id?: string; revision?: number } | null
+}
+
+interface AcceptanceReplay {
+  verificationResult?: ReturnType<typeof evaluateVerification>
+  proposals?: unknown[]
 }
 
 interface EvidenceJob {
@@ -178,35 +193,57 @@ export function promoteEvidence(root: string, sessionDir: string, candidateProfi
   }
   const sessionMeta = JSON.parse(readFileSync(join(sessionDir, 'meta.json'), 'utf8')) as {
     procedure?: { id?: string; revision?: number }
+    rig?: {
+      hardwareUnit?: { unitId?: string }
+      captureChain?: { interface?: string; sampleRateHz?: number }
+    } | null
   }
   if (!sessionMeta.procedure?.id || !Number.isFinite(sessionMeta.procedure.revision)) {
     throw new Error('session predates versioned calibration procedures and cannot become canonical evidence')
   }
+  if (
+    sessionMeta.procedure.revision! >= 2 &&
+    (!sessionMeta.rig?.hardwareUnit?.unitId ||
+      !sessionMeta.rig.captureChain?.interface ||
+      !Number.isFinite(sessionMeta.rig.captureChain.sampleRateHz))
+  ) {
+    throw new Error('procedure-R2+ evidence requires a hardware unit and capture-chain snapshot')
+  }
 
-  mkdirSync(dir, { recursive: true })
-  const files: Record<string, string> = {}
-  for (const file of DERIVED_FILES) {
-    const source = readFileSync(join(sessionDir, file))
-    // Reports historically embedded an absolute local Session path. Evidence
-    // uses a portable path without changing any measured feature values.
-    const output =
-      file === 'report.md'
-        ? Buffer.from(source.toString('utf8').split(sessionDir).join(`calib/evidence/${name}`))
-        : source
-    writeFileSync(join(dir, file), output)
-    files[file] = sha256(output)
+  const parent = join(root, 'calib', 'evidence')
+  mkdirSync(parent, { recursive: true })
+  const tempDir = join(parent, `.${name}.tmp-${process.pid}-${Date.now()}`)
+  mkdirSync(tempDir)
+  try {
+    const files: Record<string, string> = {}
+    for (const file of DERIVED_FILES) {
+      const source = readFileSync(join(sessionDir, file))
+      // Reports historically embedded an absolute local Session path. Evidence
+      // uses a portable path without changing any measured feature values.
+      const output =
+        file === 'report.md'
+          ? Buffer.from(source.toString('utf8').split(sessionDir).join(`calib/evidence/${name}`))
+          : source
+      writeFileSync(join(tempDir, file), output)
+      files[file] = sha256(output)
+    }
+    const manifest = {
+      schema: 1,
+      sourceSession: relative(root, sessionDir),
+      promotedAt: new Date().toISOString(),
+      candidateProfile: candidateProfile ?? null,
+      candidateProfileDigest: candidateProfile ? profileDigest(candidateProfile) : null,
+      procedure: sessionMeta.procedure,
+      rawAudio: 'local-only; not included',
+      files,
+    }
+    writeFileSync(join(tempDir, 'evidence.json'), JSON.stringify(manifest, null, 2) + '\n')
+    validateEvidenceBundle(tempDir)
+    renameSync(tempDir, dir)
+  } catch (error) {
+    rmSync(tempDir, { recursive: true, force: true })
+    throw error
   }
-  const manifest = {
-    schema: 1,
-    sourceSession: relative(root, sessionDir),
-    promotedAt: new Date().toISOString(),
-    candidateProfile: candidateProfile ?? null,
-    candidateProfileDigest: candidateProfile ? profileDigest(candidateProfile) : null,
-    procedure: sessionMeta.procedure,
-    rawAudio: 'local-only; not included',
-    files,
-  }
-  writeFileSync(join(dir, 'evidence.json'), JSON.stringify(manifest, null, 2) + '\n')
   return { name, dir }
 }
 
@@ -215,7 +252,15 @@ export function promoteEvidence(root: string, sessionDir: string, candidateProfi
  * passed. The result is deliberately small; the immutable evidence bundles
  * contain the full reports and measured features.
  */
-export function acceptEvidence(root: string, candidateDir: string, verificationPath: string): string {
+export function acceptEvidence(
+  root: string,
+  candidateDir: string,
+  verificationPath: string,
+  writeResult = true,
+  replay?: AcceptanceReplay,
+): string {
+  const candidateRelative = repoRelativePath(root, candidateDir, 'candidate evidence')
+  repoRelativePath(root, verificationPath, 'verification artifact')
   if (!existsSync(join(candidateDir, 'evidence.json'))) {
     throw new Error('candidate must be a promoted evidence bundle')
   }
@@ -227,17 +272,22 @@ export function acceptEvidence(root: string, candidateDir: string, verificationP
   if (profileDigest(verification.profile) !== verification.profileDigest) {
     throw new Error('verified profile content has changed; run verification again')
   }
-  if (verification.candidateEvidence !== relative(root, candidateDir)) {
+  if (verification.candidateEvidence !== candidateRelative) {
     throw new Error('verification artifact belongs to a different candidate evidence bundle')
   }
   if (verification.candidateEvidence === verification.verificationEvidence) {
     throw new Error('verification evidence must be independent from the candidate evidence')
   }
-  if (!existsSync(join(root, verification.verificationEvidence, 'evidence.json'))) {
+  const verificationDir = resolveRepoPath(
+    root,
+    verification.verificationEvidence,
+    'verification evidence',
+  )
+  if (!existsSync(join(verificationDir, 'evidence.json'))) {
     throw new Error(`verification evidence not found: ${verification.verificationEvidence}`)
   }
   const candidateManifest = validateEvidenceBundle(candidateDir)
-  const verificationManifest = validateEvidenceBundle(join(root, verification.verificationEvidence))
+  const verificationManifest = validateEvidenceBundle(verificationDir)
   if (
     verification.procedure.id !== candidateManifest.procedure?.id ||
     verification.procedure.revision !== candidateManifest.procedure?.revision
@@ -256,9 +306,12 @@ export function acceptEvidence(root: string, candidateDir: string, verificationP
     measuredDate?: string
     proposals?: unknown[]
   }
+  const candidateJob = loadJob(join(candidateDir, 'job.json'))
+  if ((verification.procedure.revision ?? 0) >= 2 && !candidateJob.profileFields?.length) {
+    throw new Error('procedure-R2+ candidate job must declare profileFields')
+  }
   if (!features.domain || !features.proposals?.length) throw new Error('candidate evidence has no proposals')
   if (features.domain !== verification.domain) throw new Error('verification domain does not match candidate')
-  const verificationDir = join(root, verification.verificationEvidence)
   const designReasons = verificationDesignReasons(
     candidateDir,
     verificationDir,
@@ -281,14 +334,22 @@ export function acceptEvidence(root: string, candidateDir: string, verificationP
     designReasons,
   })
   if (!recomputed.passed) throw new Error(`verification artifact no longer passes: ${recomputed.reasons.join('; ')}`)
+  if (replay) {
+    replay.verificationResult = recomputed
+    replay.proposals = features.proposals
+  }
 
   const outDir = join(root, 'calib', 'results', verification.profile)
+  const outPath = join(outDir, `${candidateJob.id}.json`)
+  if (!writeResult) return outPath
   mkdirSync(outDir, { recursive: true })
-  const outPath = join(outDir, `${features.domain}.json`)
+  if (existsSync(outPath)) throw new Error(`accepted result already exists: ${relative(root, outPath)}`)
   const result = {
     schema: 1,
     domain: features.domain,
     profile: verification.profile,
+    profileDigest: verification.profileDigest,
+    profileFields: candidateJob.profileFields ?? [],
     procedure: verification.procedure,
     measuredDate: features.measuredDate,
     acceptedAt: new Date().toISOString(),
@@ -300,6 +361,76 @@ export function acceptEvidence(root: string, candidateDir: string, verificationP
     },
     proposals: features.proposals,
   }
-  writeFileSync(outPath, JSON.stringify(result, null, 2) + '\n')
+  try {
+    publishJsonImmutable(outPath, result)
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('artifact already exists:')) {
+      throw new Error(`accepted result already exists: ${relative(root, outPath)}`)
+    }
+    throw error
+  }
   return outPath
+}
+
+interface StoredAcceptedResult {
+  domain?: string
+  profile?: string
+  profileDigest?: string
+  profileFields?: string[]
+  procedure?: { id?: string; revision?: number }
+  proposals?: unknown[]
+  evidence?: string
+  verification?: { artifact?: string; evidence?: string; result?: unknown }
+}
+
+/** Re-run the same evidence/profile/design/metric checks used by acceptance
+ * without writing anything. Used by the profile-lineage gate so a fabricated
+ * result-shaped JSON file cannot authorize a field. */
+export function validateAcceptedResult(root: string, resultPath: string): string[] {
+  let stored: StoredAcceptedResult
+  try {
+    stored = JSON.parse(readFileSync(resultPath, 'utf8')) as StoredAcceptedResult
+  } catch {
+    return ['accepted result is not valid JSON']
+  }
+  if (!stored.evidence || !stored.verification?.artifact) {
+    return ['accepted result does not reference candidate evidence and verification']
+  }
+  try {
+    const candidateDir = resolveRepoPath(root, stored.evidence, 'accepted candidate evidence')
+    const artifactPath = resolveRepoPath(root, stored.verification.artifact, 'accepted verification artifact')
+    const replay: AcceptanceReplay = {}
+    const expected = acceptEvidence(
+      root,
+      candidateDir,
+      artifactPath,
+      false,
+      replay,
+    )
+    const candidateJob = loadJob(join(candidateDir, 'job.json'))
+    const features = JSON.parse(readFileSync(join(candidateDir, 'features.json'), 'utf8')) as {
+      domain?: string
+    }
+    const artifact = JSON.parse(readFileSync(artifactPath, 'utf8')) as VerificationArtifact
+    const sameFields =
+      JSON.stringify([...(stored.profileFields ?? [])].sort()) ===
+      JSON.stringify([...(candidateJob.profileFields ?? [])].sort())
+    const labelsMatch =
+      stored.domain === features.domain &&
+      stored.profile === artifact.profile &&
+      stored.profileDigest === artifact.profileDigest &&
+      stored.procedure?.id === artifact.procedure.id &&
+      stored.procedure?.revision === artifact.procedure.revision &&
+      stored.evidence === artifact.candidateEvidence &&
+      stored.verification.evidence === artifact.verificationEvidence &&
+      sameFields &&
+      JSON.stringify(stored.proposals) === JSON.stringify(replay.proposals) &&
+      JSON.stringify(stored.verification.result) === JSON.stringify(replay.verificationResult)
+    const problems: string[] = []
+    if (expected !== resultPath) problems.push('accepted result path does not match its profile and job')
+    if (!labelsMatch) problems.push('accepted result fields do not match recomputed acceptance inputs')
+    return problems
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)]
+  }
 }

@@ -37,6 +37,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Calibration typecheck
+        run: npm run typecheck:calib
+
+      - name: Test
+        run: npm test
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

@@ -1,8 +1,8 @@
 # Hardware calibration plan
 
-Status: **rig designed, harness not yet built** (rewritten 2026-07-06 after the design round; the
-2026-07-02 sketch grew into this plan plus [calibration-protocol.md](calibration-protocol.md), the
-per-domain measurement protocol). Ground-truth policy: **hardware measurement > official docs >
+Status: **rig and harness operational; M4 partial calibration in progress**. The operator command
+map and evidence lifecycle are in [calibration-operations.md](calibration-operations.md); this plan
+and [calibration-protocol.md](calibration-protocol.md) define the measurement policy. Ground-truth policy: **hardware measurement > official docs >
 current replica behavior.** Guessed values are flagged UNCONFIRMED in [xd-spec.md](xd-spec.md) and
 [implementation-notes.md](implementation-notes.md); calibration replaces guesses with measurements
 and is not required to preserve current replica behavior.
@@ -48,6 +48,10 @@ shipped; each reviewed calibration round becomes a new profile (`v1 · measured 
 (persisted per browser; `{t:'calibProfile'}` makes the engine re-derive every physical
 value from the current raw params), so any two rounds can be A/B'd on the same patch —
 guessed vs measured, or round N vs round N+1.
+
+Profile versions and procedure revisions are distinct: profiles use `vN`, while
+measurement methods use `RN`. Every future complete profile declares its procedure ID/revision;
+for example, “profile v5, produced with `xd-hardware-calibration R2`.”
 
 Consequences:
 
@@ -131,7 +135,7 @@ Tag each tuned constant/table at its definition site:
 `MEASURED(YYYY-MM-DD)` / `DOCUMENTED(source)` / `INFERRED`. The spec already uses
 UNCONFIRMED; carrying provenance into the code tells future sessions which values are safe
 to re-derive and which are hardware facts. A fit only earns MEASURED after the review +
-verify loop below; the accepted fit is archived in `calib/results/<domain>.json`.
+verify loop below; the accepted fit is archived in `calib/results/<profile>/<domain>.json`.
 
 ## The rig
 
@@ -176,10 +180,12 @@ for non-analytic shapes, analysis-by-synthesis coordinate descent for tier-2 cur
 failures, null-valued points). Reviewed values land as a NEW calibration profile version in
 `src/synths/xd/profiles.ts` (never as hand-edits to curves.ts — see "Calibration profiles"
 above); `calib compare <session> --profile <id>` re-renders the replica under that profile
-against the stored hardware features to confirm residuals collapsed, and `calib accept`
-archives the fit as the provenance record.
+against the stored hardware features as a diagnostic. Acceptance is stricter: explicitly promote
+the chosen fit and a separate unseen verification session with `calib evidence`, run `calib verify`
+against the candidate profile, then `calib accept`. Acceptance refuses incomplete coverage,
+same-session validation, unsupported metrics, regressions, and results above the protocol threshold.
 
-## Harness layout (to be built at M1)
+## Harness layout
 
 Node CLI at `tools/calib/cli.ts`, run via `tsx` (`npm run calib -- <cmd>`), importing engine
 sources directly; its own tsconfig (node types, no DOM) so the root build is untouched. Pure
@@ -191,22 +197,26 @@ tools/calib/
   lib/midi.ts           # @julusian/midi: port-by-name, CC/note/SysEx send, awaitSysEx(pred, timeout)
   lib/ccmap.ts          # param key → CC encoder; unit-tested as a round-trip through synths/xd/cc.ts decodeCc
   lib/sysex7.ts         # Korg 7↔8-bit codec + func 40/10 framing (length derived, see erratum)
-  lib/capture.ts        # ffmpeg avfoundation wrapper; device resolve-by-name; peak-dBFS checks
+  lib/capture.ts        # CoreAudio recorder wrapper; device resolve-by-name; peak-dBFS checks
   lib/wav.ts  lib/onset.ts
   lib/features.ts       # the ONE extractor for both worlds: complex-Goertzel phase tracker (~±0.05¢),
                         #   STFT ridge track, harmonic ladder, Welch PSD transfer, tone envelope, RT60
   lib/render.ts         # offline replica replay of a job
   lib/job.ts            # JSON job specs: base-patch overrides by param KEY + sweep + note plan
   lib/session.ts  lib/fit.ts  lib/report.ts
+  lib/review.ts          # diagnostic compare + independent verify + gated accept
+  lib/evidence.ts        # explicit derived-artifact promotion; never copies raw WAVs
   jobs/*.json           # committed, reviewable measurement specs
 calib/
   rig.json              # committed rig identity (device/port names, channel, gain notes)
-  sessions/<ts>-<job>/  # frozen job + meta.json (firmware, git rev) + features.json + report.md
-                        #   committed; raw/*.wav gitignored
-  results/<domain>.json # accepted fits — the provenance record
+  sessions/<ts>-<job>/  # exploratory/local: frozen job + meta + features + report + raw WAVs
+  evidence/<session>/   # explicitly promoted derived artifacts + SHA-256 manifest; committed
+  verifications/*.json  # independent before/after metrics; committed, separate from evidence
+  results/<profile>/<domain>.json # accepted fits — preserved by profile generation
 ```
 
-New devDeps: `tsx`, `@julusian/midi`, `@types/node`. Everything else is stdlib + ffmpeg.
+The native recorder is compiled from Swift on demand. Measurement/fitting code otherwise uses the
+Node standard library and the repository's DSP sources directly.
 
 ## Visibility and fail-fast
 

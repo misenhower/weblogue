@@ -60,6 +60,7 @@ all come from the official minilogue xd MIDI implementation. The compiled hardwa
 ```bash
 npm test           # vitest suite: DSP rendering, mapping tables, sequencer timing, UI, MIDI decode
 npm run build      # typecheck + production bundle
+npm run check      # app + calibration typechecks, then the full test suite
 npm run preview    # serve the production build on http://localhost:4173
 ```
 
@@ -70,12 +71,13 @@ DSP modules (oscillator, filter, EGs, LFO, drift, multi engine, FX, step sequenc
 engine wiring, worklet entry, panel layout, CC resolver, program serialization); `src/ui/` holds the
 framework-free UI primitives; `src/state/` is the program store; `src/midi/` is Web MIDI input.
 `src/dsp/` and `src/shared/` never import from `src/synths/` — new synth modes add a definition, not
-engine forks. Two synths ship today: the **minilogue xd** and the **original minilogue**
-(`src/synths/og/`, hardware spec in [docs/og-spec.md](docs/og-spec.md)) — switch with the corner
-chips or `?synth=og`. Each synth keeps its own 500-slot program bank. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
+engine forks. Five modes ship today: **minilogue xd**, **minilogue**, **monologue**, **prologue 8**,
+and **prologue 16**; switch with the corner chips or `?synth=<id>`. Each synth family keeps its own
+500-slot program bank. Deeper docs: [docs/xd-spec.md](docs/xd-spec.md) (hardware spec from Korg's official
 documentation, including post-research findings), [docs/implementation-notes.md](docs/implementation-notes.md)
 (design decisions, undocumented-hardware interpretations, engine mechanics), and
-[docs/service-mode.md](docs/service-mode.md).
+[docs/service-mode.md](docs/service-mode.md). Calibration operators should start with
+[docs/calibration-operations.md](docs/calibration-operations.md).
 
 ## Disclaimer
 

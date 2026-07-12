@@ -10,7 +10,14 @@
  * file) so users can drop either kind of file on the importer.
  */
 import type { Program } from './program'
-import type { StoreDef } from '../synths/def'
+
+/** Minimal program-codec interface needed by packs. Kept in shared/ so the
+ *  synth-agnostic layer does not depend on a concrete synth definition. */
+export interface PackProgramCodec {
+  initProgram(name?: string): Program
+  serializeProgram(program: Program): string
+  deserializeProgram(json: string): Program | null
+}
 
 export const PACK_FORMAT = 'weblogue-pack'
 export const PACK_VERSION = 1
@@ -25,11 +32,11 @@ export interface ParsedPack {
  *  except the prologue variants, which share one program format ('prologue')
  *  across 'prologue8'/'prologue16'. Packs stamp/compare this id so a pack
  *  exported on one variant opens on the other. */
-function packSynthId(def: StoreDef): string {
+function packSynthId(def: PackProgramCodec): string {
   return def.initProgram().synthId
 }
 
-export function makePack(def: StoreDef, name: string, programs: readonly Program[]): string {
+export function makePack(def: PackProgramCodec, name: string, programs: readonly Program[]): string {
   return JSON.stringify(
     {
       format: PACK_FORMAT,
@@ -45,7 +52,7 @@ export function makePack(def: StoreDef, name: string, programs: readonly Program
 
 /** Parse a pack (or a bare single-program file). Null = not for this synth
  *  or not recognizable at all. */
-export function parsePack(def: StoreDef, json: string): ParsedPack | null {
+export function parsePack(def: PackProgramCodec, json: string): ParsedPack | null {
   let root: unknown
   try {
     root = JSON.parse(json)

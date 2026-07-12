@@ -1,5 +1,11 @@
 # Calibration measurement protocol
 
+Procedure: `xd-hardware-calibration R2` (revision 2). Profile versions and
+procedure revisions are separate timelines: a future synth profile should say,
+for example, “profile v5, produced with procedure R2.” The original July 2026
+plan is retrospectively R1; R2 adds canonical evidence, independent off-grid
+verification, explicit acceptance gates, and structured unit/session metadata.
+
 The per-domain measurement methodology behind [hardware-calibration.md](hardware-calibration.md)
 (read that first: parameter tiers, provenance, rig architecture, milestones). Each domain below
 maps to one or more harness job specs (`tools/calib/jobs/*.json`). Written 2026-07-06, before the
@@ -401,18 +407,26 @@ sequence; latch keeps the chord held without a sustained MIDI gate interfering w
 
 ## Validation — proving the replica got closer
 
-1. **Held-out points**: every 4th staircase point never enters a fit. After fitting, re-render
-   the replica offline with the **new** values at exactly the held-out stimuli, identical
-   feature extraction.
-2. **Feature distance before vs after**, per domain, held-out points only: pitch (cents RMS),
+1. **Model-selection holdout**: every 4th fitting-staircase point never enters the initial fit.
+   This tests the proposed curve family. A final table may incorporate these points only after
+   the family is frozen; they then cease to be independent validation data.
+2. **Independent verification session**: after the candidate profile is frozen, make a new
+   capture with raw values offset from the fitting grid and no failed/unusable points. Include
+   another note wherever frequency invariance is assumed. Do not tune the candidate against this
+   set; a model change requires fresh verification captures.
+3. **Feature distance before vs after**, on the independent verification session: pitch (cents RMS),
    ladders (median |ΔdB| over k), corners/times/rates (RMS log-ratio), RT60 (log-ratio), Q
    (log-ratio), drift (PSD log-distance + component amplitudes). One table per domain:
    hardware | replica-before | replica-after | distance-before | distance-after.
-3. **Acceptance thresholds**: pitch ≤ 2¢; cutoff/times/rates ≤ 5 % (log); ladders ≤ 1.5 dB
+4. **Acceptance thresholds**: pitch ≤ 2¢; cutoff/times/rates ≤ 5 % (log); ladders ≤ 1.5 dB
    median; RT60 ≤ 10 %; no held-out point regressed beyond its measurement noise (estimated from
-   repeat spreads).
-4. **A/B artifact**: per domain, paired hardware/replica-after captures of 2–3 *musical* spot
-   checks (not sweep points) archived for listening; the subjective FX/VPM items live here.
+   repeat spreads). Until a domain carries an explicit repeat-noise estimate, the automated gate
+   conservatively rejects a point whose error grows by more than 25% of that domain's threshold.
 5. **Report, then code**: all fits land in the reviewed report (proposed diffs against curves.ts
    / config tables, MEASURED(date) tags, tier-3 structural findings flagged for xd-spec.md
    first). No auto-apply; test re-pinning ships with the reviewed change.
+6. **Manual default-promotion gate**: per domain, paired hardware/replica-after captures of 2–3
+   *musical* spot checks (not sweep points) are archived for listening; subjective FX/VPM items
+   live here. This is intentionally not enforced by `calib accept`, which certifies numeric
+   evidence. Listening approval is required by the separate change that promotes a profile to
+   the app default.

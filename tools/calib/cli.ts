@@ -49,6 +49,7 @@ import { renderReport, type PointFailure, type PointResult } from './lib/report'
 import { startLiveServer, type LiveState } from './lib/live'
 import { ScopeState, startScopeServer } from './lib/scope'
 import { startMonitorServer, MONITOR_PORT } from './lib/monitor'
+import { acceptCommand, compareCommand, evidenceCommand, verifyCommand } from './lib/review'
 
 const ROOT = process.cwd()
 
@@ -86,6 +87,13 @@ function parseArgs(argv: string[]): Args {
 function flagStr(args: Args, key: string): string | null {
   const v = args.flags.get(key)
   return typeof v === 'string' ? v : null
+}
+
+function flagNum(args: Args, key: string): number | null {
+  const value = flagStr(args, key)
+  if (value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 // ---------------------------------------------------------------------------
@@ -126,11 +134,13 @@ async function cmdDevices(args: Args): Promise<number> {
     const iface = audio.find((d) =>
       /scarlett|focusrite|motu|umc|behringer|audient|steinberg|presonus|mackie|profx|interface/i.test(d.name)
     )
+    const previous = loadRig(ROOT)
     const rig: RigConfig = {
+      ...previous,
       midiPort: baseName,
       midiChannel: 0,
       audioDevice: iface ? iface.name : null,
-      notes: 'written by calib devices --save',
+      notes: previous?.notes ?? 'written by calib devices --save',
     }
     saveRig(ROOT, rig)
     console.log(`\nwrote ${rigPath(ROOT)}:`)
@@ -446,7 +456,7 @@ async function cmdScope(args: Args): Promise<number> {
 // compare — re-render the replica against a stored session's hardware
 // features (run after hand-applying proposed values to curves.ts: residuals
 // should collapse). accept — archive the session's proposals as the
-// provenance record in calib/results/<domain>.json.
+// provenance record in calib/results/<profile>/<domain>.json.
 // ---------------------------------------------------------------------------
 function resolveSession(name: string | undefined): string | null {
   if (!name) return null
@@ -536,79 +546,44 @@ async function cmdRemeasure(args: Args): Promise<number> {
   return failures.length ? 1 : 0
 }
 
-async function cmdCompare(args: Args): Promise<number> {
-  const dir = resolveSession(args.rest[0])
-  if (!dir) {
-    console.log('usage: npm run calib -- compare <session-dir-or-name> [--profile <id>]')
+function cmdCompare(args: Args): number {
+  const name = args.rest[0]
+  if (!name) {
+    console.log('usage: npm run calib -- compare <session-or-evidence> [--profile <id>]')
     return 1
   }
-  const profile = flagStr(args, 'profile') ?? 'v0'
-  if (!setXdProfile(profile)) {
-    console.log(`${FAIL} unknown calibration profile "${profile}" — have: ${XD_PROFILES.map((p) => p.id).join(', ')}`)
-    return 1
-  }
-  const job = loadJob(join(dir, 'job.json'))
-  const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as { results: AnyResult[] }
-  const stored = feats.results
-  // fresh replica render of every stored point with CURRENT curves.ts values
-  const fresh: AnyResult[] = stored.map((r) => {
-    const rend = renderJobPoint(job, r.point)
-    return { point: r.point, hw: r.hw, rep: measureAny(rend.samples, rend.sr, rend.onsetSample, job) }
-  })
-  const { unit, values: hwV } = sweepValues(job, fresh, 'hw')
-  const { values: nowV } = sweepValues(job, fresh, 'rep')
-  const { values: thenV } = sweepValues(job, stored, 'rep')
-  console.log(`\n${job.id} — replica vs stored hardware (${unit}); before = at capture time, after = profile ${profile}\n`)
-  console.log('| point | hardware | replica before | replica after | Δ before | Δ after |')
-  console.log('|---|---|---|---|---|---|')
-  const dev: { before: number; after: number }[] = []
-  for (let i = 0; i < fresh.length; i++) {
-    const [h, b, a] = [hwV[i], thenV[i], nowV[i]]
-    if (h === null || b === null || a === null) continue
-    const d = (r: number): string =>
-      unit === '¢' ? `${r >= 0 ? '+' : ''}${r.toFixed(1)}¢` : `${r >= 0 ? '+' : ''}${(r * 100).toFixed(1)}%`
-    const delta = (v: number): number => (unit === '¢' ? v - h : v / h - 1)
-    dev.push({ before: delta(b), after: delta(a) })
-    const fmt = (v: number): string => (unit === '¢' ? v.toFixed(1) : v.toPrecision(4))
-    console.log(
-      `| ${fresh[i].point ?? 'base'} | ${fmt(h)} | ${fmt(b)} | ${fmt(a)} | ${d(delta(b))} | ${d(delta(a))} |`,
-    )
-  }
-  const rms = (xs: number[]): number => Math.sqrt(xs.reduce((s, v) => s + v * v, 0) / Math.max(1, xs.length))
-  const before = rms(dev.map((d) => d.before))
-  const after = rms(dev.map((d) => d.after))
-  const p = (v: number): string => (unit === '¢' ? `${v.toFixed(1)}¢` : `${(v * 100).toFixed(1)}%`)
-  console.log(`\nRMS deviation vs hardware: before ${p(before)} -> after ${p(after)} ${after < before ? '✓ closer' : '✗ NOT closer'}`)
-  return after < before ? 0 : 1
+  return compareCommand(ROOT, name, flagStr(args, 'profile') ?? 'v0')
 }
 
-async function cmdAccept(args: Args): Promise<number> {
-  const dir = resolveSession(args.rest[0])
-  if (!dir) {
-    console.log('usage: npm run calib -- accept <session-dir-or-name>')
+function cmdEvidence(args: Args): number {
+  const name = args.rest[0]
+  if (!name) {
+    console.log('usage: npm run calib -- evidence <session>')
     return 1
   }
-  const feats = JSON.parse(readFileSync(join(dir, 'features.json'), 'utf8')) as {
-    domain: string
-    proposals?: unknown[]
-    measuredDate?: string
-  }
-  if (!feats.proposals?.length) {
-    console.log(`${FAIL} session has no proposals to accept`)
+  evidenceCommand(ROOT, name, flagStr(args, 'candidate-profile') ?? undefined)
+  return 0
+}
+
+function cmdVerify(args: Args): number {
+  const candidate = args.rest[0]
+  const verification = flagStr(args, 'session') ?? args.rest[1]
+  const profile = flagStr(args, 'profile')
+  if (!candidate || !verification || !profile) {
+    console.log('usage: npm run calib -- verify <candidate-evidence> --session <verification-evidence> --profile <id>')
     return 1
   }
-  const outDir = join(calibDir(ROOT), 'results')
-  mkdirSync(outDir, { recursive: true })
-  const outPath = join(outDir, `${feats.domain}.json`)
-  writeFileSync(
-    outPath,
-    JSON.stringify(
-      { domain: feats.domain, measuredDate: feats.measuredDate, acceptedAt: new Date().toISOString(), session: dir, proposals: feats.proposals },
-      null,
-      2,
-    ) + '\n',
-  )
-  console.log(`${PASS} accepted -> ${outPath} (commit this as the provenance record)`)
+  return verifyCommand(ROOT, candidate, verification, profile).passed ? 0 : 1
+}
+
+function cmdAccept(args: Args): number {
+  const candidate = args.rest[0]
+  const verification = flagStr(args, 'verification') ?? args.rest[1]
+  if (!candidate || !verification) {
+    console.log('usage: npm run calib -- accept <candidate-evidence> --verification <artifact>')
+    return 1
+  }
+  acceptCommand(ROOT, candidate, verification)
   return 0
 }
 
@@ -842,7 +817,12 @@ async function runOneJob(args: Args, jobPath: string): Promise<RunOutcome> {
     return { code: 1, detail: 'no audio device configured' }
   }
   const dev = await resolveAudioDevice(audioMatch)
-  const session = createSession(ROOT, job)
+  const session = createSession(ROOT, job, {
+    roomTemperatureC: flagNum(args, 'temperature'),
+    warmupMinutes: flagNum(args, 'warmup'),
+    tuningState: flagStr(args, 'tuning') ?? 'unknown',
+    notes: flagStr(args, 'session-notes') ?? undefined,
+  })
   console.log(`session ${session.dir}`)
 
   // live view: host our own dashboard on 8077, or — when a calib monitor
@@ -1248,16 +1228,25 @@ async function main(): Promise<void> {
     case 'compare':
       code = await cmdCompare(args)
       break
+    case 'evidence':
+      code = cmdEvidence(args)
+      break
+    case 'verify':
+      code = cmdVerify(args)
+      break
     case 'accept':
       code = await cmdAccept(args)
       break
     default:
       console.log(
-        'usage: npm run calib -- <devices [--save] | check [...] | run <job|all> [--dry] | compare <session> | accept <session> | monitor [--audio a] | scope [--audio a] | restore [--file f]>'
+        'usage: npm run calib -- <devices | check | run | remeasure | compare | evidence | verify | accept | monitor | scope | restore> (see docs/calibration-operations.md)'
       )
       code = args.cmd === 'help' ? 0 : 1
   }
   process.exit(code)
 }
 
-void main()
+void main().catch((error: unknown) => {
+  console.error(`${FAIL} ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+})

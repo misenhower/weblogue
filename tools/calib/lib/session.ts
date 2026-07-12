@@ -1,20 +1,30 @@
 /*
  * Session directory lifecycle: calib/sessions/<stamp>-<jobid>/ holds a frozen
  * copy of the job, a meta.json snapshot (git rev, rig, versions), the
- * gitignored raw WAVs, and the committed features.json + report.md.
+ * raw WAVs, features.json, and report.md. The whole exploratory session is
+ * gitignored; `calib evidence` explicitly promotes selected derived files.
  */
 import { execSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CalibJob } from './job'
 import { loadRig, calibDir } from './rig'
+import { CALIBRATION_PROCEDURE } from './procedure'
 
 export interface Session {
   dir: string
   rawDir: string
 }
 
-export function createSession(root: string, job: CalibJob): Session {
+export interface SessionEnvironment {
+  roomTemperatureC: number | null
+  warmupMinutes: number | null
+  /** e.g. "tuned immediately before", "not retuned", "unknown". */
+  tuningState: string
+  notes?: string
+}
+
+export function createSession(root: string, job: CalibJob, environment?: SessionEnvironment): Session {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16)
   const dir = join(calibDir(root), 'sessions', `${stamp}-${job.id}`)
   const rawDir = join(dir, 'raw')
@@ -31,7 +41,13 @@ export function createSession(root: string, job: CalibJob): Session {
     date: new Date().toISOString(),
     gitRev,
     node: process.version,
+    procedure: CALIBRATION_PROCEDURE,
     rig: loadRig(root),
+    environment: environment ?? {
+      roomTemperatureC: null,
+      warmupMinutes: null,
+      tuningState: 'unknown',
+    },
   }
   writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
   return { dir, rawDir }

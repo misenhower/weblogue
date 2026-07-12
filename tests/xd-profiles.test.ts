@@ -41,6 +41,16 @@ describe('the shipped default', () => {
     expect(XD_DEFAULT_PROFILE).toBe('v3')
     expect(activeXdProfile().id).toBe('v3')
   })
+
+  it('keeps profile versions separate from calibration procedure revisions', () => {
+    expect(XD_PROFILES.find((profile) => profile.id === 'v0')!.procedure).toBeUndefined()
+    for (const id of ['v1', 'v2', 'v3', 'v4']) {
+      expect(XD_PROFILES.find((profile) => profile.id === id)!.procedure).toEqual({
+        id: 'xd-hardware-calibration',
+        revision: 1,
+      })
+    }
+  })
 })
 
 describe('profile v0 reproduces the original guessed curves exactly', () => {

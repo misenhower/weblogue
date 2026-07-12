@@ -14,6 +14,11 @@
  * persists the choice and sends {t:'calibProfile'}; Engine.setCalibProfile
  * re-applies all params so cached physical values re-derive).
  *
+ * v1-v4 are legacy PARTIAL rounds retained for listening A/B while a future
+ * complete generation is designed. They predate the canonical evidence +
+ * independent verification gate and must not be treated as accepted
+ * provenance or as the template for v5+.
+ *
  * Not yet in the schema (join when their domains are measured): filter
  * voicing XD_FILTER_CFG (protocol D4), drift constants in src/dsp/drift.ts
  * (D8 — constructed per voice, needs its own injection path), portamento.
@@ -96,6 +101,9 @@ export interface XdCalibProfile {
   /** ISO date the values were established. */
   date: string
   notes?: string
+  /** Measurement-method revision. v1-v4 are attributed to legacy R1;
+   *  future complete profiles must declare their actual revision. */
+  procedure?: { id: 'xd-hardware-calibration'; revision: number }
   /** VCO PITCH knob -> cents as the ENGINE plays it (display stays documented). */
   vcoPitchCents: CurveSpec
   egAttackSec: CurveSpec
@@ -176,6 +184,7 @@ const V1: XdCalibProfile = {
   id: 'v1',
   name: 'v1 · partial calibration 2026-07-10',
   date: '2026-07-10',
+  procedure: { id: 'xd-hardware-calibration', revision: 1 },
   notes:
     'First hardware round — PARTIAL: only VCO pitch law, EG time tables, cutoff span and the ' +
     'SQR PW endpoint are measured; everything else (mod depths, LFO, filter voicing, drift) ' +
@@ -286,6 +295,7 @@ const V2: XdCalibProfile = {
   id: 'v2',
   name: 'v2 · partial calibration, batch 2',
   date: '2026-07-10',
+  procedure: { id: 'xd-hardware-calibration', revision: 1 },
   notes:
     'Second hardware round — PARTIAL like v1 (same fields measured, others inherit v0): ' +
     'all-4-voice medians for pitch AND cutoff; EG tables re-measured independently.',

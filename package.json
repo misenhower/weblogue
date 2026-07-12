@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "calib": "tsx tools/calib/cli.ts",
-    "check:calib": "tsc --noEmit -p tools/calib"
+    "typecheck": "tsc --noEmit",
+    "typecheck:calib": "tsc --noEmit -p tools/calib",
+    "check:calib": "npm run typecheck:calib",
+    "check": "npm run typecheck && npm run typecheck:calib && npm test"
   },
   "devDependencies": {
     "@julusian/midi": "^3.6.1",

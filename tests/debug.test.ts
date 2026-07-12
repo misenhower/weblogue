@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Engine, DBG_TAP_SIZE } from '../src/synths/xd/engine'
 import { P } from '../src/synths/xd/params'
 import { Store } from '../src/state/store'
@@ -8,6 +8,13 @@ import { DebugPanel } from '../src/ui/debugpanel'
 import { XD_DEBUG_DEF } from '../src/synths/xd/debug-def'
 import type { FromEngine } from '../src/shared/messages'
 import { renderEngine as render, rms, SR } from './helpers/audio'
+import { installLocalStorageMock } from './helpers/dom'
+
+let restoreLocalStorage = (): void => {}
+beforeEach(() => {
+  restoreLocalStorage = installLocalStorageMock().restore
+})
+afterEach(() => restoreLocalStorage())
 
 describe('engine SERVICE MODE taps', () => {
   it('rings stay silent while debug is off, fill once enabled', () => {

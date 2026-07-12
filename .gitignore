@@ -7,8 +7,9 @@ dist/
 # Vendor reference docs (Korg copyright) — keep local, cite URLs in specs
 docs/hardware/
 
-# Calibration rig: raw captures + scratch stay local; features/reports are committed
-calib/sessions/*/raw/
+# Calibration rig: all exploratory sessions and raw captures stay local.
+# `calib evidence <session>` explicitly promotes only derived artifacts into
+# calib/evidence/, which is trackable; accepted manifests live in calib/results/.
 calib/tmp/
 calib/backups/
 calib/sessions/

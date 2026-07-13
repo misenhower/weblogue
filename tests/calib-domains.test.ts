@@ -135,7 +135,8 @@ describe('replica self-calibration (end-to-end pipeline proof)', () => {
     // cutoff proposes a table by standing decision (Matt, 2026-07-10); the
     // pipeline proof is that the table knots recover the KNOWN v0 curve
     expect(proposals[0].proposed).toContain('monotone table')
-    expect(proposals[0].notes[0]).toContain('standing decision')
+    expect(proposals[0].notes.some((n: string) => n.includes('standing decision'))).toBe(true)
+    expect(proposals[0].notes.some((n: string) => n.includes('final table refit on all'))).toBe(true)
     for (const [raw, hz] of proposals[0].table!) {
       expect(Math.abs(Math.log(hz / cutoffToHz(raw)))).toBeLessThan(Math.log(1.3))
     }

@@ -1,8 +1,10 @@
 {
   "id": "eg-decay",
   "domain": "eg.amp",
-  "profileFields": ["egDecaySec"],
-  "description": "D5: AMP EG decay staircase — dB-slope extrapolation on the held region (3*tau displayed-time; no 12+ s waits for the top steps)",
+  "profileFields": [
+    "egDecaySec"
+  ],
+  "description": "D5: AMP EG decay staircase \u2014 dB-slope extrapolation on the held region (3*tau displayed-time; no 12+ s waits for the top steps)",
   "overrides": {
     "vco1Wave": 2,
     "vco1Level": 1023,
@@ -43,10 +45,10 @@
       "midi": 69,
       "vel": 100,
       "onSec": 0.3,
-      "offSec": 10.3
+      "offSec": 22.3
     }
   ],
-  "captureSec": 11.0,
+  "captureSec": 23.0,
   "features": {
     "nominalHz": 440,
     "kind": "envelope",

@@ -1,7 +1,9 @@
 {
   "id": "eg-release-verify",
   "domain": "eg.amp",
-  "profileFields": ["egReleaseSec"],
+  "profileFields": [
+    "egReleaseSec"
+  ],
   "description": "R1 verification for eg-release: off-grid interior raw values",
   "overrides": {
     "vco1Wave": 2,
@@ -20,9 +22,27 @@
   },
   "sweep": {
     "param": "ampRelease",
-    "points": [128, 300, 469, 640, 810, 1000]
+    "points": [
+      128,
+      300,
+      469,
+      640,
+      810,
+      1000
+    ]
   },
-  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.3, "offSec": 1.5 }],
-  "captureSec": 12.0,
-  "features": { "nominalHz": 440, "kind": "envelope", "env": "release" }
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 1.5
+    }
+  ],
+  "captureSec": 22.0,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "release"
+  }
 }

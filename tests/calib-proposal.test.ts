@@ -147,8 +147,9 @@ describe('verifyPitchTable', () => {
     const p = verifyPitchTable(pts)
     expect(p.proposed).toMatch(/^monotone table \(\d+ pts\)$/)
     expect(p.table).toBeDefined()
-    // Fit points only (16 of 21): held-out raws never become table knots.
-    expect(p.table!.length).toBe(16)
+    // The FINAL table refits on all 21 points — held-out raws fold back in
+    // after family selection (residuals still score the fit-only table).
+    expect(p.table!.length).toBe(21)
     for (const [raw, value] of p.table!) {
       expect(PITCH_GRID.includes(raw)).toBe(true)
       expect(Number.isFinite(value)).toBe(true)

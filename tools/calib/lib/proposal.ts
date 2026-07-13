@@ -126,7 +126,13 @@ export function proposeCurve(
   const { fit, held } = splitHeldOut(points)
   const table = monotoneTable(fit.map((p) => ({ x: p.raw, y: Math.log(p.value) })))
   const at = (raw: number): number => Math.exp(table.at(raw))
-  const knots: [number, number][] = Array.from(table.xs, (x, i) => [x, Math.exp(table.ys[i])])
+  // Residuals score the FIT-ONLY table (family-selection evidence); the
+  // emitted table refits on ALL points — once the family is frozen the
+  // held-out points stop being validation data and belong in the final
+  // table (protocol 'Validation' rule 1; independent verification sessions
+  // carry validation from here).
+  const finalTable = monotoneTable(points.map((p) => ({ x: p.raw, y: Math.log(p.value) })))
+  const knots: [number, number][] = Array.from(finalTable.xs, (x, i) => [x, Math.exp(finalTable.ys[i])])
   return {
     domain,
     unit,
@@ -136,6 +142,7 @@ export function proposeCurve(
     heldOutResidualPct: held.length ? logResidualPct(held, at) : NaN,
     table: knots,
     notes: [
+      `final table refit on all ${points.length} points (held-out folded in after family selection)`,
       opts?.forceTable !== undefined
         ? `table by standing decision: ${opts.forceTable} (best expMap was ${exp.proposed}, residual ${exp.fitResidualPct.toFixed(1)}%)`
         : `expMap rejected: residual ${exp.fitResidualPct.toFixed(1)}% > ${TABLE_FALLBACK_PCT}% — curve is not exponential (best expMap was ${exp.proposed})`,
@@ -211,10 +218,14 @@ export function verifyPitchTable(points: SweepPoint[]): Proposal {
   if (proposeTable) {
     const t = monotoneTable(fit.map(p => ({ x: p.raw, y: p.value })))
     predict = raw => t.at(raw)
-    proposed = `monotone table (${t.xs.length} pts)`
-    table = Array.from(t.xs, (x, i) => [x, t.ys[i]])
+    // residuals score the fit-only table; the emitted table uses ALL points
+    // (same final-table rule as proposeCurve)
+    const tAll = monotoneTable(points.map(p => ({ x: p.raw, y: p.value })))
+    proposed = `monotone table (${tAll.xs.length} pts)`
+    table = Array.from(tAll.xs, (x, i) => [x, tAll.ys[i]])
     notes.push(
       `${flagged.length}/${points.length} points deviate > ${PITCH_FLAG_CENTS}¢ — proposing a monotone replacement table`,
+      `final table refit on all ${points.length} points (held-out folded in after family selection)`,
     )
   } else if (flagged.length === 0) {
     notes.push(`all ${points.length} points within ±${PITCH_FLAG_CENTS}¢ of documented pitchToCents`)

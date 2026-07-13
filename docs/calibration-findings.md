@@ -248,6 +248,34 @@ from the mirror, not separate features. v4's sawChopDepth/Phase replaced by the 
 step math taken from the naive form so w→0 degrades exactly into the plain saw);
 raw-544's capture was weak — re-measure that knot someday.
 
+### 2026-07-12 · EG release/decay tails are FASTER-than-exponential — long windows required (Matt's catch)
+
+Matt watched the scope during the R1 eg-release run and suspected the captures were
+cutting the tails off. A 40 s single-point probe (raw 1023, session
+2026-07-13T04-33-eg-release-tail-probe) settled it: the tail's local slope steadily
+ACCELERATES — ≈−1.2 dB/s just after note-off, −2.1 dB/s at 10 s, −5.8 dB/s at 18 s,
+reaching the rig floor (−54.5 dB re held) at ~20 s. That is not a one-pole exponential
+(constant dB/s); the xd's envelope reaches true silence in finite time. Consequence:
+a 12 s capture sees only the shallow early slope (−19 dB at window end) and the
+exponential extrapolation OVER-estimates long releases — 16.3 s fitted in the 12 s
+window vs 11.8 s with the full fall in view. July's v1/v2 EG tables carry the same
+bias class at their top knots. Fix: eg-decay holds the note 22 s and eg-release
+captures 22 s, so every point's fall reaches the −40 dB fit floor inside the window;
+R1 tables come from those. Open item (future EG-shape work): the replica's EG segment
+law is exponential — matching the measured accelerating-slope curve is a model change,
+tier-3, and the extractor's single-τ value is only comparable across worlds when both
+are measured through the same full-fall window.
+
+### 2026-07-12 · R1 re-baseline session: two systematic point outcomes (retry-confirmed)
+
+Both reproduced identically across two independent captures, so they are properties of
+the measurement, not transients: (a) cutoff=960 measures but yields no usable corner
+(top-end extraction limitation; the R1 cutoff table spans 0–896 plus the usable 1023
+knot); (b) shape-sqr raw 1023 finds NO onset — the SQR duty genuinely reaches silence
+(the 2026-07-08 finding, now visible at onset level; the July "success" at this point
+was an onset fluke on the noise floor). The silent capture IS the duty-0 evidence; the
+R1 sqrDuty table pins [1023, 0] with this note.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it
@@ -294,6 +322,19 @@ SAW 165 Hz locks reproduce in the clean suite; the pitch table was re-measured a
   changes): the helper counts frames and reports "short capture"; recordWav retries once.
 - The xd occasionally ignores a SysEx dump request (~1 in 10 under rapid traffic):
   requestDump retries once before failing.
+
+### 2026-07-12 · Capture windows are frame-counted, not wall-clock — device startup latency varies per plug session
+
+The R1 session opened with every job failing its 1 s silence pre-check while `calib
+check` passed: calib-rec timed the recording as a wall-clock window from engine start,
+and this ProFX plug session has ~105 ms of startup latency before the first buffer, so
+1 s captures deterministically delivered 42,947/48,000 frames — just under the 90%
+length gate — while 3 s captures absorbed it. Device HAL IDs and startup latency both
+change across replug sessions (a days-old orphaned `calib-rec stream` was also found
+holding the pre-replug device ID; kill such orphans). The helper now records until the
+requested FRAME COUNT arrives (wall-clock cap only as a wedge guard), making capture
+length latency-proof. Corollary: after replugging the interface, expect a different
+HAL ID (resolve by name, never cache the number) and re-run `calib check` first.
 
 ### 2026-07-10 · Failed sweep points must be findings, not gaps (Matt's catch)
 

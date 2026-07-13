@@ -1,7 +1,9 @@
 {
   "id": "eg-decay-verify",
   "domain": "eg.amp",
-  "profileFields": ["egDecaySec"],
+  "profileFields": [
+    "egDecaySec"
+  ],
   "description": "R1 verification for eg-decay: off-grid interior raw values",
   "overrides": {
     "vco1Wave": 2,
@@ -20,9 +22,27 @@
   },
   "sweep": {
     "param": "ampDecay",
-    "points": [128, 300, 469, 640, 810, 1000]
+    "points": [
+      128,
+      300,
+      469,
+      640,
+      810,
+      1000
+    ]
   },
-  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.3, "offSec": 10.3 }],
-  "captureSec": 11.0,
-  "features": { "nominalHz": 440, "kind": "envelope", "env": "decay" }
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 22.3
+    }
+  ],
+  "captureSec": 23.0,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "decay"
+  }
 }

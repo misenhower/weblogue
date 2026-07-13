@@ -7,20 +7,19 @@
  * curves.ts — so any version can be A/B'd from the settings drawer at any
  * time. Each engine owns an explicit profile selection; the UI realm keeps a
  * separate selection for display curves. The shipped default advances only
- * after measurement and listening review (currently v3;
- * docs/hardware-calibration.md 'Review gate').
+ * after measurement and listening review (docs/hardware-calibration.md
+ * 'Review gate').
  *
  * app.ts persists the choice and sends {t:'calibProfile'};
  * Engine.setCalibProfile changes only that engine and re-applies all params
  * so cached physical values re-derive.
  *
- * v1-v4 are transitional dev-era rounds, measured while the rig, extractor
- * and models were themselves still moving targets. v2/v3 passed listening
- * review (v3 ships as default) and v4 carries the measured SHAPE models, but
- * none was produced under a numbered procedure and they carry no procedure
- * tag. Plan of record (Matt, 2026-07-12): re-run the full suite under
- * procedure R1 (canonical evidence + independent verification), land the
- * results as a fresh profile generation, then drop v1-v4.
+ * Two profiles ship: v0 (the pre-calibration guesses, kept for A/B and as
+ * the lineage base) and v1 (the R1 re-baseline, DEFAULT since Matt's
+ * listening review 2026-07-13). The transitional dev-era rounds v1-v4 —
+ * measured while the rig, extractor and models were themselves moving
+ * targets — were dropped the same day per the plan of record; git history
+ * before commit 'xd V1: promote to default' keeps them.
  *
  * Filter voicing, drift constants, and portamento range are already schema
  * fields, ready for D4/D8/portamento evidence without new injection paths.
@@ -105,8 +104,8 @@ export interface XdCalibProfile {
   /** ISO date the values were established. */
   date: string
   notes?: string
-  /** Measurement-method revision (tools/calib/lib/procedure.ts). Dev-era
-   *  v0-v4 predate procedure numbering and carry no tag; a profile measured
+  /** Measurement-method revision (tools/calib/lib/procedure.ts). v0
+   *  predates procedure numbering and carries no tag; a profile measured
    *  under a numbered procedure declares it, which arms the lineage gate. */
   procedure?: { id: 'xd-hardware-calibration'; revision: number }
   /** Provenance for procedure-declaring profiles: the profile it builds on
@@ -125,7 +124,7 @@ export interface XdCalibProfile {
    * release as a CONSTANT-RATE LINEAR phase raised to this power (measured
    * p = 3.00 across the knob range, 0.2 dB RMS), reaching true zero at the
    * table time. ABSENT = the legacy one-pole exponential with tables meaning
-   * 3*tau "displayed time" (v0-v4). When present, egDecaySec/egReleaseSec
+   * 3*tau "displayed time" (v0). When present, egDecaySec/egReleaseSec
    * are TIME-TO-ZERO seconds. Applied to the mod EG too (INFERRED: same
    * firmware generator; only the amp EG was measured).
    */
@@ -148,7 +147,7 @@ export interface XdCalibProfile {
   portamentoMaxSec: number
   /*
    * VCO SHAPE morph models, measured 2026-07-11 (D2; findings log + evidence
-   * artifact). ALL OPTIONAL: absent = the original guessed morphs, so v0-v3
+   * artifact). ALL OPTIONAL: absent = the original guessed morphs, so v0
    * and the other synths stay bit-identical. Injected into the shared Vco by
    * voice.ts (same pattern as sqrPwMin).
    */
@@ -537,298 +536,6 @@ const V1: XdCalibProfile = {
   },
 }
 
-/*
- * v2 — second independent hardware round (batch 2, 2026-07-10 late), sessions
- * 2026-07-10T07-4x/5x + 23-28 in calib/sessions/. Improvements over v1's
- * round: the pitch sweep medians ALL FOUR voices per point (was a voice pair)
- * and the cutoff sweep medians all four analog VCFs per point via per-strike
- * PSD transfers (was one rotating voice; measured per-voice VCF spread
- * ~3-6% mid-band). Repeatability vs the v1 round: EG tables within a few %,
- * pitch deltas within 0.2 cents. Sources:
- *   cutoffHz       2026-07-10T23-28-cutoff-sweep   (expMap fit, held-out 12.2%)
- *   egAttackSec    2026-07-10T07-49-eg-attack      (log-PCHIP, held-out 0.38%)
- *   egDecaySec     2026-07-10T07-50-eg-decay       (log-PCHIP, held-out 11.9%)
- *   egReleaseSec   2026-07-10T07-54-eg-release     (log-PCHIP, held-out 10.7%;
- *                  raw-0 knot carried from the v1 round — batch 2 measured
- *                  null there: ~4 ms sits at the ~3 ms follower floor)
- *   vcoPitchCents  2026-07-10T07-59-vco1-pitch-knob (4-voice medians)
- * Pitch table recentered by -2.221 cents (the unit's tuning state during the
- * sweep: dead zone read +2.02/+2.05/+2.60); dead-zone knots pooled to 0 and
- * the documented-flat end pairs (0/4, 1020/1023) pooled to their means.
- */
-const V2: XdCalibProfile = {
-  ...V0,
-  id: 'v2',
-  name: 'v2 · partial calibration, batch 2',
-  date: '2026-07-10',
-  notes:
-    'Second hardware round — PARTIAL like v1 (same fields measured, others inherit v0): ' +
-    'all-4-voice medians for pitch AND cutoff; EG tables re-measured independently.',
-  vcoPitchCents: {
-    kind: 'pchip',
-    knots: [
-      [0, -1200.09],
-      [4, -1200.09],
-      [100, -898.75],
-      [256, -412.86],
-      [356, -99.74],
-      [400, -66.41],
-      [476, -6.61],
-      [492, 0],
-      [512, 0],
-      [532, 0],
-      [548, 5.51],
-      [668, 100.32],
-      [800, 509.08],
-      [1020, 1199.54],
-      [1023, 1199.54],
-    ],
-  },
-  egAttackSec: {
-    kind: 'logPchip',
-    knots: [
-      [0, 0.0042336],
-      [85, 0.018047],
-      [171, 0.068106],
-      [256, 0.14808],
-      [341, 0.26223],
-      [426, 0.40743],
-      [512, 0.59287],
-      [597, 0.79645],
-      [682, 1.0444],
-      [767, 1.3229],
-      [853, 1.6307],
-      [938, 1.9746],
-      [1023, 2.342],
-    ],
-  },
-  egDecaySec: {
-    kind: 'logPchip',
-    knots: [
-      [0, 0.0033878],
-      [85, 0.014721],
-      [171, 0.077378],
-      [256, 0.18099],
-      [341, 0.32505],
-      [426, 0.5087],
-      [512, 0.73578],
-      [597, 1.0067],
-      [682, 1.3386],
-      [767, 1.6814],
-      [853, 2.0726],
-      [896, 2.3393],
-      [938, 4.658],
-      [980, 8.4385],
-      [1023, 16.412],
-    ],
-  },
-  egReleaseSec: {
-    kind: 'logPchip',
-    knots: [
-      [0, 0.0041341], // carried from the v1 round (see header note)
-      [85, 0.015611],
-      [171, 0.077795],
-      [256, 0.18277],
-      [341, 0.32977],
-      [426, 0.51792],
-      [512, 0.75802],
-      [597, 1.0055],
-      [682, 1.3453],
-      [767, 1.6918],
-      [853, 2.0912],
-      [896, 2.2909],
-      [938, 4.6846],
-      [980, 8.5318],
-      [1023, 16.548],
-    ],
-  },
-  cutoffHz: { kind: 'expMap', lo: 25.1, hi: 17800 },
-  sqrPwMin: 0,
-}
-
-/*
- * v3 — v2 with the CUTOFF curve switched from expMap to a measured monotone
- * table (Matt's call, 2026-07-10: every cutoff session showed a systematic
- * taper deviation the expMap family cannot express). Knots are the
- * 2026-07-10T23-28 sweep's per-point corners (4-strike all-VCF medians),
- * BIAS-CORRECTED through the replica inversion (tools/calib/lib/domains.ts
- * biasCorrectCorners): the corner extractor reads a known 16 Hz replica
- * corner as 27 Hz and 1.4 kHz as 1.26 kHz, so raw measured corners must not
- * be transplanted into a profile directly. Corrected tables from the three
- * independent sessions agree within a few % per knot; held-out residual ~4%.
- * The raw-1023 knot is EXTRAPOLATED (log-linear through the last three
- * knots): the max-raw point is the PSD-transfer reference, so its own corner
- * is unmeasurable by construction — and ~23 kHz is at the rig's 48 kHz
- * Nyquist anyway. Both engine layers clamp fc to 0.45*fs, so the top knot
- * just means "wide open".
- */
-const V3: XdCalibProfile = {
-  ...V2,
-  id: 'v3',
-  name: 'v3 · partial calibration, cutoff table',
-  date: '2026-07-10',
-  notes:
-    'v2 with cutoff as a measured monotone table instead of an expMap — captures the ' +
-    'VCF taper the exponential could not, with corners bias-corrected via replica inversion.',
-  cutoffHz: {
-    kind: 'logPchip',
-    knots: [
-      [0, 24.667],
-      [64, 33.21],
-      [128, 43.319],
-      [192, 71.46],
-      [256, 111.72],
-      [320, 178.77],
-      [384, 281.97],
-      [448, 417.69],
-      [512, 658.35],
-      [576, 1012.5],
-      [640, 1571.5],
-      [704, 2461.6],
-      [768, 3872.9],
-      [832, 6249.8],
-      [896, 9517],
-      [1023, 23223], // extrapolated (see header note)
-    ],
-  },
-}
-
-/*
- * v4 — v3 + the measured VCO SHAPE morph models (Matt approved the model
- * decisions 2026-07-11; findings log entries + the evidence artifact carry
- * the data). Sessions: shape-saw 2026-07-10T08-03, shape-sqr 08-06,
- * shape-tri 2026-07-11T05-35, all A2 mean cycles with the capture chain's
- * AC-coupling inverted.
- *   SQR  constant-swing PWM: measured duty table (~linear 50.8% -> 0), real
- *        DC carried to the VCF, no peak normalization (hardware keeps a
- *        constant +-swing; the level ratio measured 1.00 -> 0.91).
- *   TRI  single soft fold: drive g' + output-level tables fitted jointly
- *        with the knee (r = 0.30; flat basin 0.3-0.4 — weakly identified,
- *        picked with its coherent drive table). SHAPE max renders the
- *        measured pure x3 triple; the fold ceiling tapers ~2x.
- *   SAW  reversal mirror: one parameter w — the wave time-mirrors through a
- *        window +-w*T centered on the alternate tooth boundary. Fitted on
- *        the 33-point dense sweep (2026-07-11T07-09): w ~ shape/2 linear
- *        within +-0.011, saturating at 0.5 by raw ~992; mid-morph waveform
- *        residuals 17-24% = the rig's edge-smear floor (the chopper's 47-70%
- *        mid-range gap is gone). w=0 is exactly the plain saw; w=0.5 is the
- *        measured half-wave-antisymmetric octave-down endpoint.
- */
-const V4: XdCalibProfile = {
-  ...V3,
-  id: 'v4',
-  name: 'v4 · + measured SHAPE morphs',
-  date: '2026-07-11',
-  notes:
-    'v3 plus the measured VCO SHAPE models: SAW half-rate chopper (octave-down morph), ' +
-    'TRI single soft fold ending at an exact x3, SQR constant-swing PWM with the measured ' +
-    'duty table and real DC. Legacy morphs remain in v0-v3.',
-  // All SHAPE tables below: D2 pipeline fits (measure-shape.ts) over the
-  // sessions named in the header, 2026-07-11.
-  sqrDuty: {
-    kind: 'pchip',
-    knots: [
-      [0, 0.5075],
-      [128, 0.44],
-      [256, 0.38],
-      [384, 0.3225],
-      [512, 0.2625],
-      [640, 0.2025],
-      [768, 0.14],
-      [896, 0.08],
-      [1023, 0], // measured silence
-    ],
-  },
-  triFoldDrive: {
-    // coherent with triFoldKnee = 0.30 (drive and knee trade off; the knee
-    // basin is flat 0.3-0.4, so the pair was fitted together)
-    kind: 'pchip',
-    knots: [
-      [0, 1.03],
-      [64, 1.04],
-      [128, 1.07],
-      [192, 1.11],
-      [256, 1.17],
-      [320, 1.25],
-      [384, 1.33],
-      [448, 1.42],
-      [512, 1.55],
-      [576, 1.66],
-      [640, 1.79],
-      [704, 1.93],
-      [768, 2.09],
-      [832, 2.27],
-      [896, 2.47],
-      [960, 2.69],
-      [1023, 2.94], // the fitted exact-x3 endpoint under the soft knee
-    ],
-  },
-  triFoldLevel: {
-    kind: 'pchip',
-    knots: [
-      [0, 1.0],
-      [64, 0.9887],
-      [128, 0.9625],
-      [192, 0.9277],
-      [256, 0.8844],
-      [320, 0.8379],
-      [384, 0.7968],
-      [448, 0.7585],
-      [512, 0.7251],
-      [576, 0.6927],
-      [640, 0.6615],
-      [704, 0.632],
-      [768, 0.6054],
-      [832, 0.5813],
-      [896, 0.5596],
-      [960, 0.5378],
-      [1023, 0.5125],
-    ],
-  },
-  triFoldKnee: 0.3,
-  sawMirrorW: {
-    // dense-sweep fit (33 points; raw 544's capture was weak — re-measure
-    // someday); endpoints pinned by structure: 0 = plain saw, 0.5 = the
-    // measured exact half-wave antisymmetry at SHAPE max
-    kind: 'pchip',
-    knots: [
-      [0, 0],
-      [32, 0.025],
-      [64, 0.0375],
-      [96, 0.055],
-      [128, 0.0675],
-      [160, 0.0875],
-      [192, 0.1025],
-      [224, 0.1125],
-      [256, 0.13],
-      [288, 0.145],
-      [320, 0.16],
-      [352, 0.1725],
-      [384, 0.1875],
-      [416, 0.2075],
-      [448, 0.2225],
-      [480, 0.2375],
-      [512, 0.2525],
-      [544, 0.265],
-      [576, 0.28],
-      [608, 0.295],
-      [640, 0.31],
-      [672, 0.325],
-      [704, 0.3375],
-      [736, 0.3575],
-      [768, 0.3725],
-      [800, 0.385],
-      [832, 0.4],
-      [864, 0.4175],
-      [896, 0.43],
-      [928, 0.445],
-      [960, 0.47],
-      [992, 0.5],
-      [1023, 0.5],
-    ],
-  },
-}
-
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
@@ -837,13 +544,12 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1, V2, V3, V4].map(deepFreeze)
+export const XD_PROFILES: readonly XdCalibProfile[] = [V0, V1].map(deepFreeze)
 
 /** The shipped default. Promoting a measured profile is a reviewed change —
- *  v2 promoted 2026-07-10 after Matt's listening A/B; v3 (cutoff table)
- *  promoted the same day on Matt's standing call; v4 (SHAPE models) stays
- *  NON-default until the D2 fits land and Matt A/Bs it. */
-export const XD_DEFAULT_PROFILE = 'v3'
+ *  v1 (the R1 re-baseline) promoted 2026-07-13 after Matt's listening
+ *  review; the dev-era v2/v3/v4 were dropped in the same change. */
+export const XD_DEFAULT_PROFILE = 'v1'
 
 export function resolveXdProfile(id: string): XdCalibProfile | null {
   return XD_PROFILES.find((profile) => profile.id === id) ?? null
@@ -856,7 +562,7 @@ export class XdCalibrationState {
   private current: XdCalibProfile
 
   constructor(id: string = XD_DEFAULT_PROFILE) {
-    this.current = resolveXdProfile(id) ?? V3
+    this.current = resolveXdProfile(id) ?? V1
   }
 
   get profile(): XdCalibProfile {

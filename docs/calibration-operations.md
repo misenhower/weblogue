@@ -72,11 +72,13 @@ behind it. Two actions, one step:
 8. The musical listening A/B before promoting the profile to the app default
    stays deliberately manual; `calib accept` certifies numbers, not sound.
 
-Current v1-v4 profiles are transitional dev-era rounds — measured while the
-rig, extractor and models were still moving targets. They remain useful for
-interactive A/B work but are not canonical evidence; the plan of record
-(2026-07-12) is to re-run the full suite under procedure R1, land the results
-as a fresh profile generation, then drop v1-v4.
+The plan of record completed 2026-07-13: the suite ran under procedure R1,
+the results landed as the new v1 (verified at unseen points, 7 of 8 domains
+accepted; the TRI fold ships measured-but-deferred pending a frequency-aware
+core model), v1 was promoted to the app default after the listening review,
+and the transitional dev-era v1-v4 were dropped (git history keeps them).
+Two profiles remain: v0, the pre-calibration snapshot and lineage base, and
+v1, the R1 re-baseline.
 
 Profile versions use `vN`; measurement procedures use `RN`. Evidence and
 verification must agree on the procedure ID/revision, and the candidate profile

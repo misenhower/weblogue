@@ -1,9 +1,9 @@
 /*
  * Measured SHAPE morph models (profile v4, D2 2026-07-11): SQR constant-swing
  * duty-table PWM with real DC, TRI single soft fold ending at an exact x3,
- * SAW half-rate chopper (octave-down morph). v0-v3 must carry no model
- * fields (legacy morphs bit-identical); v4's signatures must match the
- * hardware findings the models came from.
+ * SAW reversal mirror (octave-down morph). v0 must carry no model fields
+ * (legacy morphs bit-identical); the model signatures must match the
+ * hardware findings they came from (tables here = the dev-era v4 fixture).
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { Vco, VCO_WAVE } from '../src/dsp/osc'
@@ -16,7 +16,117 @@ afterEach(() => {
   setXdProfile(XD_DEFAULT_PROFILE)
 })
 
-const V4 = XD_PROFILES.find((p) => p.id === 'v4')!
+/**
+ * The D2-measured SHAPE model tables, verbatim from the dev-era profile v4
+ * (dropped 2026-07-13 when the R1 re-baseline v1 became the default): kept
+ * here as the fixture the model-MECHANICS tests pin against, independent of
+ * whatever tables the shipped profiles carry.
+ */
+const V4 = {
+  sqrDuty: {
+    kind: 'pchip',
+    knots: [
+      [0, 0.5075],
+      [128, 0.44],
+      [256, 0.38],
+      [384, 0.3225],
+      [512, 0.2625],
+      [640, 0.2025],
+      [768, 0.14],
+      [896, 0.08],
+      [1023, 0], // measured silence
+    ],
+  },
+  triFoldDrive: {
+    // coherent with triFoldKnee = 0.30 (drive and knee trade off; the knee
+    // basin is flat 0.3-0.4, so the pair was fitted together)
+    kind: 'pchip',
+    knots: [
+      [0, 1.03],
+      [64, 1.04],
+      [128, 1.07],
+      [192, 1.11],
+      [256, 1.17],
+      [320, 1.25],
+      [384, 1.33],
+      [448, 1.42],
+      [512, 1.55],
+      [576, 1.66],
+      [640, 1.79],
+      [704, 1.93],
+      [768, 2.09],
+      [832, 2.27],
+      [896, 2.47],
+      [960, 2.69],
+      [1023, 2.94], // the fitted exact-x3 endpoint under the soft knee
+    ],
+  },
+  triFoldLevel: {
+    kind: 'pchip',
+    knots: [
+      [0, 1.0],
+      [64, 0.9887],
+      [128, 0.9625],
+      [192, 0.9277],
+      [256, 0.8844],
+      [320, 0.8379],
+      [384, 0.7968],
+      [448, 0.7585],
+      [512, 0.7251],
+      [576, 0.6927],
+      [640, 0.6615],
+      [704, 0.632],
+      [768, 0.6054],
+      [832, 0.5813],
+      [896, 0.5596],
+      [960, 0.5378],
+      [1023, 0.5125],
+    ],
+  },
+  triFoldKnee: 0.3,
+  sawMirrorW: {
+    // dense-sweep fit (33 points; raw 544's capture was weak — re-measure
+    // someday); endpoints pinned by structure: 0 = plain saw, 0.5 = the
+    // measured exact half-wave antisymmetry at SHAPE max
+    kind: 'pchip',
+    knots: [
+      [0, 0],
+      [32, 0.025],
+      [64, 0.0375],
+      [96, 0.055],
+      [128, 0.0675],
+      [160, 0.0875],
+      [192, 0.1025],
+      [224, 0.1125],
+      [256, 0.13],
+      [288, 0.145],
+      [320, 0.16],
+      [352, 0.1725],
+      [384, 0.1875],
+      [416, 0.2075],
+      [448, 0.2225],
+      [480, 0.2375],
+      [512, 0.2525],
+      [544, 0.265],
+      [576, 0.28],
+      [608, 0.295],
+      [640, 0.31],
+      [672, 0.325],
+      [704, 0.3375],
+      [736, 0.3575],
+      [768, 0.3725],
+      [800, 0.385],
+      [832, 0.4],
+      [864, 0.4175],
+      [896, 0.43],
+      [928, 0.445],
+      [960, 0.47],
+      [992, 0.5],
+      [1023, 0.5],
+    ],
+  },
+  sqrPwMin: 0,
+} as const
 
 /** Vco with v4's model fns bound, as voice.ts bindShapeModels would. */
 function v4Vco(wave: number, freq: number, shape: number): Vco {
@@ -24,11 +134,11 @@ function v4Vco(wave: number, freq: number, shape: number): Vco {
   vco.setWave(wave)
   vco.setFreq(freq)
   vco.setShape(shape)
-  vco.sqrDutyFn = (s) => curveAt(V4.sqrDuty!, s * 1023)
-  vco.triDriveFn = (s) => curveAt(V4.triFoldDrive!, s * 1023)
-  vco.triLevelFn = (s) => curveAt(V4.triFoldLevel!, s * 1023)
-  vco.triKnee = V4.triFoldKnee!
-  vco.sawMirrorWFn = (s) => curveAt(V4.sawMirrorW!, s * 1023)
+  vco.sqrDutyFn = (s) => curveAt(V4.sqrDuty, s * 1023)
+  vco.triDriveFn = (s) => curveAt(V4.triFoldDrive, s * 1023)
+  vco.triLevelFn = (s) => curveAt(V4.triFoldLevel, s * 1023)
+  vco.triKnee = V4.triFoldKnee
+  vco.sawMirrorWFn = (s) => curveAt(V4.sawMirrorW, s * 1023)
   vco.pwMin = V4.sqrPwMin
   return vco
 }
@@ -42,17 +152,11 @@ function renderVco(vco: Vco, seconds: number, skipSeconds = 0.1): Float32Array {
 }
 
 describe('profile schema', () => {
-  it('v0/v2/v3 carry no SHAPE model fields (legacy morphs stay bit-identical)', () => {
-    // the measured models live in v4 (dev-era) and v1 (R1 re-baseline)
-    for (const p of XD_PROFILES) {
-      if (p.id === 'v4' || p.id === 'v1') continue
-      expect(p.sqrDuty).toBeUndefined()
-      expect(p.triFoldDrive).toBeUndefined()
-      expect(p.sawMirrorW).toBeUndefined()
-    }
-    expect(V4.sqrDuty).toBeDefined()
-    expect(V4.triFoldDrive).toBeDefined()
-    expect(V4.sawMirrorW).toBeDefined()
+  it('v0 carries no SHAPE model fields (legacy morphs stay bit-identical); v1 carries all', () => {
+    const v0 = XD_PROFILES.find((p) => p.id === 'v0')!
+    expect(v0.sqrDuty).toBeUndefined()
+    expect(v0.triFoldDrive).toBeUndefined()
+    expect(v0.sawMirrorW).toBeUndefined()
     const v1 = XD_PROFILES.find((p) => p.id === 'v1')!
     expect(v1.sqrDuty).toBeDefined()
     expect(v1.triFoldDrive).toBeDefined()
@@ -79,7 +183,7 @@ describe('SQR constant-swing PWM (v4)', () => {
     let mean = 0
     for (const v of x) mean += v
     mean /= x.length
-    const d = curveAt(V4.sqrDuty!, 0.75 * 1023) // ~0.156
+    const d = curveAt(V4.sqrDuty, 0.75 * 1023) // ~0.156
     expect(mean).toBeLessThan(-0.4) // strongly negative
     expect(Math.abs(mean - (2 * d - 1))).toBeLessThan(0.12)
   })
@@ -190,9 +294,9 @@ describe('engine wiring (voice.ts bindShapeModels)', () => {
     return renderEngine(e, 0.5)
   }
 
-  it('v4 through the engine period-doubles the saw at SHAPE max; v3 does not', () => {
-    const v4 = engineRender('v4', 2, 1023)
-    const v3 = engineRender('v3', 2, 1023)
+  it('v1 through the engine period-doubles the saw at SHAPE max; legacy v0 does not', () => {
+    const v4 = engineRender('v1', 2, 1023)
+    const v3 = engineRender('v0', 2, 1023)
     const tail = (x: Float32Array): Float32Array => x.subarray(Math.round(0.2 * SR))
     const sub = (x: Float32Array): number => goertzel(tail(x), 55) + goertzel(tail(x), 165)
     const base = (x: Float32Array): number => goertzel(tail(x), 110) + goertzel(tail(x), 220)

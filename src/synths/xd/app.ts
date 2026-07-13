@@ -39,10 +39,10 @@ function calibProfileGroup(send: (m: ToEngine) => void): ExtraGroup {
   } catch {
     // storage blocked (private mode): run on the default, picks don't persist
   }
-  let cur = Math.max(
-    0,
-    XD_PROFILES.findIndex((p) => p.id === (saved ?? XD_DEFAULT_PROFILE)),
-  )
+  // a persisted id that no longer exists (e.g. the dropped dev-era v2-v4)
+  // falls back to the DEFAULT profile, never to index 0
+  let cur = XD_PROFILES.findIndex((p) => p.id === saved)
+  if (cur < 0) cur = Math.max(0, XD_PROFILES.findIndex((p) => p.id === XD_DEFAULT_PROFILE))
   if (XD_PROFILES[cur].id !== XD_DEFAULT_PROFILE) apply(cur)
   return {
     title: 'CALIBRATION',

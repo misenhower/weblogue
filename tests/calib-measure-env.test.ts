@@ -3,13 +3,18 @@
  * envelopes (closed-form, deterministic), then replica self-consistency of
  * the eg-* job specs against src/synths/xd/curves.ts EG-time maps.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
 import { join } from 'node:path'
 import { measureEnvPoint } from '../tools/calib/lib/measure-env'
 import type { CalibJob } from '../tools/calib/lib/job'
 import { loadJob } from '../tools/calib/lib/job'
 import { renderJobPoint } from '../tools/calib/lib/render'
 import { attackToSec, decayToSec, releaseToSec } from '../src/synths/xd/curves'
+import { setXdProfile, XD_DEFAULT_PROFILE } from '../src/synths/xd/profiles'
+
+afterEach(() => {
+  setXdProfile(XD_DEFAULT_PROFILE)
+})
 
 const SR = 48000
 const JOBS = join(__dirname, '../tools/calib/jobs')
@@ -187,21 +192,38 @@ describe('replica self-consistency (renderJobPoint)', () => {
     },
   )
 
-  it('eg-decay point 682: displayed time matches decayToSec within 10%', () => {
+  // Each fall convention pairs with ITS extractor field: legacy exponential
+  // profiles (v0) with the 3*tau displayed-time fit, cubic-fall profiles
+  // (v1, egFallPower) with the time-to-zero fit.
+  it('eg-decay point 682: v0 exponential matches the 3*tau fit; v1 cubic matches the T fit', () => {
     const job = loadJob(join(JOBS, 'eg-decay.json'))
-    const r = renderJobPoint(job, 682)
-    const f = measureEnvPoint(r.samples, r.sr, r.onsetSample, job, 'decay')
-    const want = decayToSec(682)
-    expect(f.decayTimeSec).not.toBeNull()
-    expect(Math.abs(f.decayTimeSec! - want) / want).toBeLessThan(0.1)
+    const legacy = renderJobPoint(job, 682, 'v0')
+    const fLegacy = measureEnvPoint(legacy.samples, legacy.sr, legacy.onsetSample, job, 'decay')
+    setXdProfile('v0')
+    const wantLegacy = decayToSec(682)
+    expect(fLegacy.decayTimeSec).not.toBeNull()
+    expect(Math.abs(fLegacy.decayTimeSec! - wantLegacy) / wantLegacy).toBeLessThan(0.1)
+    const cubic = renderJobPoint(job, 682, 'v1')
+    const fCubic = measureEnvPoint(cubic.samples, cubic.sr, cubic.onsetSample, job, 'decay')
+    setXdProfile('v1')
+    const wantCubic = decayToSec(682)
+    expect(fCubic.fallTimeSec).not.toBeNull()
+    expect(Math.abs(fCubic.fallTimeSec! - wantCubic) / wantCubic).toBeLessThan(0.1)
   })
 
-  it('eg-release point 682: displayed time matches releaseToSec within 10%', () => {
+  it('eg-release point 682: v0 exponential matches the 3*tau fit; v1 cubic matches the T fit', () => {
     const job = loadJob(join(JOBS, 'eg-release.json'))
-    const r = renderJobPoint(job, 682)
-    const f = measureEnvPoint(r.samples, r.sr, r.onsetSample, job, 'release')
-    const want = releaseToSec(682)
-    expect(f.releaseTimeSec).not.toBeNull()
-    expect(Math.abs(f.releaseTimeSec! - want) / want).toBeLessThan(0.1)
+    const legacy = renderJobPoint(job, 682, 'v0')
+    const fLegacy = measureEnvPoint(legacy.samples, legacy.sr, legacy.onsetSample, job, 'release')
+    setXdProfile('v0')
+    const wantLegacy = releaseToSec(682)
+    expect(fLegacy.releaseTimeSec).not.toBeNull()
+    expect(Math.abs(fLegacy.releaseTimeSec! - wantLegacy) / wantLegacy).toBeLessThan(0.1)
+    const cubic = renderJobPoint(job, 682, 'v1')
+    const fCubic = measureEnvPoint(cubic.samples, cubic.sr, cubic.onsetSample, job, 'release')
+    setXdProfile('v1')
+    const wantCubic = releaseToSec(682)
+    expect(fCubic.fallTimeSec).not.toBeNull()
+    expect(Math.abs(fCubic.fallTimeSec! - wantCubic) / wantCubic).toBeLessThan(0.1)
   })
 })

@@ -5,9 +5,10 @@ procedure revisions are separate timelines: a future synth profile should say,
 for example, “profile vN, produced with procedure R1.” R1 is the first numbered
 procedure — the suite as it stands: canonical evidence, independent off-grid
 verification, explicit acceptance gates, and structured unit/session metadata.
-The dev-era rounds that produced profiles v1–v4 predate procedure numbering and
-carry no tag; the plan of record (2026-07-12) is to re-run the full suite under
-R1, land the results as a fresh profile generation, then drop v1–v4.
+The dev-era rounds that produced the original v1–v4 predated procedure
+numbering and carried no tag; the plan of record completed 2026-07-13 — the
+suite ran under R1, the results landed as the new v1 (now the app default),
+and the dev-era profiles were dropped.
 
 The per-domain measurement methodology behind [hardware-calibration.md](hardware-calibration.md)
 (read that first: parameter tiers, provenance, rig architecture, milestones). Each domain below

@@ -147,7 +147,7 @@ describe('calibration verification gate', () => {
 describe('canonical calibration evidence', () => {
   it('requires real accepted results for every field changed by a procedure-declaring profile', () => {
     const root = mkdtempSync(join(tmpdir(), 'calib-lineage-'))
-    const base = XD_PROFILES.find((profile) => profile.id === 'v3')!
+    const base = XD_PROFILES.find((profile) => profile.id === 'v0')!
     const candidate: XdCalibProfile = {
       ...base,
       id: 'v5',
@@ -155,7 +155,7 @@ describe('canonical calibration evidence', () => {
       cutoffHz: { kind: 'expMap' as const, lo: 18, hi: 19_000 },
       lfoMaxPitchCents: base.lfoMaxPitchCents + 1,
       lineage: {
-        baseProfile: 'v3',
+        baseProfile: 'v0',
         evidence: {
           cutoffHz: 'calib/results/v5/filter.cutoff.json',
         },
@@ -191,7 +191,7 @@ describe('canonical calibration evidence', () => {
 
   it('rejects a profile whose procedure-declaring base has invalid lineage', () => {
     const root = mkdtempSync(join(tmpdir(), 'calib-lineage-base-'))
-    const legacy = XD_PROFILES.find((profile) => profile.id === 'v3')!
+    const legacy = XD_PROFILES.find((profile) => profile.id === 'v0')!
     const invalidBase: XdCalibProfile = {
       ...legacy,
       id: 'v5',
@@ -281,7 +281,7 @@ describe('canonical calibration evidence', () => {
     )
     const verificationJob = job([400, 600])
     const results: AnyResult[] = verificationJob.sweep!.points.map((raw) => {
-      setXdProfile('v4')
+      setXdProfile('v1')
       const hardwareRender = renderJobPoint(verificationJob, raw)
       const hardware = measureAny(hardwareRender.samples, hardwareRender.sr, hardwareRender.onsetSample, verificationJob)
       setXdProfile('v0')
@@ -302,16 +302,16 @@ describe('canonical calibration evidence', () => {
       },
       '2099-07-12T11:00:00.000Z',
     )
-    const candidate = promoteEvidence(root, fitSession, 'v4').dir
+    const candidate = promoteEvidence(root, fitSession, 'v1').dir
     const verificationDir = promoteEvidence(root, verificationSession).dir
     const verificationPath = join(root, 'calib', 'verifications', 'fit-session--verify-session.json')
     expect(() => acceptEvidence(root, candidate, verificationPath)).toThrow(/not found/)
     // A FAILed verification (wrong --profile: evidence is bound to v4) writes
     // its artifact but must not burn the name — the re-run replaces it.
     expect(verifyCommand(root, candidate, verificationDir, 'v0').passed).toBe(false)
-    expect(verifyCommand(root, candidate, verificationDir, 'v4').passed).toBe(true)
+    expect(verifyCommand(root, candidate, verificationDir, 'v1').passed).toBe(true)
     // A PASSING artifact is immutable: acceptance references it.
-    expect(() => verifyCommand(root, candidate, verificationDir, 'v4')).toThrow(/already exists/)
+    expect(() => verifyCommand(root, candidate, verificationDir, 'v1')).toThrow(/already exists/)
     const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
     // Acceptance must reproduce the comparison from checksummed evidence,
     // not trust editable point/result fields in this review artifact.
@@ -319,9 +319,9 @@ describe('canonical calibration evidence', () => {
     verification.result = { passed: true, afterScore: 999 }
     writeFileSync(verificationPath, JSON.stringify(verification))
     const accepted = acceptEvidence(root, candidate, verificationPath)
-    expect(accepted).toBe(join(root, 'calib', 'results', 'v4', 'vco1-pitch-knob.json'))
+    expect(accepted).toBe(join(root, 'calib', 'results', 'v1', 'vco1-pitch-knob.json'))
     const result = JSON.parse(readFileSync(accepted, 'utf8'))
-    expect(result.profile).toBe('v4')
+    expect(result.profile).toBe('v1')
     expect(result.evidence).toBe('calib/evidence/fit-session')
     expect(result.verification.evidence).toBe('calib/evidence/verify-session')
     expect(validateAcceptedResult(root, accepted)).toEqual([])

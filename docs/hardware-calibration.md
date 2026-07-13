@@ -52,9 +52,9 @@ guessed vs measured, or round N vs round N+1.
 Profile versions and procedure revisions are distinct: profiles use `vN`, while
 measurement methods use `RN`. Every future complete profile declares its procedure ID/revision;
 for example, “produced with `xd-hardware-calibration R1`.” R1 is the suite as it
-stands; the dev-era profiles v1–v4 predate procedure numbering, and the plan of
-record (2026-07-12) is to re-run the full suite under R1, land a fresh
-fully-provenanced profile generation, then drop v1–v4.
+stands and produced the current default profile v1 (2026-07-13, verified at
+unseen points; the dev-era v1–v4 were dropped the same day — git history keeps
+them). Two profiles ship: v0 (pre-calibration snapshot, lineage base) and v1.
 
 Consequences:
 

@@ -1,0 +1,255 @@
+{
+  "schema": 1,
+  "domain": "vco.pitch",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "profileFields": [
+    "vcoPitchCents"
+  ],
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "measuredDate": "2026-07-13",
+  "acceptedAt": "2026-07-13T06:49:52.927Z",
+  "evidence": "calib/evidence/2026-07-13T06-28-vco1-pitch-knob",
+  "verification": {
+    "evidence": "calib/evidence/2026-07-13T06-35-vco1-pitch-verify",
+    "artifact": "calib/verifications/2026-07-13T06-28-vco1-pitch-knob--2026-07-13T06-35-vco1-pitch-verify.json",
+    "result": {
+      "passed": true,
+      "threshold": 2,
+      "metric": "rms-cents",
+      "beforeScore": 78.10218179984284,
+      "afterScore": 1.4943385304964865,
+      "points": 8,
+      "reasons": []
+    }
+  },
+  "proposals": [
+    {
+      "domain": "pitch",
+      "unit": "cents",
+      "current": "pitchToCents(raw) (documented table)",
+      "proposed": "monotone table (43 pts)",
+      "fitResidualPct": 0.004325026394317527,
+      "heldOutResidualPct": 0.10369511018810836,
+      "table": [
+        [
+          0,
+          -1198.3991047182913
+        ],
+        [
+          4,
+          -1198.3991047182913
+        ],
+        [
+          32,
+          -1109.8708688682964
+        ],
+        [
+          64,
+          -1010.5786575622967
+        ],
+        [
+          96,
+          -910.4938399711721
+        ],
+        [
+          100,
+          -897.6725634297004
+        ],
+        [
+          128,
+          -811.6319107036106
+        ],
+        [
+          160,
+          -710.2897877091625
+        ],
+        [
+          192,
+          -611.3611232374662
+        ],
+        [
+          224,
+          -511.3485374553014
+        ],
+        [
+          256,
+          -410.9106933242427
+        ],
+        [
+          288,
+          -311.24408259055224
+        ],
+        [
+          320,
+          -210.10800847250442
+        ],
+        [
+          352,
+          -110.44798887246517
+        ],
+        [
+          356,
+          -97.67826560676878
+        ],
+        [
+          384,
+          -77.27117601087926
+        ],
+        [
+          400,
+          -64.54105438320666
+        ],
+        [
+          416,
+          -51.65576483486087
+        ],
+        [
+          448,
+          -26.150739605809626
+        ],
+        [
+          476,
+          -4.449227470776238
+        ],
+        [
+          480,
+          -3.1627365074473524
+        ],
+        [
+          492,
+          1.8831274729842111
+        ],
+        [
+          512,
+          1.949721488854936
+        ],
+        [
+          532,
+          2.177324197340724
+        ],
+        [
+          544,
+          5.952387219562793
+        ],
+        [
+          548,
+          7.190996036200255
+        ],
+        [
+          576,
+          28.72478392794101
+        ],
+        [
+          608,
+          54.302387618620614
+        ],
+        [
+          640,
+          79.71884218460028
+        ],
+        [
+          668,
+          102.6414420709774
+        ],
+        [
+          672,
+          113.02412952791735
+        ],
+        [
+          704,
+          214.10763015895063
+        ],
+        [
+          736,
+          313.5047324210057
+        ],
+        [
+          768,
+          412.9849009381593
+        ],
+        [
+          800,
+          512.248015453778
+        ],
+        [
+          832,
+          612.9211275122233
+        ],
+        [
+          864,
+          711.9742326507644
+        ],
+        [
+          896,
+          813.557472164868
+        ],
+        [
+          928,
+          911.9633213210234
+        ],
+        [
+          960,
+          1012.7249857060851
+        ],
+        [
+          992,
+          1112.4655055505377
+        ],
+        [
+          1020,
+          1201.833716597515
+        ],
+        [
+          1023,
+          1201.8575844441984
+        ]
+      ],
+      "notes": [
+        "coverage: 43/43 planned points",
+        "raw 32: Δ+15.0¢ vs documented pitchToCents",
+        "raw 64: Δ+28.5¢ vs documented pitchToCents",
+        "raw 96: Δ+42.8¢ vs documented pitchToCents",
+        "raw 100: Δ+44.9¢ vs documented pitchToCents",
+        "raw 128: Δ+55.8¢ vs documented pitchToCents",
+        "raw 160: Δ+71.3¢ vs documented pitchToCents",
+        "raw 192: Δ+84.5¢ vs documented pitchToCents",
+        "raw 224: Δ+98.7¢ vs documented pitchToCents",
+        "raw 256: Δ+113.3¢ vs documented pitchToCents",
+        "raw 288: Δ+127.1¢ vs documented pitchToCents",
+        "raw 320: Δ+142.4¢ vs documented pitchToCents",
+        "raw 352: Δ+156.3¢ vs documented pitchToCents",
+        "raw 356: Δ+158.3¢ vs documented pitchToCents",
+        "raw 384: Δ+122.7¢ vs documented pitchToCents",
+        "raw 400: Δ+103.5¢ vs documented pitchToCents",
+        "raw 416: Δ+84.3¢ vs documented pitchToCents",
+        "raw 448: Δ+45.8¢ vs documented pitchToCents",
+        "raw 476: Δ+11.6¢ vs documented pitchToCents",
+        "raw 480: Δ+8.8¢ vs documented pitchToCents",
+        "raw 544: Δ-6.0¢ vs documented pitchToCents",
+        "raw 548: Δ-8.8¢ vs documented pitchToCents",
+        "raw 576: Δ-43.3¢ vs documented pitchToCents",
+        "raw 608: Δ-81.7¢ vs documented pitchToCents",
+        "raw 640: Δ-120.3¢ vs documented pitchToCents",
+        "raw 668: Δ-153.4¢ vs documented pitchToCents",
+        "raw 672: Δ-153.7¢ vs documented pitchToCents",
+        "raw 704: Δ-138.4¢ vs documented pitchToCents",
+        "raw 736: Δ-124.9¢ vs documented pitchToCents",
+        "raw 768: Δ-111.2¢ vs documented pitchToCents",
+        "raw 800: Δ-97.8¢ vs documented pitchToCents",
+        "raw 832: Δ-82.9¢ vs documented pitchToCents",
+        "raw 864: Δ-69.7¢ vs documented pitchToCents",
+        "raw 896: Δ-53.9¢ vs documented pitchToCents",
+        "raw 928: Δ-41.3¢ vs documented pitchToCents",
+        "raw 960: Δ-26.4¢ vs documented pitchToCents",
+        "raw 992: Δ-12.4¢ vs documented pitchToCents",
+        "36/43 points deviate > 3¢ — proposing a monotone replacement table",
+        "final table refit on all 43 points (held-out folded in after family selection)",
+        "pitch residual: fit 0.07¢ RMS, held-out 1.80¢ RMS"
+      ]
+    }
+  ]
+}

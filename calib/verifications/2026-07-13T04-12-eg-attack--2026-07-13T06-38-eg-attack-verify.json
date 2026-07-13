@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "createdAt": "2026-07-13T06:46:42.909Z",
+  "domain": "eg.amp",
+  "unit": "s",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "candidateEvidence": "calib/evidence/2026-07-13T04-12-eg-attack",
+  "verificationEvidence": "calib/evidence/2026-07-13T06-38-eg-attack-verify",
+  "baselineProfile": "v0",
+  "passed": true,
+  "coverageComplete": true,
+  "result": {
+    "passed": true,
+    "threshold": 0.05,
+    "metric": "rms-log-ratio",
+    "beforeScore": 2.1874042287881195,
+    "afterScore": 0.01237788459786847,
+    "points": 6,
+    "reasons": []
+  },
+  "points": [
+    {
+      "raw": 128,
+      "hardware": 0.03827258559338616,
+      "before": 0.003801270818322012,
+      "after": 0.037654317040586145
+    },
+    {
+      "raw": 300,
+      "hardware": 0.20263581782628076,
+      "before": 0.007877242784511703,
+      "after": 0.20734602120754553
+    },
+    {
+      "raw": 469,
+      "hardware": 0.49039279448929113,
+      "before": 0.030272692240540175,
+      "after": 0.49231875947906834
+    },
+    {
+      "raw": 640,
+      "hardware": 0.9154773340417497,
+      "before": 0.12536996299830755,
+      "after": 0.9189139970669639
+    },
+    {
+      "raw": 810,
+      "hardware": 1.4768125772343392,
+      "before": 0.512541653928854,
+      "after": 1.4691572222601426
+    },
+    {
+      "raw": 980,
+      "hardware": 2.159722412431819,
+      "before": 2.111006056055349,
+      "after": 2.1417797155331795
+    }
+  ]
+}

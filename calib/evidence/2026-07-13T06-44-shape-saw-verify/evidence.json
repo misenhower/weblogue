@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-44-shape-saw-verify",
+  "promotedAt": "2026-07-13T06:46:11.918Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "6dc93a5339d2ea91836c008cadd41ad7e7a7ab587c52248c6d6c5fcb8fed8a35",
+    "meta.json": "a72fbc5adb5435035393f340ef462e945f96a18b97ba277b49aefe33c455db6e",
+    "features.json": "80d4ed9679b60bd81b5b92dd2881ca5829aa6f0eb1d5f9b692c1435cbf0b6219",
+    "report.md": "83a71a58cfbae089979e78c94355e4e40a4c48f5eef0f39e4d2d306d04182649"
+  }
+}

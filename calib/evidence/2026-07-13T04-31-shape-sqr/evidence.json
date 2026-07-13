@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T04-31-shape-sqr",
+  "promotedAt": "2026-07-13T06:34:55.491Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "a690367de4ae96279b694f8cc50ba8a356aaccddda5a02b165bb3a6694effcd6",
+    "meta.json": "3bc5dd46d41a28f14d2ec793367e8ee646b908045967f0f5f432eff503850869",
+    "features.json": "bedddb820ceec35969ffac158efc8a95bff5fdcfee0930570d5932eaf58cfc4d",
+    "report.md": "de068bf5a8af727c1bb2f30723767705bc3b3f98c2f29ad4023654a3b8a0be15"
+  }
+}

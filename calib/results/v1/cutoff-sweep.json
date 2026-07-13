@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "domain": "filter.cutoff",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "profileFields": [
+    "cutoffHz"
+  ],
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "measuredDate": "2026-07-13",
+  "acceptedAt": "2026-07-13T06:50:00.857Z",
+  "evidence": "calib/evidence/2026-07-13T04-26-cutoff-sweep",
+  "verification": {
+    "evidence": "calib/evidence/2026-07-13T06-36-cutoff-verify",
+    "artifact": "calib/verifications/2026-07-13T04-26-cutoff-sweep--2026-07-13T06-36-cutoff-verify.json",
+    "result": {
+      "passed": true,
+      "threshold": 0.05,
+      "metric": "rms-log-ratio",
+      "beforeScore": 0.10968257761316859,
+      "afterScore": 0.0485764069454388,
+      "points": 6,
+      "reasons": []
+    }
+  },
+  "proposals": [
+    {
+      "domain": "filter.cutoff — cutoffToHz",
+      "unit": "Hz",
+      "current": "expMap(raw, 16, 21000)",
+      "proposed": "monotone table (15 pts, log-PCHIP)",
+      "fitResidualPct": 0,
+      "heldOutResidualPct": 2.7525649225698294,
+      "table": [
+        [
+          0,
+          15.537641393596685
+        ],
+        [
+          64,
+          25.691703680879627
+        ],
+        [
+          128,
+          41.32918800842896
+        ],
+        [
+          192,
+          69.89349782332383
+        ],
+        [
+          256,
+          107.90322795283151
+        ],
+        [
+          320,
+          172.13316500646957
+        ],
+        [
+          384,
+          273.7930789748347
+        ],
+        [
+          448,
+          416.4427942056533
+        ],
+        [
+          512,
+          636.3055495633822
+        ],
+        [
+          576,
+          1022.4488168860165
+        ],
+        [
+          640,
+          1557.342367789743
+        ],
+        [
+          704,
+          2481.6157561233504
+        ],
+        [
+          768,
+          3872.149034782026
+        ],
+        [
+          832,
+          6189.652276167065
+        ],
+        [
+          896,
+          9474.910480574006
+        ]
+      ],
+      "notes": [
+        "coverage: 17/17 planned points — NO USABLE VALUE at cutoff=960",
+        "final table refit on all 15 points (held-out folded in after family selection)",
+        "table by standing decision: cutoff is a table, not an expMap (Matt, 2026-07-10); corners are bias-corrected through the replica inversion (see domains.ts biasCorrectCorners) (best expMap was expMap(raw, 16.7, 24200), residual 3.8%)",
+        "fit on 12 points, 3 held out (every 4th)"
+      ]
+    }
+  ]
+}

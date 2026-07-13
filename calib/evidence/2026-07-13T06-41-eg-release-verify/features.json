@@ -1,0 +1,168 @@
+{
+  "job": "eg-release-verify",
+  "domain": "eg.amp",
+  "kind": "envelope",
+  "replicaProfile": "v0",
+  "planned": 6,
+  "results": [
+    {
+      "point": 128,
+      "hw": {
+        "peakDbfs": -29.384897027096393,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.041742540182903534,
+        "fallTimeSec": 0.09037613744532025,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.0061719823322642555,
+        "fallTimeSec": 0.013356433118486095,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 300,
+      "hw": {
+        "peakDbfs": -29.747499174069134,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.2552030552167185,
+        "fallTimeSec": 0.47662669806429714,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.027415276149607922,
+        "fallTimeSec": 0.08128260585617862,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 469,
+      "hw": {
+        "peakDbfs": -29.781023947823666,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.6286928479213623,
+        "fallTimeSec": 1.1553087695222177,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.11956682235506043,
+        "fallTimeSec": 0.26589280464490506,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 640,
+      "hw": {
+        "peakDbfs": -29.670639848991307,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.1735148934034823,
+        "fallTimeSec": 2.1454552891756244,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.531267032215682,
+        "fallTimeSec": 1.1035259521114928,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 810,
+      "hw": {
+        "peakDbfs": -29.350919177441206,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.8618729795520605,
+        "fallTimeSec": 3.392236445316444,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 2.3402386046612307,
+        "fallTimeSec": 4.783909347314192,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 1000,
+      "hw": {
+        "peakDbfs": -29.41327091073736,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 9.553791130776675,
+        "fallTimeSec": 17.329169957712825,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 12.273498660221724,
+        "fallTimeSec": 24.99766228757212,
+        "sustainDb": null
+      }
+    }
+  ],
+  "pointFailures": [],
+  "proposals": [
+    {
+      "domain": "eg.amp release — releaseToSec",
+      "unit": "s",
+      "current": "expMap(raw, 0.002, 15)",
+      "proposed": "monotone table (6 pts, log-PCHIP)",
+      "fitResidualPct": 6.409875621278546e-15,
+      "heldOutResidualPct": null,
+      "table": [
+        [
+          128,
+          0.09037613744532026
+        ],
+        [
+          300,
+          0.47662669806429714
+        ],
+        [
+          469,
+          1.1553087695222177
+        ],
+        [
+          640,
+          2.1454552891756244
+        ],
+        [
+          810,
+          3.3922364453164446
+        ],
+        [
+          1000,
+          17.329169957712825
+        ]
+      ],
+      "notes": [
+        "coverage: 6/6 planned points",
+        "table values are time-to-zero T of the cubic fall (egFallPower = 3, linear phase cubed; measured p = 3.00 across the range, 0.2 dB RMS); this result also authorizes egFallPower",
+        "final table refit on all 6 points (held-out folded in after family selection)",
+        "expMap rejected: residual 31.5% > 25% — curve is not exponential (best expMap was expMap(raw, 0.0662, 16.9))",
+        "only 6 points (< 8): fit on all points, no held-out validation"
+      ]
+    }
+  ],
+  "measuredDate": "2026-07-13"
+}

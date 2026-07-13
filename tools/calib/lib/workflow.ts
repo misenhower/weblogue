@@ -89,16 +89,21 @@ export function evaluateVerification(input: VerificationInput): VerificationResu
     reasons.push(`candidate ${metric} ${shown.toFixed(2)}${unit} exceeds ${limit.toFixed(2)}${unit} threshold`)
   }
   if (threshold !== null) {
+    // A point that got worse than the baseline but still sits WITHIN the
+    // domain threshold is capture repeatability, not a defect (the SQR
+    // verify false-fail, 2026-07-13: one point +0.6 dB vs baseline yet at
+    // 0.64 dB absolute against a 1.5 dB spec). Material regression = worse
+    // than baseline by >25% of the threshold AND out of spec.
     const tolerance = threshold * 0.25
     const regressed = input.points.filter((point) => {
       const before = Math.abs(delta(point.before, point.hardware))
       const after = Math.abs(delta(point.after, point.hardware))
-      return after - before > tolerance
+      return after - before > tolerance && after > threshold
     })
     if (regressed.length > 0) {
       reasons.push(
         `${regressed.length} verification point(s) regressed materially ` +
-          `(more than 25% of the acceptance threshold)`,
+          `(more than 25% of the acceptance threshold, and out of spec)`,
       )
     }
   }

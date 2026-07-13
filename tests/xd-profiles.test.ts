@@ -151,10 +151,12 @@ describe('profile v1 (R1 re-baseline 2026-07-13)', () => {
 
   it('engine pitch follows the measured law; DISPLAY pitch stays documented', () => {
     setXdProfile('v1')
-    // measured mid-range is ~0.39x the documented table
-    expect(vcoPitchCents(356)).toBeCloseTo(-98.425, 2)
+    // measured mid-range is ~0.39x the documented table (dense 43-knot grid:
+    // the sparse zone-boundary grid left up to 75c of interpolation error at
+    // off-grid knob positions — caught by R1 verification, 2026-07-13)
+    expect(vcoPitchCents(356)).toBeCloseTo(-99.682, 2)
     expect(vcoPitchCents(512)).toBe(0) // recentered dead zone
-    expect(vcoPitchCents(0)).toBeCloseTo(-1199.257, 2)
+    expect(vcoPitchCents(0)).toBeCloseTo(-1200.402, 2)
     // the OLED numbers never change with the profile
     expect(pitchToCents(356)).toBe(-256)
     expect(pitchToCents(512)).toBe(0)

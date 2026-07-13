@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "domain": "vco.shape",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "profileFields": [
+    "sqrDuty",
+    "sqrPwMin"
+  ],
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "measuredDate": "2026-07-13",
+  "acceptedAt": "2026-07-13T06:50:24.199Z",
+  "evidence": "calib/evidence/2026-07-13T04-31-shape-sqr",
+  "verification": {
+    "evidence": "calib/evidence/2026-07-13T06-43-shape-sqr-verify",
+    "artifact": "calib/verifications/2026-07-13T04-31-shape-sqr--2026-07-13T06-43-shape-sqr-verify.json",
+    "result": {
+      "passed": true,
+      "threshold": 1.5,
+      "metric": "median-ladder-db",
+      "beforeScore": 1.6419484663968493,
+      "afterScore": 0.309191548336635,
+      "points": 6,
+      "reasons": []
+    }
+  },
+  "proposals": [
+    {
+      "domain": "vco.shape SQR — sqrDuty",
+      "unit": "duty",
+      "current": "profile sqrDuty table (v4) / legacy 0.5-0.5*shape",
+      "proposed": "monotone-ish table (8 pts, waveform fit)",
+      "fitResidualPct": 19.858888774859835,
+      "heldOutResidualPct": null,
+      "table": [
+        [
+          0,
+          0.505
+        ],
+        [
+          128,
+          0.4425
+        ],
+        [
+          256,
+          0.385
+        ],
+        [
+          384,
+          0.325
+        ],
+        [
+          512,
+          0.2675
+        ],
+        [
+          640,
+          0.205
+        ],
+        [
+          768,
+          0.145
+        ],
+        [
+          896,
+          0.085
+        ]
+      ],
+      "notes": [
+        "coverage: 8/9 planned points — MISSING vco1Shape=1023",
+        "per-point waveform residual: mean 19.9%, worst 24.9%",
+        "fit chain: capture coupling 40 Hz in the loop",
+        "constant-swing check: min/max fitted level = 0.87 (hardware measured ~0.9)"
+      ]
+    }
+  ]
+}

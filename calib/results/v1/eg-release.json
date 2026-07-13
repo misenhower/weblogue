@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "domain": "eg.amp",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "profileFields": [
+    "egReleaseSec",
+    "egFallPower"
+  ],
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "measuredDate": "2026-07-13",
+  "acceptedAt": "2026-07-13T06:50:22.616Z",
+  "evidence": "calib/evidence/2026-07-13T04-44-eg-release",
+  "verification": {
+    "evidence": "calib/evidence/2026-07-13T06-41-eg-release-verify",
+    "artifact": "calib/verifications/2026-07-13T04-44-eg-release--2026-07-13T06-41-eg-release-verify.json",
+    "result": {
+      "passed": true,
+      "threshold": 0.05,
+      "metric": "rms-log-ratio",
+      "beforeScore": 1.2673342103827032,
+      "afterScore": 0.015044261321832302,
+      "points": 6,
+      "reasons": []
+    }
+  },
+  "proposals": [
+    {
+      "domain": "eg.amp release — releaseToSec",
+      "unit": "s",
+      "current": "expMap(raw, 0.002, 15)",
+      "proposed": "monotone table (15 pts, log-PCHIP)",
+      "fitResidualPct": 8.479468414379334e-15,
+      "heldOutResidualPct": 13.337146921194751,
+      "table": [
+        [
+          0,
+          0.0074267208844516555
+        ],
+        [
+          85,
+          0.042816978843181044
+        ],
+        [
+          171,
+          0.1559919797626956
+        ],
+        [
+          256,
+          0.3500640940284505
+        ],
+        [
+          341,
+          0.6035868472658618
+        ],
+        [
+          426,
+          0.9385328424243854
+        ],
+        [
+          512,
+          1.3533546243483339
+        ],
+        [
+          597,
+          1.8616056850544975
+        ],
+        [
+          682,
+          2.4265043115201284
+        ],
+        [
+          767,
+          3.0289129540665396
+        ],
+        [
+          853,
+          3.745214190227181
+        ],
+        [
+          896,
+          4.1831384740636715
+        ],
+        [
+          938,
+          8.450298127700174
+        ],
+        [
+          980,
+          14.024897992803243
+        ],
+        [
+          1023,
+          21.37137271051709
+        ]
+      ],
+      "notes": [
+        "coverage: 15/15 planned points",
+        "table values are time-to-zero T of the cubic fall (egFallPower = 3, linear phase cubed; measured p = 3.00 across the range, 0.2 dB RMS); this result also authorizes egFallPower",
+        "final table refit on all 15 points (held-out folded in after family selection)",
+        "expMap rejected: residual 60.4% > 25% — curve is not exponential (best expMap was expMap(raw, 0.03, 19.9))",
+        "fit on 12 points, 3 held out (every 4th)"
+      ]
+    }
+  ]
+}

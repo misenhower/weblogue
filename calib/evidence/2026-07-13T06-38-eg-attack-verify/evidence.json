@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-38-eg-attack-verify",
+  "promotedAt": "2026-07-13T06:46:10.056Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "7ebb0dbb106b184890dcf5d18c022608f6a4fbf1e0806404ac092adcb452603e",
+    "meta.json": "e2ecf046e05c5e9ee1e38fffdba778830c8d2decb74b75a2b20a6bcdf71c0315",
+    "features.json": "a1d321834a6055e0b954b4a2814703e99327d95c7e66c8e4ff313344fa77894b",
+    "report.md": "5c77da7729f83d26a60c038ab6d9b41a4e4c3ac5293ea89034e863fc86ce7048"
+  }
+}

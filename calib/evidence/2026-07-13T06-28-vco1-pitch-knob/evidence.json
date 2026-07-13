@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-28-vco1-pitch-knob",
+  "promotedAt": "2026-07-13T06:34:53.528Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "ac431520fabf179599079b44a387ff6951c3fb7688463a428505f40f004db370",
+    "meta.json": "85d4d47a40b29bbf0c55b50562186f073f3daac24b8796fadda9b59f9d22ef3c",
+    "features.json": "59fd56b5b2015e3e3b9150bd87b86a4f19017cab89e0793f362e41ccf2fa7a9b",
+    "report.md": "be8686d5340eeac5a0e4717ce28eb3f7bb0c891c1120988deddfe9447fa76267"
+  }
+}

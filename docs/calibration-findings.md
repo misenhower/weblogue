@@ -286,6 +286,34 @@ knot); (b) shape-sqr raw 1023 finds NO onset — the SQR duty genuinely reaches 
 was an onset fluke on the noise floor). The silent capture IS the duty-0 evidence; the
 R1 sqrDuty table pins [1023, 0] with this note.
 
+### 2026-07-13 · R1 verification round: what the off-grid/second-octave captures caught
+
+The first full analyze → verify → record pass (8 domains, candidate profile v1). Final
+scorecard 7 accepted / 1 deferred; everything it caught was real:
+
+- **Pitch grid was too sparse** — the zone-boundary fitting grid left up to +75¢ of
+  PCHIP interpolation error at off-grid knob positions (raw 900, in the 800→1020 knot
+  gap). Refit on a dense every-32 grid (43 knots): off-grid RMS collapsed 30.9¢ → 1.49¢
+  against the 2¢ bar. The dev-era profiles carried the same sparse-grid error, untested.
+- **TRI's harmonic content is FREQUENCY-DEPENDENT** (the deferral): verified at A3 the
+  measured fold model improves every point 2–10× over v0 but medians 5.6 dB vs the
+  1.5 dB bar — worst at LOW shape, where hw H3 at 220 Hz reads −24.3 dB vs an ideal
+  triangle's −19.1: the analog core's corners round with frequency. SAW (0.75 dB) and
+  SQR (0.31 dB) verified frequency-invariant at the same octave, so it's TRI-specific
+  physics. Future work: frequency-aware TRI core (needs multi-octave tri captures).
+- **Two metric-gate bugs, both would bite any odd-symmetric wave**: (1) ladder medians
+  compared sub-floor harmonics raw — hw analog leakage (−45 dB) vs the replica's
+  numerical zero (−113 dB) produced 60 dB of garbage that dominated TRI's metric; fixed
+  by flooring at −40 dB re H1 AND skipping pairs where both worlds are sub-floor
+  (clamping alone degenerated a near-sine TRI's median to 0.00). (2) A point "regressed
+  materially vs baseline" while still comfortably in spec (SQR: 0.64 dB against 1.5) is
+  capture repeatability, not a defect — material regression now also requires the point
+  to be out of spec.
+- Full-profile digest binding means revising ONE field (the pitch table) invalidates
+  every domain's promoted evidence and forces re-capturing verification sessions
+  (capture-after-promotion ordering). Fine pre-commit (evidence is just files until it
+  lands in git); a field-scoped binding would decouple domains if this ever gets old.
+
 ## Rig findings (permanent operating lessons)
 
 ### 2026-07-10 · ffmpeg's avfoundation input silently drops audio chunks — never capture through it

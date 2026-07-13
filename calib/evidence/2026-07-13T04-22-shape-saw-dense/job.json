@@ -1,10 +1,10 @@
 {
-  "id": "vco1-pitch-knob",
-  "domain": "vco.pitch",
+  "id": "shape-saw-dense",
+  "domain": "vco.shape",
   "profileFields": [
-    "vcoPitchCents"
+    "sawMirrorW"
   ],
-  "description": "D1: PITCH knob curve at the documented MIDIimp breakpoints \u2014 verifies pitchToCents segments (DOCUMENTED-exact; flag >3\u00a2, don't refit) Grid densified to every-32 raw + documented anchors (2026-07-13): the sparse zone-boundary grid left up to 75c of PCHIP interpolation error at off-grid knob positions (caught by R1 verification).",
+  "description": "D2: dense SAW SHAPE sweep (33 points) — feeds the mid-morph model refinement (the chopper's ~50-70% waveform residual zone: entry dwell + reversed-slope structure)",
   "overrides": {
     "vco1Wave": 2,
     "vco1Level": 1023,
@@ -22,14 +22,12 @@
     "ampVelocity": 0
   },
   "sweep": {
-    "param": "vco1Pitch",
+    "param": "vco1Shape",
     "points": [
       0,
-      4,
       32,
       64,
       96,
-      100,
       128,
       160,
       192,
@@ -38,22 +36,15 @@
       288,
       320,
       352,
-      356,
       384,
-      400,
       416,
       448,
-      476,
       480,
-      492,
       512,
-      532,
       544,
-      548,
       576,
       608,
       640,
-      668,
       672,
       704,
       736,
@@ -65,23 +56,26 @@
       928,
       960,
       992,
-      1020,
       1023
     ]
   },
   "notes": [
     {
-      "midi": 69,
+      "midi": 45,
       "vel": 100,
       "onSec": 0.4,
       "offSec": 1.6
     }
   ],
-  "repeat": 4,
+  "repeat": 2,
   "repeatEverySec": 1.7,
-  "captureSec": 7.0,
+  "captureSec": 3.6,
   "features": {
-    "nominalHz": 440,
-    "harmonics": 4
+    "nominalHz": 110,
+    "harmonics": 16,
+    "nominalRatios": [
+      0.5,
+      1
+    ]
   }
 }

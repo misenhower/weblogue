@@ -84,6 +84,23 @@ describe('calibration verification gate', () => {
     expect(result.reasons.some((reason) => reason.includes('regressed materially'))).toBe(true)
   })
 
+  it('tolerates a point that got worse than baseline while staying within spec', () => {
+    // capture repeatability, not a defect (the SQR verify false-fail):
+    // before 0.07 dB -> after 0.64 dB against a 1.5 dB threshold must pass
+    const result = evaluateVerification({
+      domain: 'vco.shape',
+      unit: 'dB',
+      independent: true,
+      coverageComplete: true,
+      points: [
+        { raw: 192, hardware: 0, before: 0.07, after: 0.64 },
+        { raw: 576, hardware: 0, before: 2.27, after: 0.06 },
+      ],
+    })
+    expect(result.passed).toBe(true)
+    expect(result.reasons).toEqual([])
+  })
+
   it('uses the documented 2-cent pitch threshold', () => {
     expect(verificationThreshold('vco.pitch', '¢')).toBe(2)
     const result = evaluateVerification({

@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "createdAt": "2026-07-13T06:46:40.626Z",
+  "domain": "filter.cutoff",
+  "unit": "Hz",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "candidateEvidence": "calib/evidence/2026-07-13T04-26-cutoff-sweep",
+  "verificationEvidence": "calib/evidence/2026-07-13T06-36-cutoff-verify",
+  "baselineProfile": "v0",
+  "passed": true,
+  "coverageComplete": true,
+  "result": {
+    "passed": true,
+    "threshold": 0.05,
+    "metric": "rms-log-ratio",
+    "beforeScore": 0.10968257761316859,
+    "afterScore": 0.0485764069454388,
+    "points": 6,
+    "reasons": []
+  },
+  "points": [
+    {
+      "raw": 96,
+      "hardware": 47.50171589453596,
+      "before": 41.521231378143405,
+      "after": 42.558819348011454
+    },
+    {
+      "raw": 224,
+      "hardware": 91.04944311832199,
+      "before": 80.39543564482683,
+      "after": 88.86232307264697
+    },
+    {
+      "raw": 352,
+      "hardware": 199.7424948355844,
+      "before": 177.7647094134415,
+      "after": 202.7111127769722
+    },
+    {
+      "raw": 480,
+      "hardware": 474.8091074996032,
+      "before": 423.20217718346765,
+      "after": 466.3984664896798
+    },
+    {
+      "raw": 608,
+      "hardware": 1219.3041836824318,
+      "before": 1105.3598482554112,
+      "after": 1219.963738308475
+    },
+    {
+      "raw": 736,
+      "hardware": 5761.339415185108,
+      "before": 5501.170672588506,
+      "after": 5585.918913007192
+    }
+  ]
+}

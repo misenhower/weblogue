@@ -1,0 +1,167 @@
+{
+  "job": "eg-attack-verify",
+  "domain": "eg.amp",
+  "kind": "envelope",
+  "replicaProfile": "v0",
+  "planned": 6,
+  "results": [
+    {
+      "point": 128,
+      "hw": {
+        "peakDbfs": -29.415251833739326,
+        "attackSec": 0.028674670883546693,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 0.0028479964957854875,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 300,
+      "hw": {
+        "peakDbfs": -29.42365784633029,
+        "attackSec": 0.15181925378961159,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 0.005901805190676734,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 469,
+      "hw": {
+        "peakDbfs": -29.420736880328178,
+        "attackSec": 0.36741316970424875,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 0.022680973163892948,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 640,
+      "hw": {
+        "peakDbfs": -29.428061735494083,
+        "attackSec": 0.6858959447863987,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 0.09392995983736552,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 810,
+      "hw": {
+        "peakDbfs": -29.474698902040014,
+        "attackSec": 1.106460772177227,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 0.3840075869621503,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 980,
+      "hw": {
+        "peakDbfs": -29.463727460049714,
+        "attackSec": 1.6181119831894462,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.482453937678137,
+        "attackSec": 1.5816126073546908,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    }
+  ],
+  "pointFailures": [],
+  "proposals": [
+    {
+      "domain": "eg.amp attack — attackToSec",
+      "unit": "s",
+      "current": "expMap(raw, 0.0006, 3)",
+      "proposed": "monotone table (6 pts, log-PCHIP)",
+      "fitResidualPct": 4.532466518368394e-15,
+      "heldOutResidualPct": null,
+      "table": [
+        [
+          128,
+          0.03827258559338616
+        ],
+        [
+          300,
+          0.2026358178262808
+        ],
+        [
+          469,
+          0.49039279448929113
+        ],
+        [
+          640,
+          0.9154773340417497
+        ],
+        [
+          810,
+          1.4768125772343392
+        ],
+        [
+          980,
+          2.159722412431819
+        ]
+      ],
+      "notes": [
+        "coverage: 6/6 planned points",
+        "final table refit on all 6 points (held-out folded in after family selection)",
+        "expMap rejected: residual 37.7% > 25% — curve is not exponential (best expMap was expMap(raw, 0.0392, 3.87))",
+        "only 6 points (< 8): fit on all points, no held-out validation"
+      ]
+    }
+  ],
+  "measuredDate": "2026-07-13"
+}

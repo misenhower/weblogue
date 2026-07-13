@@ -249,7 +249,7 @@ const V0: XdCalibProfile = {
  * xd-unit-1, sessions of 2026-07-13 (capture gen-2 at 48 kHz; --profile v0
  * baseline renders). Values are the sessions' final proposal tables
  * verbatim, except the four documented decisions:
- *   - vcoPitchCents recentered -1.359¢ so the 492–532 dead zone is
+ *   - vcoPitchCents recentered -2.003¢ so the 492–532 dead zone is
  *     exactly 0 (the unit's tuning state that night; detent-means-zero
  *     policy, Matt 2026-07-11) and the documented-flat end pairs pooled.
  *   - cutoffHz raw-1023 knot EXTRAPOLATED log-linearly through the last
@@ -273,6 +273,16 @@ const V0: XdCalibProfile = {
  * constant phase rate (only sustain 0 was measured).
  * Unmeasured domains inherit v0 (filter voicing, drift, portamento, mod
  * depths, LFO rate/depths) — future procedure revisions add them.
+ *
+ * KNOWN GAP (Matt's call, 2026-07-13): the TRI fold fields ship MEASURED but
+ * UNACCEPTED — verification at the second octave (A3/220 Hz) improved every
+ * point 2-10x over v0 yet missed the 1.5 dB bar (median 5.6 dB), because the
+ * hardware triangle's harmonic content is itself frequency-dependent: the
+ * analog core's corners round with frequency (hw H3 at 220 Hz reads -24.3 dB
+ * vs an ideal triangle's -19.1; SAW/SQR verified frequency-invariant at the
+ * same octave). A frequency-aware TRI core model is future work; until it
+ * lands, validate-profile reports the three triFold* fields as the one
+ * missing acceptance.
  */
 const V1: XdCalibProfile = {
   ...V0,
@@ -303,21 +313,49 @@ const V1: XdCalibProfile = {
   vcoPitchCents: {
     kind: 'pchip',
     knots: [
-      [0, -1199.257],
-      [4, -1199.257],
-      [100, -897.503],
-      [256, -411.7194],
-      [356, -98.42516],
-      [400, -64.90157],
-      [476, -5.122287],
+      [0, -1200.402],
+      [4, -1200.402],
+      [32, -1111.874],
+      [64, -1012.582],
+      [96, -912.4972],
+      [100, -899.676],
+      [128, -813.6353],
+      [160, -712.2932],
+      [192, -613.3645],
+      [224, -513.3519],
+      [256, -412.9141],
+      [288, -313.2475],
+      [320, -212.1114],
+      [352, -112.4514],
+      [356, -99.68166],
+      [384, -79.27457],
+      [400, -66.54445],
+      [416, -53.65916],
+      [448, -28.15413],
+      [476, -6.452619],
+      [480, -5.166128],
       [492, 0],
       [512, 0],
       [532, 0],
-      [548, 4.086213],
-      [668, 99.39346],
-      [800, 510.2177],
-      [1020, 1199.021],
-      [1023, 1199.021],
+      [544, 3.948996],
+      [548, 5.187605],
+      [576, 26.72139],
+      [608, 52.299],
+      [640, 77.71545],
+      [668, 100.6381],
+      [672, 111.0207],
+      [704, 212.1042],
+      [736, 311.5013],
+      [768, 410.9815],
+      [800, 510.2446],
+      [832, 610.9177],
+      [864, 709.9708],
+      [896, 811.5541],
+      [928, 909.9599],
+      [960, 1010.722],
+      [992, 1110.462],
+      [1020, 1199.842],
+      [1023, 1199.842],
     ],
   },
   egAttackSec: {

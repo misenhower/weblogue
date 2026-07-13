@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T04-44-eg-release",
+  "promotedAt": "2026-07-13T06:34:55.131Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "1f20444f38ff510e492b41e1727de291b2efc1b55059738359abab61f79ab63a",
+    "meta.json": "e1f83a1f6be6cbc220eef8ad7f1c4a18ac9f5d99a0d6c046fafabf5c60747c3a",
+    "features.json": "5ef432a3c602161e3754f7bfb2b959b66e19e7572cd8b67a6553cbd3b721a2a6",
+    "report.md": "e6c7669afe6bd8ff61ea88e0e073e11a253121e0abc715824238dabc270499be"
+  }
+}

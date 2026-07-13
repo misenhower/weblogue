@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "createdAt": "2026-07-13T06:48:23.846Z",
+  "domain": "vco.shape",
+  "unit": "dB",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "candidateEvidence": "calib/evidence/2026-07-13T04-31-shape-sqr",
+  "verificationEvidence": "calib/evidence/2026-07-13T06-43-shape-sqr-verify",
+  "baselineProfile": "v0",
+  "passed": true,
+  "coverageComplete": true,
+  "result": {
+    "passed": true,
+    "threshold": 1.5,
+    "metric": "median-ladder-db",
+    "beforeScore": 1.6419484663968493,
+    "afterScore": 0.309191548336635,
+    "points": 6,
+    "reasons": []
+  },
+  "points": [
+    {
+      "raw": 64,
+      "hardware": 0,
+      "before": 1.0148292180146292,
+      "after": 0.8163336348401771
+    },
+    {
+      "raw": 192,
+      "hardware": 0,
+      "before": 0.06928374097119594,
+      "after": 0.5120329657468972
+    },
+    {
+      "raw": 320,
+      "hardware": 0,
+      "before": 0.7584846742087645,
+      "after": 0.2881631578843109
+    },
+    {
+      "raw": 576,
+      "hardware": 0,
+      "before": 2.2690677147790694,
+      "after": 0.04747883735941372
+    },
+    {
+      "raw": 704,
+      "hardware": 0,
+      "before": 2.5936699341603386,
+      "after": 0.06496660410335409
+    },
+    {
+      "raw": 832,
+      "hardware": 0,
+      "before": 2.5625363192759085,
+      "after": 0.33021993878895906
+    }
+  ]
+}

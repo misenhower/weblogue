@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "createdAt": "2026-07-13T06:48:25.430Z",
+  "domain": "vco.shape",
+  "unit": "dB",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "candidateEvidence": "calib/evidence/2026-07-13T04-20-shape-tri",
+  "verificationEvidence": "calib/evidence/2026-07-13T06-44-shape-tri-verify",
+  "baselineProfile": "v0",
+  "passed": false,
+  "coverageComplete": true,
+  "result": {
+    "passed": false,
+    "threshold": 1.5,
+    "metric": "median-ladder-db",
+    "beforeScore": 15.57605792298762,
+    "afterScore": 5.586883876843145,
+    "points": 6,
+    "reasons": [
+      "candidate median-ladder-db 5.59dB exceeds 1.50dB threshold"
+    ]
+  },
+  "points": [
+    {
+      "raw": 96,
+      "hardware": 0,
+      "before": 7.905902691469173,
+      "after": 6.824202143730751
+    },
+    {
+      "raw": 288,
+      "hardware": 0,
+      "before": 9.570426074170413,
+      "after": 7.675303130508482
+    },
+    {
+      "raw": 480,
+      "hardware": 0,
+      "before": 16.617236859136483,
+      "after": 3.2731146749195634
+    },
+    {
+      "raw": 672,
+      "hardware": 0,
+      "before": 14.534878986838756,
+      "after": 4.106744368664103
+    },
+    {
+      "raw": 928,
+      "hardware": 0,
+      "before": 53.96601544860381,
+      "after": 16.435486090891423
+    },
+    {
+      "raw": 1008,
+      "hardware": 0,
+      "before": 40.25286836408478,
+      "after": 4.349565609955539
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T04-37-eg-decay",
+  "promotedAt": "2026-07-13T06:34:54.675Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "3b895fca1ee90eeacfc0ad6396c0401ff269acd39497ea869cc140baa2219d3c",
+    "meta.json": "f62198da42b6967685cf17347cb9b03732fc7ffa109bca2268e95dd673e6f18a",
+    "features.json": "773a2611fc36489ddef4522f8b5b266e30296a3f2a9ff015338ef9c3e107f84e",
+    "report.md": "98ba4d4bbea2d27f0796ad1a715c6fe190db7910a95eea077c75252cce1c68d3"
+  }
+}

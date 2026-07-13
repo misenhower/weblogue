@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-44-shape-tri-verify",
+  "promotedAt": "2026-07-13T06:46:11.546Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "baf09ace5f960ce1f09f7687adc3bcc0014412458c2400ce65db5aec97d7e3d2",
+    "meta.json": "7b1b9b0daa5b846353f2d8c990e907bd9499652f7f7be65fe1a3f5b2e9fecfa3",
+    "features.json": "c4482503d074a949eb24b5e8856616c7e1feca07bb216bbfc673ec4dab0ace13",
+    "report.md": "093e27da49c4e92db928cc6521fec0e05a2e928a100bfd647073375f9cabb262"
+  }
+}

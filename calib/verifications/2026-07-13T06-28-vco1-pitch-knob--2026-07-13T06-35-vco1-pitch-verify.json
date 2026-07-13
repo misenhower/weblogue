@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "createdAt": "2026-07-13T06:46:32.994Z",
+  "domain": "vco.pitch",
+  "unit": "¢",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "candidateEvidence": "calib/evidence/2026-07-13T06-28-vco1-pitch-knob",
+  "verificationEvidence": "calib/evidence/2026-07-13T06-35-vco1-pitch-verify",
+  "baselineProfile": "v0",
+  "passed": true,
+  "coverageComplete": true,
+  "result": {
+    "passed": true,
+    "threshold": 2,
+    "metric": "rms-cents",
+    "beforeScore": 78.10218179984284,
+    "afterScore": 1.4943385304964865,
+    "points": 8,
+    "reasons": []
+  },
+  "points": [
+    {
+      "raw": 0,
+      "hardware": -1197.5648486310574,
+      "before": -1199.705432877337,
+      "after": -1200.099863523021
+    },
+    {
+      "raw": 180,
+      "hardware": -649.6066617974484,
+      "before": -727.6966599049251,
+      "after": -650.1278932119433
+    },
+    {
+      "raw": 300,
+      "hardware": -275.7090250402,
+      "before": -405.8908417623695,
+      "after": -275.0532748638632
+    },
+    {
+      "raw": 440,
+      "hardware": -34.87846931376971,
+      "before": -87.7069614789854,
+      "after": -34.17682801877723
+    },
+    {
+      "raw": 590,
+      "hardware": 39.28170362699287,
+      "before": 100.2944218785527,
+      "after": 38.14578252595091
+    },
+    {
+      "raw": 730,
+      "hardware": 294.8291878938814,
+      "before": 422.5671355900272,
+      "after": 293.1901750776291
+    },
+    {
+      "raw": 900,
+      "hardware": 824.4954088894399,
+      "before": 878.4752836155758,
+      "after": 824.2816005450848
+    },
+    {
+      "raw": 1023,
+      "hardware": 1202.6297554788855,
+      "before": 1200.293182181755,
+      "after": 1200.135422724114
+    }
+  ]
+}

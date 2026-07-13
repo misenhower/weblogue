@@ -1,0 +1,32 @@
+{
+  "date": "2026-07-13T06:38:12.359Z",
+  "gitRev": "a9e8c08",
+  "node": "v22.22.0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rig": {
+    "midiPort": "minilogue xd",
+    "midiChannel": 0,
+    "audioDevice": "ProFX",
+    "hardwareUnit": {
+      "model": "Korg minilogue xd",
+      "unitId": "xd-unit-1",
+      "firmware": null
+    },
+    "captureChain": {
+      "interface": "ProFX",
+      "sampleRateHz": 48000,
+      "synthOutput": "OUTPUT L/MONO",
+      "interfaceInput": "line input",
+      "recorder": "CoreAudio calib-rec helper"
+    },
+    "notes": "ProFX gain at unity (0/midpoint detent), xd master full (max-level patch -8 dBFS, 0 clips). Capture generation 2 (CoreAudio calib-rec helper, 2026-07-10): 48 kHz native VERIFIED clean (quartz sd 0.006c, 0 jumps x3 runs) — the old 44.1-only rule was an ffmpeg artifact. Only trust measurements from generation 2. Keep ProFX out of aggregates and not system default in/out."
+  },
+  "environment": {
+    "roomTemperatureC": null,
+    "warmupMinutes": 220,
+    "tuningState": "power-on auto-tune; dead zone read +2.0c at 06-28 fit"
+  }
+}

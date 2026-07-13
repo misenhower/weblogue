@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "domain": "eg.amp",
+  "profile": "v1",
+  "profileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "profileFields": [
+    "egAttackSec"
+  ],
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "measuredDate": "2026-07-13",
+  "acceptedAt": "2026-07-13T06:50:03.281Z",
+  "evidence": "calib/evidence/2026-07-13T04-12-eg-attack",
+  "verification": {
+    "evidence": "calib/evidence/2026-07-13T06-38-eg-attack-verify",
+    "artifact": "calib/verifications/2026-07-13T04-12-eg-attack--2026-07-13T06-38-eg-attack-verify.json",
+    "result": {
+      "passed": true,
+      "threshold": 0.05,
+      "metric": "rms-log-ratio",
+      "beforeScore": 2.1874042287881195,
+      "afterScore": 0.01237788459786847,
+      "points": 6,
+      "reasons": []
+    }
+  },
+  "proposals": [
+    {
+      "domain": "eg.amp attack — attackToSec",
+      "unit": "s",
+      "current": "expMap(raw, 0.0006, 3)",
+      "proposed": "monotone table (13 pts, log-PCHIP)",
+      "fitResidualPct": 1.3136335981433195e-14,
+      "heldOutResidualPct": 0.7376295682519752,
+      "table": [
+        [
+          0,
+          0.0037537121251603176
+        ],
+        [
+          85,
+          0.01792457114721029
+        ],
+        [
+          171,
+          0.0672458914388802
+        ],
+        [
+          256,
+          0.1481332432441803
+        ],
+        [
+          341,
+          0.2605500372298254
+        ],
+        [
+          426,
+          0.4058099176680905
+        ],
+        [
+          512,
+          0.5856308200308575
+        ],
+        [
+          597,
+          0.7919282536333432
+        ],
+        [
+          682,
+          1.0354639686966738
+        ],
+        [
+          767,
+          1.3162418063308339
+        ],
+        [
+          853,
+          1.628997123159026
+        ],
+        [
+          938,
+          1.96198005827509
+        ],
+        [
+          1023,
+          2.33546780850209
+        ]
+      ],
+      "notes": [
+        "coverage: 13/13 planned points",
+        "final table refit on all 13 points (held-out folded in after family selection)",
+        "expMap rejected: residual 71.6% > 25% — curve is not exponential (best expMap was expMap(raw, 0.0158, 5.79))",
+        "fit on 10 points, 3 held out (every 4th)"
+      ]
+    }
+  ]
+}

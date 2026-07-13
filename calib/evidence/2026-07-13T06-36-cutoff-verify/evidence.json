@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-36-cutoff-verify",
+  "promotedAt": "2026-07-13T06:46:09.661Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "91c130b99abfa285ed0fe3aece240ca6d4e34a38049a1b93e4bd64a5c1755ab7",
+    "meta.json": "5b154d192ed0e094306943794286ff32acce6f5b0fb7d1e47de0604b6ab861bd",
+    "features.json": "0af6f32d822be0442f25e3a69855615ca16f39fe21c0746aefe33b97d5d86651",
+    "report.md": "60bf4ce0ae5ad8c8c3f1f607f1c1395a2d0263dcd7eb27f8862c5efe9b2a26bf"
+  }
+}

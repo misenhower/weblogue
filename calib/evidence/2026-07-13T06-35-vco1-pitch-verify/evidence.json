@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-35-vco1-pitch-verify",
+  "promotedAt": "2026-07-13T06:46:09.115Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "4c8f90b8e4b92df9e243dfcc6ae1589c71ba322d7b321f2ebcc71cf79046f8ca",
+    "meta.json": "0e5cdd7d287f7e16b16bcbec261846f7ac95aee23113b5076aa3dffb6f5173a3",
+    "features.json": "e3e9f622641f06d3737ef203691aff1f7591d3beb009442daf71847025bda912",
+    "report.md": "62a26114689029a310986fa1fc7c77b91effff036b08389ee0dca1d92971d1cb"
+  }
+}

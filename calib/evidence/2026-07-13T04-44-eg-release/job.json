@@ -1,0 +1,58 @@
+{
+  "id": "eg-release",
+  "domain": "eg.amp",
+  "profileFields": [
+    "egReleaseSec",
+    "egFallPower"
+  ],
+  "description": "D5: AMP EG release staircase \u2014 from the S=1023 plateau, dB-slope extrapolation on the post-note-off tail (3*tau displayed-time)",
+  "overrides": {
+    "vco1Wave": 2,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "ampRelease",
+    "points": [
+      0,
+      85,
+      171,
+      256,
+      341,
+      426,
+      512,
+      597,
+      682,
+      767,
+      853,
+      896,
+      938,
+      980,
+      1023
+    ]
+  },
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 1.5
+    }
+  ],
+  "captureSec": 22,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "release"
+  }
+}

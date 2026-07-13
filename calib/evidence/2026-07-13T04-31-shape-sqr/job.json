@@ -1,0 +1,54 @@
+{
+  "id": "shape-sqr",
+  "domain": "vco.shape",
+  "profileFields": [
+    "sqrDuty",
+    "sqrPwMin"
+  ],
+  "description": "D2: SQR pulse-width vs SHAPE at A2 — duty cycle from the |sin(pi k d)| harmonic nulls; answers d(0)=50%? and d(1023) (replica guesses 5%)",
+  "overrides": {
+    "vco1Wave": 0,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "vco1Shape",
+    "points": [
+      0,
+      128,
+      256,
+      384,
+      512,
+      640,
+      768,
+      896,
+      1023
+    ]
+  },
+  "notes": [
+    {
+      "midi": 45,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": {
+    "nominalHz": 110,
+    "harmonics": 16
+  }
+}

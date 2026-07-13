@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T04-12-eg-attack",
+  "promotedAt": "2026-07-13T06:34:54.280Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "f371df0fa0c8298dbeee518532d91207c9dd6b3f7d4e36403ba7fa5068197882",
+    "meta.json": "8f99509b5f1a61ab1685ba4581d3a960c1127e9c8e1d756bc35c3ad8461b04f6",
+    "features.json": "9805f00fb025fd88fcd5c259bc1ee95c88724ed55172d3df7581394a36feafeb",
+    "report.md": "9e40067bee5e20f33f0e581d1e4d09d8c222e148e0400137fe90c493f1728788"
+  }
+}

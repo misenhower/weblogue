@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T06-38-eg-decay-verify",
+  "promotedAt": "2026-07-13T06:46:10.414Z",
+  "candidateProfile": null,
+  "candidateProfileDigest": null,
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "0d6d02f598bf3f7e78ba564d251727be9fe5dc50d86a2ccf5e0e1a338b1f5a35",
+    "meta.json": "6429ac0802358ace20b5e6c9f6793f65b0252db49cd6d086752e3fa43402474b",
+    "features.json": "5c4c0fe38d0f0fbc06019effa5dfff599920f5da77add5f746f3e5b1f6950e5c",
+    "report.md": "c1e9ce2523ad12e8e95f185873c9d828f6c0554dc3d0f01efdc794bee0245f2e"
+  }
+}

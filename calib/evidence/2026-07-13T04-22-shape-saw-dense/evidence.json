@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "sourceSession": "calib/sessions/2026-07-13T04-22-shape-saw-dense",
+  "promotedAt": "2026-07-13T06:34:56.263Z",
+  "candidateProfile": "v1",
+  "candidateProfileDigest": "bd9681e4927716ee14d14cc4de4def27c3ae08b9e5f6fde4869349201d0489e0",
+  "procedure": {
+    "id": "xd-hardware-calibration",
+    "revision": 1
+  },
+  "rawAudio": "local-only; not included",
+  "files": {
+    "job.json": "7c3c18afb29c7489853b93f5b20086d263ea1e493f6c37ac5e6fd075f801dc54",
+    "meta.json": "553a48a3c30657ad2e2b148323b970cfc03021b899da4ae6d5f0f66717a64edc",
+    "features.json": "bfb33d748b9321bc5413473513a6ece4dd2b965e58ecb80f20a29214ad00d536",
+    "report.md": "67e45bf158e777e54016303f683fdfb061b19e3d2e1bfd3db4b1facd798034f2"
+  }
+}

@@ -47,14 +47,27 @@ export function compareEvidence(dir: string, profile: string): Comparison {
       const mid = values.length >> 1
       return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2
     }
+    // Harmonics below this (re H1) are floor/leakage, not signal: the analog
+    // hardware leaks tiny even harmonics (~-45 dB) where an odd-symmetric
+    // replica wave sits at NUMERICAL zero (-110 dB) — comparing those raw
+    // would let 60+ dB of sub-floor garbage dominate the median (the TRI
+    // verify false-fail, 2026-07-13). Same floor the envelope fits use.
+    const LADDER_FLOOR_DB = -40
     const ladderError = (hardware: PointFeatures, replica: PointFeatures): number => {
       const count = Math.min(hardware.harmonicsDb.length, replica.harmonicsDb.length)
       const errors: number[] = []
       for (let harmonic = 1; harmonic < count; harmonic++) {
-        const error = Math.abs(hardware.harmonicsDb[harmonic] - replica.harmonicsDb[harmonic])
+        const hw = hardware.harmonicsDb[harmonic]
+        const rep = replica.harmonicsDb[harmonic]
+        // both sub-floor: the harmonic carries no information — skipping it
+        // keeps the median over SIGNAL harmonics (counting such pairs as
+        // zero-error let a near-sine TRI degenerate the whole metric to 0.00)
+        if (hw < LADDER_FLOOR_DB && rep < LADDER_FLOOR_DB) continue
+        const error = Math.abs(Math.max(hw, LADDER_FLOOR_DB) - Math.max(rep, LADDER_FLOOR_DB))
         if (Number.isFinite(error)) errors.push(error)
       }
-      return errors.length ? median(errors) : NaN
+      // no informative harmonics at all = both worlds silent alike
+      return errors.length ? median(errors) : 0
     }
     const rows: VerificationPoint[] = []
     for (let i = 0; i < fresh.length; i++) {

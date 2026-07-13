@@ -1,0 +1,376 @@
+{
+  "job": "eg-release",
+  "domain": "eg.amp",
+  "kind": "envelope",
+  "replicaProfile": "v0",
+  "planned": 15,
+  "results": [
+    {
+      "point": 0,
+      "hw": {
+        "peakDbfs": -29.26735419972431,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.003022577844839775,
+        "fallTimeSec": 0.007426720884451655,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": null,
+        "fallTimeSec": null,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 85,
+      "hw": {
+        "peakDbfs": -29.353527998344138,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.01595940145986951,
+        "fallTimeSec": 0.04281697884318104,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.0042730893622984914,
+        "fallTimeSec": 0.009320579843599207,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 171,
+      "hw": {
+        "peakDbfs": -29.341742773617877,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.07862808100331985,
+        "fallTimeSec": 0.1559919797626956,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.008912115056427328,
+        "fallTimeSec": 0.018811938324230233,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 256,
+      "hw": {
+        "peakDbfs": -29.275813087927233,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.1840676947053898,
+        "fallTimeSec": 0.35006409402845046,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.018671388689535093,
+        "fallTimeSec": 0.06606411667425818,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 341,
+      "hw": {
+        "peakDbfs": -29.265634261515018,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.32626753472672215,
+        "fallTimeSec": 0.6035868472658618,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.03916704237810285,
+        "fallTimeSec": 0.10399758177543539,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 426,
+      "hw": {
+        "peakDbfs": -29.347633387171488,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.5100973353058522,
+        "fallTimeSec": 0.9385328424243854,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.08217806710928324,
+        "fallTimeSec": 0.19036153624679783,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 512,
+      "hw": {
+        "peakDbfs": -29.186842021126658,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.7402748569567282,
+        "fallTimeSec": 1.3533546243483339,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.1739720895843954,
+        "fallTimeSec": 0.37710569916728875,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 597,
+      "hw": {
+        "peakDbfs": -29.692062919285224,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.0192891386263432,
+        "fallTimeSec": 1.8616056850544975,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.3651218119977995,
+        "fallTimeSec": 0.7664319231138845,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 682,
+      "hw": {
+        "peakDbfs": -29.521322493059195,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.328597684318568,
+        "fallTimeSec": 2.4265043115201284,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 0.7663151030619945,
+        "fallTimeSec": 1.5823368309085442,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 767,
+      "hw": {
+        "peakDbfs": -29.28243351350541,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.665314546470942,
+        "fallTimeSec": 3.0289129540665396,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 1.6083450575270948,
+        "fallTimeSec": 3.2945510943851826,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 853,
+      "hw": {
+        "peakDbfs": -29.245789820088287,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 2.062103203742641,
+        "fallTimeSec": 3.7452141902271805,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 3.4051929688267784,
+        "fallTimeSec": 6.953454811375279,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 896,
+      "hw": {
+        "peakDbfs": -29.568045816984913,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 2.2987191333139916,
+        "fallTimeSec": 4.183138474063671,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 4.954764502367204,
+        "fallTimeSec": 10.105766467229282,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 938,
+      "hw": {
+        "peakDbfs": -29.558808427727286,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 4.653769323846944,
+        "fallTimeSec": 8.450298127700174,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 7.146886322666891,
+        "fallTimeSec": 14.567037359220683,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 980,
+      "hw": {
+        "peakDbfs": -29.362520045045105,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 7.743489170542347,
+        "fallTimeSec": 14.024897992803243,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 10.308851229397646,
+        "fallTimeSec": 20.999478953708408,
+        "sustainDb": null
+      }
+    },
+    {
+      "point": 1023,
+      "hw": {
+        "peakDbfs": -29.33898387136438,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 11.80192554958935,
+        "fallTimeSec": 21.371372710517093,
+        "sustainDb": null
+      },
+      "rep": {
+        "peakDbfs": -11.483118077952696,
+        "attackSec": null,
+        "decayTimeSec": null,
+        "releaseTimeSec": 14.99997694953535,
+        "fallTimeSec": 28.49103051738972,
+        "sustainDb": null
+      }
+    }
+  ],
+  "pointFailures": [],
+  "proposals": [
+    {
+      "domain": "eg.amp release — releaseToSec",
+      "unit": "s",
+      "current": "expMap(raw, 0.002, 15)",
+      "proposed": "monotone table (15 pts, log-PCHIP)",
+      "fitResidualPct": 8.479468414379334e-15,
+      "heldOutResidualPct": 13.337146921194751,
+      "table": [
+        [
+          0,
+          0.0074267208844516555
+        ],
+        [
+          85,
+          0.042816978843181044
+        ],
+        [
+          171,
+          0.1559919797626956
+        ],
+        [
+          256,
+          0.3500640940284505
+        ],
+        [
+          341,
+          0.6035868472658618
+        ],
+        [
+          426,
+          0.9385328424243854
+        ],
+        [
+          512,
+          1.3533546243483339
+        ],
+        [
+          597,
+          1.8616056850544975
+        ],
+        [
+          682,
+          2.4265043115201284
+        ],
+        [
+          767,
+          3.0289129540665396
+        ],
+        [
+          853,
+          3.745214190227181
+        ],
+        [
+          896,
+          4.1831384740636715
+        ],
+        [
+          938,
+          8.450298127700174
+        ],
+        [
+          980,
+          14.024897992803243
+        ],
+        [
+          1023,
+          21.37137271051709
+        ]
+      ],
+      "notes": [
+        "coverage: 15/15 planned points",
+        "table values are time-to-zero T of the cubic fall (egFallPower = 3, linear phase cubed; measured p = 3.00 across the range, 0.2 dB RMS); this result also authorizes egFallPower",
+        "final table refit on all 15 points (held-out folded in after family selection)",
+        "expMap rejected: residual 60.4% > 25% — curve is not exponential (best expMap was expMap(raw, 0.03, 19.9))",
+        "fit on 12 points, 3 held out (every 4th)"
+      ]
+    }
+  ],
+  "measuredDate": "2026-07-13",
+  "remeasuredDate": "2026-07-13"
+}

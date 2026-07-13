@@ -1,0 +1,49 @@
+{
+  "id": "eg-attack-verify",
+  "domain": "eg.amp",
+  "profileFields": [
+    "egAttackSec"
+  ],
+  "description": "R1 verification for eg-attack: off-grid interior raw values",
+  "overrides": {
+    "vco1Wave": 2,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "ampAttack",
+    "points": [
+      128,
+      300,
+      469,
+      640,
+      810,
+      980
+    ]
+  },
+  "notes": [
+    {
+      "midi": 69,
+      "vel": 100,
+      "onSec": 0.3,
+      "offSec": 4
+    }
+  ],
+  "repeat": 1,
+  "captureSec": 4.6,
+  "features": {
+    "nominalHz": 440,
+    "kind": "envelope",
+    "env": "attack"
+  }
+}

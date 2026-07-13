@@ -40,6 +40,15 @@ interface SessionInfo {
   failed?: number
   /** measurement kind — the page shows envelope curves for kind 'envelope' */
   kind?: string
+  /**
+   * The profile the page should re-render the replica under BY DEFAULT for
+   * this session: verification captures exist to be compared against the
+   * CANDIDATE profile, not their capture-time baseline (Matt, 2026-07-13).
+   * Looked up from the calib/verifications pairing artifact; before one
+   * exists, '-verify' jobs fall back to the newest procedure-declaring
+   * profile. The dropdown still lets the user override.
+   */
+  defaultProfile?: string
 }
 
 export function startMonitorServer(
@@ -51,15 +60,49 @@ export function startMonitorServer(
   const sessionsDir = join(calibDir(root), 'sessions')
   const infoCache = new Map<string, SessionInfo>()
 
+  const verificationsDir = join(calibDir(root), 'verifications')
+  let pairingSig = ''
+  let pairing = new Map<string, string>() // verification session name -> candidate profile id
+  const verificationPairing = (): Map<string, string> => {
+    const files = existsSync(verificationsDir)
+      ? readdirSync(verificationsDir).filter((n) => n.endsWith('.json'))
+      : []
+    const sig = files.join('|')
+    if (sig === pairingSig) return pairing
+    pairingSig = sig
+    pairing = new Map()
+    for (const f of files) {
+      try {
+        const a = JSON.parse(readFileSync(join(verificationsDir, f), 'utf8')) as {
+          profile?: string
+          verificationEvidence?: string
+        }
+        const name = a.verificationEvidence?.split('/').pop()
+        if (name && a.profile) pairing.set(name, a.profile)
+      } catch {
+        /* not an artifact */
+      }
+    }
+    return pairing
+  }
+
   const listSessions = (): SessionInfo[] => {
     if (!existsSync(sessionsDir)) return []
+    const pairs = verificationPairing()
+    const newestCandidate = [...XD_PROFILES].reverse().find((p) => p.procedure)?.id
+    const withDefault = (info: SessionInfo): SessionInfo => {
+      const fromArtifact = pairs.get(info.name)
+      const fallback = info.jobId.endsWith('-verify') ? newestCandidate : undefined
+      const defaultProfile = fromArtifact ?? fallback
+      return defaultProfile ? { ...info, defaultProfile } : info
+    }
     return readdirSync(sessionsDir)
       .filter((n) => existsSync(join(sessionsDir, n, 'features.json')))
       .sort()
       .reverse()
       .map((name) => {
         const hit = infoCache.get(name)
-        if (hit) return hit
+        if (hit) return withDefault(hit)
         let info: SessionInfo = { name, jobId: name, domain: '', date: '', points: 0 }
         try {
           const job = JSON.parse(readFileSync(join(sessionsDir, name, 'job.json'), 'utf8'))
@@ -77,7 +120,7 @@ export function startMonitorServer(
           /* partial/foreign dir: keep placeholder */
         }
         infoCache.set(name, info)
-        return info
+        return withDefault(info)
       })
   }
 
@@ -704,7 +747,14 @@ async function stateTick() {
   }
   setTimeout(stateTick, 1000)
 }
-document.getElementById('sess').addEventListener('change', () => { lastView = null })
+document.getElementById('sess').addEventListener('change', () => {
+  // verification sessions default the replica render to their CANDIDATE
+  // profile — comparing them against the capture-time baseline misses the
+  // point of the verification step; the user can still override.
+  const s = sessions.find(x => x.name === document.getElementById('sess').value)
+  if (s && s.defaultProfile) document.getElementById('prof').value = s.defaultProfile
+  lastView = null
+})
 document.getElementById('prof').addEventListener('change', () => { lastView = null })
 connectWs()
 scopeTick()

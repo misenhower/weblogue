@@ -1,0 +1,51 @@
+{
+  "id": "shape-sqr-verify",
+  "domain": "vco.shape",
+  "profileFields": [
+    "sqrDuty",
+    "sqrPwMin"
+  ],
+  "description": "R1 verification for shape-sqr: off-grid raw values AND a different octave (A3, 220 Hz) to test the duty law's pitch invariance",
+  "overrides": {
+    "vco1Wave": 0,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "vco1Shape",
+    "points": [
+      64,
+      192,
+      320,
+      576,
+      704,
+      832
+    ]
+  },
+  "notes": [
+    {
+      "midi": 57,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 1.6
+    }
+  ],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": {
+    "nominalHz": 220,
+    "harmonics": 16
+  }
+}

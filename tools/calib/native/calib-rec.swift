@@ -135,16 +135,25 @@ case "rec":
     frames += Int64(buf.frameLength)
     try? file?.write(from: buf)
   }
-  RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
+  // Record until the requested FRAME COUNT arrives, not a wall-clock window:
+  // the device's startup latency (engine start -> first buffer; ~105 ms
+  // observed on a fresh ProFX plug session, 2026-07-12) would otherwise eat
+  // into short captures and deterministically fail the length check below.
+  // The wall-clock cap only bounds a genuinely wedged device.
+  let target = Int64((seconds * rate).rounded())
+  let deadline = Date(timeIntervalSinceNow: seconds + 3.0)
+  while frames < target && Date() < deadline {
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+  }
   engine.stop()
   engine.inputNode.removeTap(onBus: 0)
   file = nil // finalize the WAV header
   // CoreAudio can transiently stall a fresh engine (seen right after device
   // rate changes): a capture that under-delivers is unusable — report it so
   // the caller retries instead of analyzing a truncated file
-  let expected = Int64(seconds * rate * 0.9)
+  let expected = Int64(Double(target) * 0.9)
   if frames < expected {
-    fail("short capture: \(frames) frames, expected ~\(Int64(seconds * rate))")
+    fail("short capture: \(frames) frames, expected ~\(target)")
   }
 
 case "stream":

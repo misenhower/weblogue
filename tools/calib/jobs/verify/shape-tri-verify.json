@@ -1,0 +1,31 @@
+{
+  "id": "shape-tri-verify",
+  "domain": "vco.shape",
+  "profileFields": ["triFoldDrive", "triFoldLevel", "triFoldKnee"],
+  "description": "R1 verification for shape-tri: off-grid raw values AND a different octave (A3, 220 Hz); SHAPE max is a x3 triple via nominalRatios",
+  "overrides": {
+    "vco1Wave": 1,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "vco1Shape",
+    "points": [96, 288, 480, 672, 928, 1008]
+  },
+  "notes": [{ "midi": 57, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
+  "repeat": 2,
+  "repeatEverySec": 1.7,
+  "captureSec": 3.6,
+  "features": { "nominalHz": 220, "harmonics": 16, "nominalRatios": [1, 3] }
+}

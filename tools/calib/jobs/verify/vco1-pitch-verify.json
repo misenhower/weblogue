@@ -1,0 +1,31 @@
+{
+  "id": "vco1-pitch-verify",
+  "domain": "vco.pitch",
+  "profileFields": ["vcoPitchCents"],
+  "description": "R1 verification for vco1-pitch-knob: off-grid interior raw values, captured after the fitting evidence is frozen; never used to tune the candidate",
+  "overrides": {
+    "vco1Wave": 2,
+    "vco1Level": 1023,
+    "vco2Level": 0,
+    "multiLevel": 0,
+    "cutoff": 1023,
+    "resonance": 0,
+    "drive": 0,
+    "ampAttack": 0,
+    "ampDecay": 0,
+    "ampSustain": 1023,
+    "ampRelease": 100,
+    "egInt": 512,
+    "lfoInt": 512,
+    "ampVelocity": 0
+  },
+  "sweep": {
+    "param": "vco1Pitch",
+    "points": [0, 180, 300, 440, 590, 730, 900, 1023]
+  },
+  "notes": [{ "midi": 69, "vel": 100, "onSec": 0.4, "offSec": 1.6 }],
+  "repeat": 4,
+  "repeatEverySec": 1.7,
+  "captureSec": 7.0,
+  "features": { "nominalHz": 440, "harmonics": 4 }
+}

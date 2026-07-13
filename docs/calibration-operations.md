@@ -25,36 +25,52 @@ belong in [calibration-findings.md](calibration-findings.md).
 `npm run check` is the repository-wide software check: app typecheck,
 calibration typecheck, and the full test suite.
 
-## Evidence lifecycle
+## The loop: capture → analyze → verify → record
 
-All work under `calib/sessions/` is deliberately ignored. Most sessions are
-exploratory and raw audio is large. A complete future calibration generation
-uses this lifecycle:
+All work under `calib/sessions/` is deliberately ignored: most sessions are
+exploratory and raw audio is large. A calibration generation runs this loop.
+The checks along the way are practical, not ceremonial — they exist to catch
+stale copies and human/agent slip-ups in a repo where raw data never enters
+git, not to defend against adversaries.
 
-1. Run fitting jobs. Repeat questionable domains and review their reports.
-2. Freeze the candidate profile in `src/synths/xd/profiles.ts`, non-default,
-   and declare the procedure that produced it (for example procedure R1).
-   Predeclare its base and every predictable accepted-result path now—for
-   example `calib/results/v5/eg-attack.json`. Lineage is part of the profile
-   digest, so adding paths after verification would correctly invalidate it.
-3. Promote the chosen fitting session with
-   `calib evidence <session> --candidate-profile <id>`. This freezes the
-   profile ID/content and procedure revision before validation data exists.
-4. Run new verification jobs after that promotion, with raw values offset from the fitting grid.
-   They must be new captures; where a model assumes pitch invariance, include
-   another note or octave. Do not refit after seeing these results—if the model
-   changes, retire the verification set and collect a fresh one.
-5. Promote the verification session with `calib evidence`. Exploratory
-   sessions remain ignored.
-6. Run `calib verify`. The fitting and verification evidence directories must
-   differ, coverage must be complete, the candidate must improve on the
-   captured baseline, and its domain metric must meet the protocol threshold.
-7. Run `calib accept --verification ...`, then review/commit the evidence,
-   verification, and numeric result.
-8. Run `calib validate-profile <id>`; it must pass before promotion.
-9. Perform and archive the musical listening A/B before promoting the profile
-   to the app default. This subjective promotion gate is deliberately manual;
-   `calib accept` certifies measurement thresholds, not listening approval.
+**Capture** — run fitting jobs; repeat questionable domains and review their
+reports (`calib monitor`).
+
+**Analyze** — turn the data into a synth config plus the record of the data
+behind it. Two actions, one step:
+
+1. Freeze the candidate profile in `src/synths/xd/profiles.ts`, non-default,
+   declaring the procedure that produced it (for example procedure R1) and
+   its lineage: base profile + one result path per changed field, e.g.
+   `calib/results/v1/eg-attack.json`. Lineage is part of the profile digest,
+   so adding paths after verification would correctly invalidate it.
+2. Promote the fitting sessions with
+   `calib evidence <session> --candidate-profile <id>`: the four derived
+   artifacts are copied into committed `calib/evidence/`, content-bound to
+   the session state and profile they came from — sessions stay local and
+   mutable (`remeasure` rewrites them freely), so this binding is what makes
+   a later silent divergence loud instead of invisible.
+
+**Verify** — prove the model against captures it has never seen:
+
+3. Run the verification jobs AFTER that promotion, with raw values offset
+   from the fitting grid; where a model assumes pitch invariance, include
+   another note or octave. Do not refit after seeing these results — if the
+   model changes, retire the verification set and capture a fresh one.
+4. Promote the verification sessions with `calib evidence`.
+5. Run `calib verify`: fitting and verification evidence must differ,
+   coverage must be complete, the candidate must improve on the captured
+   baseline, and its domain metric must meet the protocol threshold.
+
+**Record** — write the durable result:
+
+6. Run `calib accept --verification ...` — it recomputes the metrics from
+   the evidence rather than trusting the artifact JSON, so an accidentally
+   edited artifact is inert — then commit evidence, verification, and result.
+7. Run `calib validate-profile <id>`: every field changed from the base must
+   trace to a recorded result.
+8. The musical listening A/B before promoting the profile to the app default
+   stays deliberately manual; `calib accept` certifies numbers, not sound.
 
 Current v1-v4 profiles are transitional dev-era rounds — measured while the
 rig, extractor and models were still moving targets. They remain useful for

@@ -120,6 +120,16 @@ export interface XdCalibProfile {
   egAttackSec: CurveSpec
   egDecaySec: CurveSpec
   egReleaseSec: CurveSpec
+  /**
+   * EG fall-segment curve (D5, measured 2026-07-12): the xd runs decay/
+   * release as a CONSTANT-RATE LINEAR phase raised to this power (measured
+   * p = 3.00 across the knob range, 0.2 dB RMS), reaching true zero at the
+   * table time. ABSENT = the legacy one-pole exponential with tables meaning
+   * 3*tau "displayed time" (v0-v4). When present, egDecaySec/egReleaseSec
+   * are TIME-TO-ZERO seconds. Applied to the mod EG too (INFERRED: same
+   * firmware generator; only the amp EG was measured).
+   */
+  egFallPower?: number
   cutoffHz: CurveSpec
   /** SQR minimum pulse width at SHAPE max (0..0.5). Hardware reaches 0 = silence. */
   sqrPwMin: number
@@ -167,6 +177,7 @@ export const XD_CALIBRATION_FIELDS = [
   'egAttackSec',
   'egDecaySec',
   'egReleaseSec',
+  'egFallPower',
   'cutoffHz',
   'sqrPwMin',
   'egMaxPitchCents',

@@ -2,7 +2,8 @@
   "id": "eg-release-verify",
   "domain": "eg.amp",
   "profileFields": [
-    "egReleaseSec"
+    "egReleaseSec",
+    "egFallPower"
   ],
   "description": "R1 verification for eg-release: off-grid interior raw values",
   "overrides": {

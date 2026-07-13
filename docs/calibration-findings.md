@@ -261,10 +261,20 @@ exponential extrapolation OVER-estimates long releases — 16.3 s fitted in the 
 window vs 11.8 s with the full fall in view. July's v1/v2 EG tables carry the same
 bias class at their top knots. Fix: eg-decay holds the note 22 s and eg-release
 captures 22 s, so every point's fall reaches the −40 dB fit floor inside the window;
-R1 tables come from those. Open item (future EG-shape work): the replica's EG segment
-law is exponential — matching the measured accelerating-slope curve is a model change,
-tier-3, and the extractor's single-τ value is only comparable across worlds when both
-are measured through the same full-fall window.
+R1 tables come from those. RESOLVED same session (Matt asked "is your decay linear?"
+— nearly): the fall curve is a CONSTANT-RATE LINEAR PHASE RAISED TO p = 3 — level =
+(1 − t/T)³ fits every knob at 0.14–0.27 dB RMS (pure exponential: 4.2 dB; exp-to-
+negative-target: 1.7 dB), with the free-fitted exponent 2.85–3.01 across the range on
+BOTH decay and release, and the two segments' T values agreeing within ~2% at every
+knob (one firmware generator). The classic digital-EG construction: a fixed-point
+linear ramp, cubed at the output. Implemented profile-gated in src/dsp/eg.ts
+setFallPower (null = legacy exponential, worktree-digest bit-identical; applied to
+the mod EG as INFERRED — same generator, only the amp EG measured; sustain > 0 decay
+tracking INFERRED as phase-domain constant-rate). Extractor: measure-env fallTimeSec
+= cube-root-domain LINEAR fit; T is the full-scale fall time (entry-level
+independent). Under this model the EG tables mean TIME-TO-ZERO: raw 1023 = 21.4 s
+release / 21.6 s decay — the ~20 s Matt read off the dB chart, closing the loop
+between the 3τ convention (11.8 s) and what the ear hears.
 
 ### 2026-07-12 · R1 re-baseline session: two systematic point outcomes (retry-confirmed)
 

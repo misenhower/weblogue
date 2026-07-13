@@ -2,7 +2,8 @@
   "id": "eg-release",
   "domain": "eg.amp",
   "profileFields": [
-    "egReleaseSec"
+    "egReleaseSec",
+    "egFallPower"
   ],
   "description": "D5: AMP EG release staircase \u2014 from the S=1023 plateau, dB-slope extrapolation on the post-note-off tail (3*tau displayed-time)",
   "overrides": {

@@ -29,6 +29,15 @@ export interface EnvPointFeatures {
   decayTimeSec: number | null
   /** displayed release time = 3*tau from the post-note-off dB slope (s) */
   releaseTimeSec: number | null
+  /**
+   * Time-to-zero T of the measured fall model level = (1 - t/T)^3 — a
+   * constant-rate linear phase cubed (D5 finding, 2026-07-12; p = 3.00
+   * across the knob range). Cube-root domain makes this a LINEAR fit; T is
+   * the full-scale fall time (rate-based, entry-level independent). The
+   * value behind egDecaySec/egReleaseSec when the profile declares
+   * egFallPower; the 3*tau values above remain for the legacy exponential.
+   */
+  fallTimeSec: number | null
   /** plateau level (median of the last 30% of the hold) re the peak (dB) */
   sustainDb: number | null
 }
@@ -133,6 +142,50 @@ function displayedTime(env: Track, iAfter: number, tStart: number, ref: number):
   return (DISPLAYED_TCS * DB_PER_TAU) / -r.slope
 }
 
+/**
+ * Time-to-zero T of the cubic fall model by cube-root-domain linear fit:
+ * y = (v/ref)^(1/3) falls at the CONSTANT rate 1/T, so a least-squares line
+ * through y(t) over the same region the log-slope fit uses gives T = -1/slope
+ * — full-scale fall time, independent of the entry level. Same fallback and
+ * degeneracy rules as displayedTime.
+ */
+function fallTime(env: Track, iAfter: number, tStart: number, ref: number): number | null {
+  const floor = ref * 10 ** (FIT_FLOOR_DB / 20)
+  const fit = (i0: number): { slope: number; frames: number } | null => {
+    let m = 0
+    let sx = 0
+    let sy = 0
+    let sxx = 0
+    let sxy = 0
+    for (let i = i0; i < env.t.length; i++) {
+      const v = env.v[i]
+      if (!(v > floor)) break
+      const tx = env.t[i]
+      const ty = Math.cbrt(v / ref)
+      m++
+      sx += tx
+      sy += ty
+      sxx += tx * tx
+      sxy += tx * ty
+    }
+    if (m < MIN_FIT_FRAMES) return null
+    const den = m * sxx - sx * sx
+    if (!(den > 0)) return null
+    return { slope: (m * sxy - sx * sy) / den, frames: m }
+  }
+  let i0 = env.t.length
+  for (let i = Math.max(0, iAfter + 1); i < env.t.length; i++) {
+    if (env.t[i] >= tStart) {
+      i0 = i
+      break
+    }
+  }
+  let r = fit(i0)
+  if ((r === null || r.frames < 8) && iAfter + 1 < i0) r = fit(iAfter + 1) ?? r
+  if (r === null || !(r.slope < 0)) return null
+  return 1 / -r.slope
+}
+
 /** Median of env.v over frames with center time in [t0, t1]; null when empty. */
 function medianOver(env: Track, t0: number, t1: number): number | null {
   const vals: number[] = []
@@ -173,6 +226,7 @@ export function measureEnvPoint(
     attackSec: null,
     decayTimeSec: null,
     releaseTimeSec: null,
+    fallTimeSec: null,
     sustainDb: null,
   }
   if (to - from <= win) return out
@@ -185,6 +239,7 @@ export function measureEnvPoint(
     const iPk = peakIndex(env, tOff)
     if (iPk >= 0 && env.v[iPk] > 0) {
       out.decayTimeSec = displayedTime(env, iPk, env.t[iPk] + FIT_GAP_SEC, env.v[iPk])
+      out.fallTimeSec = fallTime(env, iPk, env.t[iPk] + FIT_GAP_SEC, env.v[iPk])
     }
   } else if (segment === 'release') {
     const iPk = peakIndex(env, tOff)
@@ -199,6 +254,7 @@ export function measureEnvPoint(
         }
       }
       out.releaseTimeSec = displayedTime(env, iAfter, tOff + FIT_GAP_SEC, env.v[iPk])
+      out.fallTimeSec = fallTime(env, iAfter, tOff + FIT_GAP_SEC, env.v[iPk])
     }
   } else {
     const iPk = peakIndex(env, tOff)

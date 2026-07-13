@@ -63,7 +63,8 @@ export function expectedProfileFields(job: CalibJob): XdCalibrationField[] {
   if (job.domain === 'eg.amp') {
     if (job.features?.env === 'attack') return ['egAttackSec']
     if (job.features?.env === 'decay') return ['egDecaySec']
-    if (job.features?.env === 'release') return ['egReleaseSec']
+    // the release measurement also establishes the fall-curve power (D5)
+    if (job.features?.env === 'release') return ['egReleaseSec', 'egFallPower']
     return []
   }
   if (job.domain === 'vco.pitch' && job.sweep?.param === 'vco1Pitch') return ['vcoPitchCents']
@@ -103,10 +104,14 @@ export function loadJob(path: string): CalibJob {
     for (const field of job.profileFields) {
       if (!(XD_CALIBRATION_FIELDS as readonly string[]).includes(field)) fail(`unknown profile field "${field}"`)
     }
-    const declared = [...new Set(job.profileFields)].sort()
-    const expected = expectedProfileFields(job).sort()
-    if (JSON.stringify(declared) !== JSON.stringify(expected)) {
-      fail(`profileFields must exactly match trusted mapping: ${expected.join(', ') || '(none)'}`)
+    // The trusted mapping CAPS what a measurement design can authorize; a job
+    // may deliberately declare a SUBSET (and older frozen session copies stay
+    // loadable when the mapping later widens), never anything outside it.
+    const declared = [...new Set(job.profileFields)]
+    const expected = expectedProfileFields(job)
+    const outside = declared.filter((field) => !expected.includes(field))
+    if (outside.length > 0) {
+      fail(`profileFields exceed the trusted mapping (${expected.join(', ') || '(none)'}): ${outside.join(', ')}`)
     }
   }
   if (!Array.isArray(job.notes) || job.notes.length === 0) fail('missing "notes"')

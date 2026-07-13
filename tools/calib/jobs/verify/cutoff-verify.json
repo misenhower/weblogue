@@ -1,8 +1,10 @@
 {
   "id": "cutoff-verify",
   "domain": "filter.cutoff",
-  "profileFields": ["cutoffHz"],
-  "description": "R1 verification for cutoff-sweep: interior raw values offset +32 from the multiple-of-64 fitting grid",
+  "profileFields": [
+    "cutoffHz"
+  ],
+  "description": "R1 verification for cutoff-sweep: interior raw values offset +32 from the multiple-of-64 fitting grid; 992 omitted \u2014 corners above ~10 kHz are unmeasurable by construction (PSD reference region)",
   "overrides": {
     "vco1Level": 0,
     "vco2Level": 0,
@@ -23,11 +25,28 @@
   },
   "sweep": {
     "param": "cutoff",
-    "points": [96, 224, 352, 480, 608, 736, 864, 992]
+    "points": [
+      96,
+      224,
+      352,
+      480,
+      608,
+      736,
+      864
+    ]
   },
-  "notes": [{ "midi": 60, "vel": 100, "onSec": 0.4, "offSec": 3.4 }],
+  "notes": [
+    {
+      "midi": 60,
+      "vel": 100,
+      "onSec": 0.4,
+      "offSec": 3.4
+    }
+  ],
   "repeat": 4,
   "repeatEverySec": 3.5,
   "captureSec": 14.5,
-  "features": { "kind": "noise" }
+  "features": {
+    "kind": "noise"
+  }
 }

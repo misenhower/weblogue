@@ -58,8 +58,8 @@ export function summarize(job: CalibJob, f: AnyFeatures): string {
       const e = f as EnvPointFeatures
       const seg = job.features.env ?? 'attack'
       if (seg === 'attack') return `attack ${ms(e.attackSec)}`
-      if (seg === 'decay') return `decay ${ms(e.decayTimeSec)}`
-      if (seg === 'release') return `release ${ms(e.releaseTimeSec)}`
+      if (seg === 'decay') return `decay ${ms(e.fallTimeSec ?? e.decayTimeSec)}`
+      if (seg === 'release') return `release ${ms(e.fallTimeSec ?? e.releaseTimeSec)}`
       return `sustain ${e.sustainDb === null ? 'n/a' : e.sustainDb.toFixed(1) + ' dB'}`
     }
     default: {
@@ -131,8 +131,10 @@ export function sweepValues(
         values: results.map((r) => {
           const e = pick(r) as EnvPointFeatures
           if (seg === 'attack') return e.attackSec === null ? null : e.attackSec / ATTACK_RISE_FACTOR
-          if (seg === 'decay') return e.decayTimeSec
-          if (seg === 'release') return e.releaseTimeSec
+          // fall segments: time-to-zero of the measured cubic model when the
+          // features carry it (R1+); legacy 3*tau otherwise (old sessions)
+          if (seg === 'decay') return e.fallTimeSec ?? e.decayTimeSec
+          if (seg === 'release') return e.fallTimeSec ?? e.releaseTimeSec
           return e.sustainDb
         }),
       }
@@ -339,9 +341,23 @@ export function buildProposals(job: CalibJob, results: AnyResult[], world: 'hw' 
   }
   if (jobKind(job) === 'envelope') {
     const seg = job.features.env
+    // Fall-segment table values are TIME-TO-ZERO of the measured cubic model
+    // (egFallPower = 3; level = (1 - t/T)^3, D5 finding 2026-07-12) — NOT the
+    // legacy 3*tau convention the current curves.ts values use.
+    const fallNote =
+      'table values are time-to-zero T of the cubic fall (egFallPower = 3, ' +
+      'linear phase cubed; measured p = 3.00 across the range, 0.2 dB RMS)'
     if (seg === 'attack') return [proposeCurve('eg.amp attack — attackToSec', 's', pts, attackToSec(0), attackToSec(1023))]
-    if (seg === 'decay') return [proposeCurve('eg.amp decay — decayToSec', 's', pts, decayToSec(0), decayToSec(1023))]
-    if (seg === 'release') return [proposeCurve('eg.amp release — releaseToSec', 's', pts, releaseToSec(0), releaseToSec(1023))]
+    if (seg === 'decay') {
+      const p = proposeCurve('eg.amp decay — decayToSec', 's', pts, decayToSec(0), decayToSec(1023))
+      p.notes.unshift(fallNote)
+      return [p]
+    }
+    if (seg === 'release') {
+      const p = proposeCurve('eg.amp release — releaseToSec', 's', pts, releaseToSec(0), releaseToSec(1023))
+      p.notes.unshift(fallNote + '; this result also authorizes egFallPower')
+      return [p]
+    }
     return []
   }
   if (job.domain === 'vco.pitch' && job.sweep?.param === 'vco1Pitch') {

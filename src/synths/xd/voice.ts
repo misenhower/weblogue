@@ -426,6 +426,8 @@ export class Voice {
     this.filter.configure(prof.filterConfig)
     this.drift1.configure(prof.driftConfig)
     this.drift2.configure(prof.driftConfig)
+    this.ampEg.setFallPower(prof.egFallPower ?? null)
+    this.modEg.setFallPower(prof.egFallPower ?? null)
     const mk = (spec: CurveSpec | undefined): ((s: number) => number) | null =>
       spec ? (s: number) => curveAt(spec, s * 1023) : null
     for (const v of [this.vco1, this.vco2]) {

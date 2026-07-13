@@ -40,6 +40,8 @@ describe('unusableSweepPoints (feature-level nulls thin fits silently)', () => {
     attackSec: 0.01,
     decayTimeSec: 0.5,
     releaseTimeSec,
+    // null here exercises the legacy 3*tau fallback in sweepValues
+    fallTimeSec: releaseTimeSec,
     sustainDb: -0.5,
   })
   const envJob = {

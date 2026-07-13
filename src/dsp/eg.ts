@@ -12,6 +12,14 @@
  *  - Decay/release are true exponentials toward their target with a time
  *    constant of displayedTime/3, i.e. the displayed time corresponds to
  *    ~3 time constants (~95% settled), matching typical analog EG spec.
+ *  - MEASURED xd alternative (D5, 2026-07-12): the real xd runs its fall
+ *    segments as a CONSTANT-RATE LINEAR phase raised to a power (p = 3.00
+ *    across the whole knob range, RMS 0.2 dB vs capture) that reaches TRUE
+ *    ZERO at the table time T. setFallPower(p) switches decay/release to
+ *    that model; null (default) keeps the legacy exponential bit-identical
+ *    for og/mono/prologue and xd profiles v0-v4. Sustain > 0 decay tracking
+ *    under the cubic model is INFERRED (phase ramps to sustain^(1/p); only
+ *    sustain = 0 was measured).
  *  - Changing times mid-segment only swaps the one-pole coefficient; the
  *    level continues from its current value, so changes are click-free.
  *  - gateOn always (re)starts the attack FROM THE CURRENT LEVEL, never from
@@ -56,6 +64,12 @@ export class AdsrEg {
   private aCoef = 0
   private dCoef = 0
   private rCoef = 0
+  /** measured-fall model: null = legacy exponential (bit-identical) */
+  private fallPow: number | null = null
+  private phase = 0
+  private phaseSus = 1
+  private dRate = 0
+  private rRate = 0
 
   constructor(sampleRate: number) {
     this.sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -77,14 +91,32 @@ export class AdsrEg {
 
   setDecay(sec: number): void {
     this.dCoef = this.coef(clampTime(sec) / DECAY_TC_RATIO)
+    this.dRate = 1 / (clampTime(sec) * this.sr)
   }
 
   setSustain(level: number): void {
     this.sus = clamp01(level, this.sus)
+    const p = this.fallPow
+    this.phaseSus = p === null ? this.sus : Math.pow(this.sus, 1 / p)
   }
 
   setRelease(sec: number): void {
     this.rCoef = this.coef(clampTime(sec) / DECAY_TC_RATIO)
+    this.rRate = 1 / (clampTime(sec) * this.sr)
+  }
+
+  /**
+   * Switch the fall segments to the measured linear-phase^p model (times
+   * become time-to-zero), or back to the legacy exponential with null.
+   * Safe mid-note: the phase is re-derived from the current level.
+   */
+  setFallPower(p: number | null): void {
+    if (p !== null && (!Number.isFinite(p) || p <= 0)) p = null
+    this.fallPow = p
+    if (p !== null) {
+      this.phase = Math.pow(Math.max(0, this.lvl), 1 / p)
+      this.phaseSus = Math.pow(this.sus, 1 / p)
+    }
   }
 
   /**
@@ -109,7 +141,14 @@ export class AdsrEg {
   }
 
   gateOff(): void {
-    if (this.stage !== S_IDLE && this.stage !== S_KILL) this.stage = S_RELEASE
+    if (this.stage !== S_IDLE && this.stage !== S_KILL) {
+      const p = this.fallPow
+      if (p !== null && this.stage !== S_RELEASE) {
+        // measured model: the linear phase resumes from the current level
+        this.phase = Math.pow(Math.max(0, this.lvl), 1 / p)
+      }
+      this.stage = S_RELEASE
+    }
   }
 
   /** ~1.5 ms linear ramp to 0 for voice stealing, then idle. */
@@ -121,6 +160,7 @@ export class AdsrEg {
   reset(): void {
     this.stage = S_IDLE
     this.lvl = 0
+    this.phase = 0
   }
 
   tick(): number {
@@ -130,21 +170,51 @@ export class AdsrEg {
       l = 0
       this.stage = S_IDLE
     }
+    const p = this.fallPow
     switch (this.stage) {
       case S_ATTACK:
         l += this.aCoef * (ATTACK_TARGET - l)
         if (l >= 1) {
           l = 1
           this.stage = S_DECAY
+          this.phase = 1 // full-scale entry for the measured-fall model
         }
         break
       case S_DECAY: {
+        if (p !== null) {
+          // constant-rate linear phase toward the sustain phase, level = phase^p
+          let ph = this.phase
+          const ps = this.phaseSus
+          if (ph > ps) {
+            ph -= this.dRate
+            if (ph < ps) ph = ps
+          } else if (ph < ps) {
+            ph += this.dRate
+            if (ph > ps) ph = ps
+          }
+          this.phase = ph
+          l = p === 3 ? ph * ph * ph : Math.pow(ph, p)
+          break
+        }
         const s = this.sus
         l += this.dCoef * (s - l)
         if (l - s < FLUSH && s - l < FLUSH) l = s // flush denormal residue
         break
       }
       case S_RELEASE:
+        if (p !== null) {
+          // constant-rate linear phase to TRUE ZERO at the table time
+          const ph = this.phase - this.rRate
+          if (ph <= 0) {
+            this.phase = 0
+            l = 0
+            this.stage = S_IDLE
+          } else {
+            this.phase = ph
+            l = p === 3 ? ph * ph * ph : Math.pow(ph, p)
+          }
+          break
+        }
         l -= this.rCoef * l
         if (l < SILENCE) {
           l = 0
@@ -188,6 +258,10 @@ export class AdEg {
   private lvl = 0
   private aCoef = 0
   private dCoef = 0
+  /** measured-fall model: null = legacy exponential (bit-identical) */
+  private fallPow: number | null = null
+  private phase = 0
+  private dRate = 0
 
   constructor(sampleRate: number) {
     this.sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000
@@ -205,6 +279,15 @@ export class AdEg {
 
   setDecay(sec: number): void {
     this.dCoef = this.coef(clampTime(sec) / DECAY_TC_RATIO)
+    this.dRate = 1 / (clampTime(sec) * this.sr)
+  }
+
+  /** Same measured linear-phase^p fall as AdsrEg.setFallPower (INFERRED for
+   *  the mod EG: the amp EG was the measured one; same firmware generator). */
+  setFallPower(p: number | null): void {
+    if (p !== null && (!Number.isFinite(p) || p <= 0)) p = null
+    this.fallPow = p
+    if (p !== null) this.phase = Math.pow(Math.max(0, this.lvl), 1 / p)
   }
 
   /**
@@ -227,6 +310,7 @@ export class AdEg {
   reset(): void {
     this.stage = S_IDLE
     this.lvl = 0
+    this.phase = 0
   }
 
   tick(): number {
@@ -235,17 +319,31 @@ export class AdEg {
       l = 0
       this.stage = S_IDLE
     }
+    const p = this.fallPow
     if (this.stage === S_ATTACK) {
       l += this.aCoef * (ATTACK_TARGET - l)
       if (l >= 1) {
         l = 1
         this.stage = S_DECAY
+        this.phase = 1
       }
     } else if (this.stage === S_DECAY) {
-      l -= this.dCoef * l
-      if (l < SILENCE) {
-        l = 0
-        this.stage = S_IDLE
+      if (p !== null) {
+        const ph = this.phase - this.dRate
+        if (ph <= 0) {
+          this.phase = 0
+          l = 0
+          this.stage = S_IDLE
+        } else {
+          this.phase = ph
+          l = p === 3 ? ph * ph * ph : Math.pow(ph, p)
+        }
+      } else {
+        l -= this.dCoef * l
+        if (l < SILENCE) {
+          l = 0
+          this.stage = S_IDLE
+        }
       }
     } else {
       l = 0

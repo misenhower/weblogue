@@ -45,9 +45,9 @@ export interface EnvPointFeatures {
 const WIN_SEC = 0.005 // envelope-follower Hann window
 const HOP_SEC = 0.001
 const FIT_GAP_SEC = 0.02 // settle after the peak / note-off before slope fits
-const FIT_FLOOR_DB = -40 // stop slope fits here (re peak): floor / silence snap
+export const FIT_FLOOR_DB = -40 // stop slope fits here (re peak): floor / silence snap
 const DB_PER_TAU = 20 / Math.LN10 // ~8.686 dB amplitude drop per time constant
-const DISPLAYED_TCS = 3 // displayed time = 3 time constants (src/dsp/eg.ts)
+export const DISPLAYED_TCS = 3 // displayed time = 3 time constants (src/dsp/eg.ts)
 const MIN_FIT_FRAMES = 4
 
 /** Index of the envelope maximum among frames centered at or before tMax. */
@@ -264,4 +264,68 @@ export function measureEnvPoint(
     }
   }
   return out
+}
+
+export const CURVE_WIN_SEC = 0.025 // review-curve RMS follower window
+export const CURVE_HOP_SEC = 0.025
+
+export interface EnvReviewCurve {
+  /** frame centers, seconds from the segment zero (note-off for release, note-on otherwise) */
+  t: number[]
+  /** follower level re the segment reference, dB */
+  db: number[]
+  /** the linear RMS reference the curve is normalized to */
+  refRms: number
+}
+
+/**
+ * dB-vs-time review curve for one envelope capture — the raw follower view
+ * the monitor charts next to the fitted times, deliberately simpler than the
+ * measurement path: plain RMS (no tone lock), 25 ms window on a 25 ms hop.
+ * Time is zeroed at note-off for release and note-on otherwise. The 0 dB
+ * reference is the held level over the last 0.5 s before note-off (release)
+ * or the true post-onset peak of the held region (attack/decay — a fixed
+ * reference window under-reads fast decays and floats their floors). Null
+ * when the capture holds no reference. Pure DSP, same code for hardware
+ * WAVs and replica renders.
+ */
+export function envReviewCurve(
+  x: Float32Array,
+  sr: number,
+  onsetSample: number,
+  job: CalibJob,
+  segment: EnvSegment,
+): EnvReviewCurve | null {
+  const note = job.notes[0]
+  const half = Math.round((CURVE_WIN_SEC / 2) * sr)
+  const rmsAt = (center: number, h: number): number => {
+    const a = Math.max(0, center - h)
+    const b = Math.min(x.length, center + h)
+    let acc = 0
+    for (let k = a; k < b; k++) acc += x[k] * x[k]
+    return Math.sqrt(acc / Math.max(1, b - a))
+  }
+  const offSample = onsetSample + Math.round((note.offSec - note.onSec) * sr)
+  const zero = segment === 'release' ? offSample : onsetSample
+  let ref: number
+  if (segment === 'release') {
+    const h = Math.round(0.25 * sr)
+    ref = rmsAt(offSample - h, h)
+  } else {
+    ref = 0
+    const hop = Math.round(0.01 * sr)
+    for (let c = onsetSample; c <= Math.min(offSample, x.length); c += hop) {
+      ref = Math.max(ref, rmsAt(c, half))
+    }
+  }
+  if (!(ref > 0)) return null
+  const t: number[] = []
+  const db: number[] = []
+  const endSec = (x.length - zero) / sr
+  for (let ts = 0; ts < endSec; ts += CURVE_HOP_SEC) {
+    const v = rmsAt(zero + Math.round(ts * sr), half)
+    t.push(Math.round(ts * 1000) / 1000)
+    db.push(Math.round(20 * Math.log10(Math.max(v, 1e-9) / ref) * 100) / 100)
+  }
+  return t.length ? { t, db, refRms: ref } : null
 }

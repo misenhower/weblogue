@@ -11,11 +11,21 @@ import { join } from 'node:path'
 import { ScopeState, attachScopeWs } from './scope'
 import type { LiveState, LivePoint } from './live'
 import { calibDir } from './rig'
-import { loadJob } from './job'
+import { loadJob, jobPoints } from './job'
 import { alignSnaps, alignedCycleSnaps } from './measure-shape'
 import { renderJobPoint } from './render'
-import { measureAny, summarize, jobKind } from './domains'
+import { measureAny, summarize, jobKind, ATTACK_RISE_FACTOR } from './domains'
 import type { PointFeatures } from './measure'
+import {
+  envReviewCurve,
+  FIT_FLOOR_DB,
+  DISPLAYED_TCS,
+  type EnvPointFeatures,
+  type EnvReviewCurve,
+  type EnvSegment,
+} from './measure-env'
+import { readWav } from './wav'
+import { detectOnset } from './onset'
 import { XD_PROFILES, setXdProfile } from '../../../src/synths/xd/profiles'
 
 export const MONITOR_PORT = 8077
@@ -28,6 +38,8 @@ interface SessionInfo {
   points: number
   /** points that produced no measurement (features.json pointFailures) */
   failed?: number
+  /** measurement kind — the page shows envelope curves for kind 'envelope' */
+  kind?: string
 }
 
 export function startMonitorServer(
@@ -59,6 +71,7 @@ export function startMonitorServer(
             date: name.slice(0, 16),
             points: feats.results?.length ?? 0,
             failed: feats.pointFailures?.length ?? 0,
+            kind: feats.kind ?? job.features?.kind ?? 'tonal',
           }
         } catch {
           /* partial/foreign dir: keep placeholder */
@@ -150,6 +163,115 @@ export function startMonitorServer(
     return out
   }
 
+  interface EnvChartPoint {
+    raw: number | null
+    label: string
+    /** dBFS of the curve's 0 dB reference (held level / post-onset peak) */
+    refDbfs: number
+    /** the fitted segment seconds as measured (attack: raw 10-90 rise) */
+    fitSec: number | null
+    /** single-exponential time constant for the overlay: displayed/3 */
+    tauSec: number | null
+    curve: EnvReviewCurve
+    rep?: { fitSec: number | null; tauSec: number | null; curve: EnvReviewCurve }
+  }
+  interface EnvChartData {
+    seg: EnvSegment
+    noteDurSec: number
+    fitFloorDb: number
+    /** silence.wav RMS re each point's reference, [min, max] across points */
+    noiseBandDb: [number, number] | null
+    points: EnvChartPoint[]
+  }
+
+  /**
+   * dB-vs-time review curves for an envelope-kind session, recomputed from
+   * the KEPT RAW WAVs (like remeasure — the raws are the durable artifact, so
+   * this needs no hardware and always reflects the current extractor). With
+   * `profile` set, each point also gets a replica curve rendered under that
+   * profile — synchronous engine renders, same first-view stall and the same
+   * cache shape as the profile re-render above (debow only affects waveform
+   * snapshots, so it is not part of this key).
+   */
+  const envCache = new Map<string, EnvChartData | null>()
+  const sessionEnv = (name: string, profile?: string | null): EnvChartData | null => {
+    if (!/^[\w.:-]+$/.test(name)) return null
+    const repProfile = profile && XD_PROFILES.some((p) => p.id === profile) ? profile : null
+    const cacheKey = `${name}|${repProfile ?? ''}`
+    const hit = envCache.get(cacheKey)
+    if (hit !== undefined) return hit
+    let out: EnvChartData | null = null
+    try {
+      const dir = join(sessionsDir, name)
+      const job = loadJob(join(dir, 'job.json'))
+      if (jobKind(job) === 'envelope') {
+        const seg = job.features.env ?? 'attack'
+        const note = job.notes[0]
+        const fitOf = (f: EnvPointFeatures): number | null =>
+          seg === 'attack' ? f.attackSec : seg === 'decay' ? f.decayTimeSec : seg === 'release' ? f.releaseTimeSec : null
+        // attack displays as a 1.3-charge (eg.ts), so raw rise -> displayed first
+        const tauOf = (fitSec: number | null): number | null =>
+          fitSec === null ? null : (seg === 'attack' ? fitSec / ATTACK_RISE_FACTOR : fitSec) / DISPLAYED_TCS
+        let noiseRms: number | null = null
+        const silence = join(dir, 'raw', 'silence.wav')
+        if (existsSync(silence)) {
+          const sx = readWav(readFileSync(silence)).channels[0]
+          let acc = 0
+          for (let i = 0; i < sx.length; i++) acc += sx[i] * sx[i]
+          noiseRms = sx.length ? Math.sqrt(acc / sx.length) : null
+        }
+        const floors: number[] = []
+        const points: EnvChartPoint[] = []
+        const planned = jobPoints(job)
+        for (let i = 0; i < planned.length; i++) {
+          const id = String(i).padStart(3, '0')
+          const retry = join(dir, 'raw', `point-${id}-retry.wav`)
+          const plain = join(dir, 'raw', `point-${id}.wav`)
+          const file = existsSync(retry) ? retry : existsSync(plain) ? plain : null
+          if (!file) continue
+          const wav = readWav(readFileSync(file))
+          const x = wav.channels[0]
+          const o = detectOnset(x, wav.sr)
+          if (!o) continue
+          const curve = envReviewCurve(x, wav.sr, o.sample, job, seg)
+          if (!curve) continue
+          const fitSec = fitOf(measureAny(x, wav.sr, o.sample, job) as EnvPointFeatures)
+          const point: EnvChartPoint = {
+            raw: planned[i],
+            label: planned[i] === null ? 'base patch' : `${job.sweep!.param}=${planned[i]}`,
+            refDbfs: 20 * Math.log10(curve.refRms),
+            fitSec,
+            tauSec: tauOf(fitSec),
+            curve,
+          }
+          if (repProfile) {
+            const rend = renderJobPoint(job, planned[i], repProfile)
+            const rc = envReviewCurve(rend.samples, rend.sr, rend.onsetSample, job, seg)
+            if (rc) {
+              const rSec = fitOf(measureAny(rend.samples, rend.sr, rend.onsetSample, job) as EnvPointFeatures)
+              point.rep = { fitSec: rSec, tauSec: tauOf(rSec), curve: rc }
+            }
+          }
+          if (noiseRms !== null) floors.push(20 * Math.log10(noiseRms / curve.refRms))
+          points.push(point)
+        }
+        if (points.length) {
+          out = {
+            seg,
+            noteDurSec: note.offSec - note.onSec,
+            fitFloorDb: FIT_FLOOR_DB,
+            noiseBandDb: floors.length ? [Math.min(...floors), Math.max(...floors)] : null,
+            points,
+          }
+        }
+      }
+    } catch {
+      out = null
+    }
+    envCache.set(cacheKey, out)
+    return out
+  }
+
   const srv: Server = createServer((req, res) => {
     const url = req.url ?? '/'
     if (req.method === 'POST' && url.startsWith('/run-state')) {
@@ -185,6 +307,12 @@ export function startMonitorServer(
       const s = sessionState(decodeURIComponent(path.slice('/session/'.length)), profile, q.get('debow') !== '0')
       res.writeHead(s ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify(s))
+    } else if (url.startsWith('/env/')) {
+      const [path, query] = url.split('?')
+      const q = new URLSearchParams(query ?? '')
+      const e = sessionEnv(decodeURIComponent(path.slice('/env/'.length)), q.get('profile'))
+      res.writeHead(e ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(e))
     } else if (url.startsWith('/scope.json')) {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify(state.frame()))
@@ -402,6 +530,74 @@ function ladder(points) {
   }
   return h + '</table>'
 }
+// ---- envelope-session curves (dB vs time, recomputed from raw WAVs) --------
+const fmtSec = (v) => v === null || v === undefined ? 'n/a' : v < 1 ? (v * 1000).toFixed(1) + ' ms' : v.toFixed(2) + ' s'
+function envCharts(e) {
+  const zeroRef = { attack: 't=0 note-on \\u00b7 0 dB = held peak', decay: 't=0 note-on \\u00b7 0 dB = post-onset peak',
+    release: 't=0 note-off \\u00b7 0 dB = held level', sustain: 't=0 note-on \\u00b7 0 dB = post-onset peak' }
+  const yTop = 6
+  const yBot = Math.min(-48, e.noiseBandDb ? Math.floor(e.noiseBandDb[0]) - 8 : -48)
+  let h = '<div class="sub" style="margin-top:14px">' + esc(e.seg) + ' envelopes \\u2014 RMS follower 25 ms \\u00b7 ' + zeroRef[e.seg] + '</div>'
+    + '<div class="legend sub"><span style="color:#7fb5ff">\\u2014 hardware</span><span style="color:#e0a06a">\\u2014 replica</span>'
+    + '<span style="color:#7fd89a">\\u254c fitted exp (displayed/3 = \\u03c4)</span>'
+    + '<span style="color:#e0c36a">\\u254c ' + e.fitFloorDb + ' dB fit floor</span>'
+    + (e.noiseBandDb ? '<span style="color:#8b93a0">\\u2591 noise floor</span>' : '') + '</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px">'
+  for (const p of e.points) h += envChart(p, e, yTop, yBot)
+  return h + '</div>'
+}
+function envChart(p, e, yTop, yBot) {
+  const W = 250, H = 150, L = 34, B = 16, T = 6, R = 8
+  const tLast = p.curve.t[p.curve.t.length - 1]
+  const cut = Math.max(e.noiseBandDb ? e.noiseBandDb[1] + 3 : -45, yBot + 6)
+  let xMax
+  if (e.seg === 'attack') {
+    const i = p.curve.db.findIndex(v => v >= -1)
+    xMax = i >= 0 ? p.curve.t[i] * 1.4 : e.noteDurSec
+  } else {
+    const i = p.curve.db.findIndex(v => v <= cut)
+    xMax = i >= 0 ? Math.max(p.curve.t[i], 0.05) * 1.25 : tLast
+    if (e.seg !== 'release') xMax = Math.min(xMax, e.noteDurSec)
+  }
+  xMax = Math.min(Math.max(xMax, 0.15), tLast)
+  const sx = (t) => L + t / xMax * (W - L - R)
+  const sy = (v) => T + (yTop - Math.max(yBot, Math.min(yTop, v))) / (yTop - yBot) * (H - B - T)
+  const poly = (pts, col, dash) => '<polyline fill="none" stroke="' + col + '" stroke-width="1.2"'
+    + (dash ? ' stroke-dasharray="4 3"' : '') + ' points="' + pts.join(' ') + '"/>'
+  const curvePts = (c) => {
+    const s = []
+    for (let i = 0; i < c.t.length && c.t[i] <= xMax; i++) s.push(sx(c.t[i]).toFixed(1) + ',' + sy(c.db[i]).toFixed(1))
+    return s
+  }
+  let g = '<svg width="' + W + '" height="' + H + '" style="background:#191c21;border-radius:5px">'
+  if (e.noiseBandDb) {
+    const yn1 = sy(e.noiseBandDb[1]), yn0 = sy(e.noiseBandDb[0])
+    g += '<rect x="' + L + '" y="' + yn1.toFixed(1) + '" width="' + (W - L - R) + '" height="' + Math.max(1.5, yn0 - yn1).toFixed(1) + '" fill="#8b93a0" opacity="0.16"/>'
+  }
+  g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + sy(0).toFixed(1) + '" y2="' + sy(0).toFixed(1) + '" stroke="#2a2e35"/>'
+  g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + sy(e.fitFloorDb).toFixed(1) + '" y2="' + sy(e.fitFloorDb).toFixed(1) + '" stroke="#e0c36a" stroke-dasharray="3 4" opacity="0.55"/>'
+  if (p.tauSec) {
+    // the fitted model: straight -8.686 dB/tau line (decay/release); attack is
+    // the replica's 1.3-charge clipped at the held peak
+    const m = []
+    for (let i = 0; i <= 80; i++) {
+      const t = xMax * i / 80
+      const v = e.seg === 'attack'
+        ? 20 * Math.log10(Math.max(1e-9, Math.min(1, 1.3 * (1 - Math.exp(-t / p.tauSec)))))
+        : -8.6859 * t / p.tauSec
+      m.push(sx(t).toFixed(1) + ',' + sy(v).toFixed(1))
+      if (e.seg !== 'attack' && v < yBot) break
+    }
+    g += poly(m, '#7fd89a', true)
+  }
+  g += poly(curvePts(p.curve), '#7fb5ff', false)
+  if (p.rep) g += poly(curvePts(p.rep.curve), '#e0a06a', false)
+  g += '<text x="2" y="' + (sy(0) + 3).toFixed(1) + '" fill="#8b93a0" font-size="9">0</text>'
+    + '<text x="2" y="' + (sy(e.fitFloorDb) + 3).toFixed(1) + '" fill="#8b93a0" font-size="9">' + e.fitFloorDb + '</text>'
+    + '<text x="' + (W - R) + '" y="' + (H - 4) + '" fill="#8b93a0" font-size="9" text-anchor="end">' + fmtSec(xMax) + '</text></svg>'
+  return '<div>' + g + '<div class="sub" style="margin:0;font-size:11px">' + esc(p.label) + ' \\u00b7 fit ' + fmtSec(p.fitSec)
+    + (p.rep ? ' \\u00b7 rep ' + fmtSec(p.rep.fitSec) : '') + '</div></div>'
+}
 // ---- state polling + history selector -------------------------------------
 const sessCache = new Map()
 let sessions = []
@@ -419,6 +615,31 @@ async function fetchSession(name, profile, debow) {
     if (s) sessCache.set(key, s)
     return s
   } catch { return null }
+}
+const envCache = new Map()
+async function fetchEnv(name, profile) {
+  const key = name + '|' + (profile || '')
+  if (envCache.has(key)) return envCache.get(key)
+  try {
+    const e = await (await fetch('/env/' + encodeURIComponent(name)
+      + (profile ? '?profile=' + encodeURIComponent(profile) : ''), { cache: 'no-store' })).json()
+    if (e) envCache.set(key, e)
+    return e
+  } catch { return null }
+}
+// envelope-kind history sessions get dB-vs-time curves appended below the
+// table — fetched separately because the server recomputes them from the raw
+// WAVs (and re-renders the replica when a profile is selected), which can
+// take a while on first view
+async function appendEnvCharts(name, profile, view) {
+  const info = sessions.find(s => s.name === name)
+  if (!info || info.kind !== 'envelope') return
+  const holder = document.createElement('div')
+  holder.innerHTML = '<div class="sub" style="margin-top:14px">extracting envelope curves from raw WAVs\\u2026</div>'
+  document.getElementById('body').appendChild(holder)
+  const e = await fetchEnv(name, profile)
+  if (lastView !== view) return // user moved on while we were extracting
+  holder.innerHTML = e ? envCharts(e) : '<div class="sub" style="margin-top:14px">envelope curves unavailable (no raw WAVs on disk?)</div>'
 }
 function syncSelect(profiles) {
   const sel = document.getElementById('sess')
@@ -465,14 +686,17 @@ async function stateTick() {
       if (view !== lastView) {
         lastView = view
         if (lastRun) renderRun(lastRun, true)
-        else if (sessions.length) renderRun(await fetchSession(sessions[0].name, '', debow), false)
-        else renderRun(null, false)
+        else if (sessions.length) {
+          renderRun(await fetchSession(sessions[0].name, '', debow), false)
+          await appendEnvCharts(sessions[0].name, '', view)
+        } else renderRun(null, false)
       }
     } else {
       const view = 'sess|' + sel + '|' + prof + '|' + debow
       if (view !== lastView) {
         lastView = view
         renderRun(await fetchSession(sel, prof, debow), false)
+        await appendEnvCharts(sel, prof, view)
       }
     }
   } catch {

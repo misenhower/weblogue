@@ -42,9 +42,10 @@ function renderVco(vco: Vco, seconds: number, skipSeconds = 0.1): Float32Array {
 }
 
 describe('profile schema', () => {
-  it('v0-v3 carry no SHAPE model fields (legacy morphs stay bit-identical)', () => {
+  it('v0/v2/v3 carry no SHAPE model fields (legacy morphs stay bit-identical)', () => {
+    // the measured models live in v4 (dev-era) and v1 (R1 re-baseline)
     for (const p of XD_PROFILES) {
-      if (p.id === 'v4') continue
+      if (p.id === 'v4' || p.id === 'v1') continue
       expect(p.sqrDuty).toBeUndefined()
       expect(p.triFoldDrive).toBeUndefined()
       expect(p.sawMirrorW).toBeUndefined()
@@ -52,6 +53,10 @@ describe('profile schema', () => {
     expect(V4.sqrDuty).toBeDefined()
     expect(V4.triFoldDrive).toBeDefined()
     expect(V4.sawMirrorW).toBeDefined()
+    const v1 = XD_PROFILES.find((p) => p.id === 'v1')!
+    expect(v1.sqrDuty).toBeDefined()
+    expect(v1.triFoldDrive).toBeDefined()
+    expect(v1.sawMirrorW).toBeDefined()
   })
 })
 

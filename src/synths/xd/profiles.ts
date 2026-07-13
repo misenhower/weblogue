@@ -245,110 +245,258 @@ const V0: XdCalibProfile = {
 }
 
 /*
- * v1 — hardware-measured on Matt's minilogue xd, capture generation 2
- * (CoreAudio helper), sessions of 2026-07-10 in calib/sessions/. Tables use
- * ALL measured points (including the fits' held-out points — those exist to
- * validate the curve family, not to be discarded from the final table).
- * Unmeasured fields inherit v0. Sources:
- *   cutoffHz       2026-07-10T05-03-cutoff-sweep  (expMap fit, held-out 13.1%)
- *   egAttackSec    2026-07-10T05-05-eg-attack     (log-PCHIP, held-out 0.8%)
- *   egDecaySec     2026-07-10T05-43-eg-decay      (log-PCHIP, held-out 13.5%)
- *   egReleaseSec   2026-07-10T05-39-eg-release    (log-PCHIP, held-out 13.1%)
- *   vcoPitchCents  2026-07-10T05-09-vco1-pitch-knob (each point ±0.1-0.4 cents)
- *   sqrPwMin       SQR-silence-at-SHAPE-max finding, 2026-07-08 (confirmed 4x)
- * The pitch table is recentered by -2.80 cents (the unit's tuning state at
- * measurement: the 492-532 dead zone read +2.87/+2.81/+2.73) so the center
- * detent is exactly 0; the three dead-zone knots are pooled to 0.
+ * v1 — the first R1-procedure profile: full re-baseline measured on
+ * xd-unit-1, sessions of 2026-07-13 (capture gen-2 at 48 kHz; --profile v0
+ * baseline renders). Values are the sessions' final proposal tables
+ * verbatim, except the four documented decisions:
+ *   - vcoPitchCents recentered -1.359¢ so the 492–532 dead zone is
+ *     exactly 0 (the unit's tuning state that night; detent-means-zero
+ *     policy, Matt 2026-07-11) and the documented-flat end pairs pooled.
+ *   - cutoffHz raw-1023 knot EXTRAPOLATED log-linearly through the last
+ *     three measured knots: the max-raw point is the PSD-transfer reference
+ *     (unmeasurable by construction) and both engine layers clamp fc, so
+ *     the top knot just means "wide open". raw 960 was unusable in two
+ *     independent captures; the raw-0 knot is LF-degenerate (the method
+ *     cannot tell 15 from 25 Hz down there — either is fully closed).
+ *   - sqrDuty [1023, 0] pinned by the SILENT capture (duty reaches true
+ *     zero — the 2026-07-08 silence finding, reproduced twice at onset
+ *     level; the quiet WAV is the evidence).
+ *   - sawMirrorW [1023, 0.5] pinned by the measured EXACT half-wave
+ *     antisymmetry (1.4% residual in this session's own SHAPE-max cycle;
+ *     the w fit is degenerate near saturation).
+ * egFallPower 3 (D5): fall segments are a constant-rate linear phase CUBED
+ * reaching true zero at the table time — egDecaySec/egReleaseSec are
+ * TIME-TO-ZERO seconds, not the legacy 3·tau convention. Free-fitted
+ * exponent 2.85–3.01 across the whole range; decay and release T agree
+ * within ~2% at every knob (one firmware generator). INFERRED: the mod EG
+ * shares the law (only the amp EG was measured); sustain>0 decay tracks at
+ * constant phase rate (only sustain 0 was measured).
+ * Unmeasured domains inherit v0 (filter voicing, drift, portamento, mod
+ * depths, LFO rate/depths) — future procedure revisions add them.
  */
 const V1: XdCalibProfile = {
   ...V0,
   id: 'v1',
-  name: 'v1 · partial calibration 2026-07-10',
-  date: '2026-07-10',
+  name: 'v1 · R1 calibration 2026-07-13',
+  date: '2026-07-13',
+  procedure: { id: 'xd-hardware-calibration', revision: 1 },
+  lineage: {
+    baseProfile: 'v0',
+    evidence: {
+      vcoPitchCents: 'calib/results/v1/vco1-pitch-knob.json',
+      egAttackSec: 'calib/results/v1/eg-attack.json',
+      egDecaySec: 'calib/results/v1/eg-decay.json',
+      egReleaseSec: 'calib/results/v1/eg-release.json',
+      egFallPower: 'calib/results/v1/eg-release.json',
+      cutoffHz: 'calib/results/v1/cutoff-sweep.json',
+      sqrDuty: 'calib/results/v1/shape-sqr.json',
+      triFoldDrive: 'calib/results/v1/shape-tri.json',
+      triFoldLevel: 'calib/results/v1/shape-tri.json',
+      triFoldKnee: 'calib/results/v1/shape-tri.json',
+      sawMirrorW: 'calib/results/v1/shape-saw-dense.json',
+    },
+  },
   notes:
-    'First hardware round — PARTIAL: only VCO pitch law, EG time tables, cutoff span and the ' +
-    'SQR PW endpoint are measured; everything else (mod depths, LFO, filter voicing, drift) ' +
-    'inherits the v0 guesses.',
+    'R1 re-baseline — the first procedure-produced profile: pitch law, EG T-times with the ' +
+    'cubic fall, cutoff table, and all three SHAPE models measured in one night; unmeasured ' +
+    'domains inherit the v0 guesses.',
   vcoPitchCents: {
     kind: 'pchip',
     knots: [
-      [0, -1201.02],
-      [4, -1201.02],
-      [100, -899.99],
-      [256, -413.65],
-      [356, -98.91],
-      [400, -66.37],
-      [476, -7.58],
+      [0, -1199.257],
+      [4, -1199.257],
+      [100, -897.503],
+      [256, -411.7194],
+      [356, -98.42516],
+      [400, -64.90157],
+      [476, -5.122287],
       [492, 0],
       [512, 0],
       [532, 0],
-      [548, 5.09],
-      [668, 99.67],
-      [800, 509.46],
-      [1020, 1198.02],
-      [1023, 1198.0],
+      [548, 4.086213],
+      [668, 99.39346],
+      [800, 510.2177],
+      [1020, 1199.021],
+      [1023, 1199.021],
     ],
   },
   egAttackSec: {
     kind: 'logPchip',
     knots: [
-      [0, 0.0042356],
-      [85, 0.018059],
-      [171, 0.067554],
-      [256, 0.1482],
-      [341, 0.26066],
-      [426, 0.40851],
-      [512, 0.58858],
-      [597, 0.79486],
-      [682, 1.0501],
-      [767, 1.3245],
-      [853, 1.6344],
-      [938, 1.9763],
-      [1023, 2.3418],
+      [0, 0.0037537],
+      [85, 0.017925],
+      [171, 0.067246],
+      [256, 0.14813],
+      [341, 0.26055],
+      [426, 0.40581],
+      [512, 0.58563],
+      [597, 0.79193],
+      [682, 1.0355],
+      [767, 1.3162],
+      [853, 1.629],
+      [938, 1.962],
+      [1023, 2.3355],
     ],
   },
   egDecaySec: {
     kind: 'logPchip',
     knots: [
-      [0, 0.0029728],
-      [85, 0.015764],
-      [171, 0.076724],
-      [256, 0.17966],
-      [341, 0.33258],
-      [426, 0.52851],
-      [512, 0.76237],
-      [597, 1.0341],
-      [682, 1.3488],
-      [767, 1.7009],
-      [853, 2.1258],
-      [896, 2.3216],
-      [938, 4.7104],
-      [980, 8.6852],
-      [1023, 16.68],
+      [0, 0.0062094],
+      [85, 0.040949],
+      [171, 0.15351],
+      [256, 0.33931],
+      [341, 0.60056],
+      [426, 0.93263],
+      [512, 1.3493],
+      [597, 1.8548],
+      [682, 2.4185],
+      [767, 3.0602],
+      [853, 3.7891],
+      [896, 4.176],
+      [938, 8.4415],
+      [980, 14.19],
+      [1023, 21.612],
     ],
   },
   egReleaseSec: {
     kind: 'logPchip',
     knots: [
-      [0, 0.0041341],
-      [85, 0.017059],
-      [171, 0.080339],
-      [256, 0.18696],
-      [341, 0.32818],
-      [426, 0.52334],
-      [512, 0.74954],
-      [597, 1.0318],
-      [682, 1.3485],
-      [767, 1.7066],
-      [853, 2.1172],
-      [896, 2.3351],
-      [938, 4.7078],
-      [980, 8.6006],
-      [1023, 16.597],
+      [0, 0.0074267],
+      [85, 0.042817],
+      [171, 0.15599],
+      [256, 0.35006],
+      [341, 0.60359],
+      [426, 0.93853],
+      [512, 1.3534],
+      [597, 1.8616],
+      [682, 2.4265],
+      [767, 3.0289],
+      [853, 3.7452],
+      [896, 4.1831],
+      [938, 8.4503],
+      [980, 14.025],
+      [1023, 21.371],
     ],
   },
-  cutoffHz: { kind: 'expMap', lo: 24.7, hi: 16900 },
-  sqrPwMin: 0,
+  egFallPower: 3,
+  cutoffHz: {
+    kind: 'logPchip',
+    knots: [
+      [0, 15.5376],
+      [64, 25.6917],
+      [128, 41.3292],
+      [192, 69.8935],
+      [256, 107.903],
+      [320, 172.133],
+      [384, 273.793],
+      [448, 416.443],
+      [512, 636.306],
+      [576, 1022.45],
+      [640, 1557.34],
+      [704, 2481.62],
+      [768, 3872.15],
+      [832, 6189.65],
+      [896, 9474.91],
+      [1023, 23189.8],
+    ],
+  },
+  sqrDuty: {
+    kind: 'pchip',
+    knots: [
+      [0, 0.505],
+      [128, 0.4425],
+      [256, 0.385],
+      [384, 0.325],
+      [512, 0.2675],
+      [640, 0.205],
+      [768, 0.145],
+      [896, 0.085],
+      [1023, 0],
+    ],
+  },
+  triFoldDrive: {
+    kind: 'pchip',
+    knots: [
+      [0, 1.01],
+      [64, 1.04],
+      [128, 1.07],
+      [192, 1.11],
+      [256, 1.18],
+      [320, 1.25],
+      [384, 1.34],
+      [448, 1.43],
+      [512, 1.53],
+      [576, 1.64],
+      [640, 1.75],
+      [704, 1.89],
+      [768, 2.04],
+      [832, 2.22],
+      [896, 2.41],
+      [960, 2.63],
+      [1023, 2.87],
+    ],
+  },
+  triFoldLevel: {
+    kind: 'pchip',
+    knots: [
+      [0, 1],
+      [64, 0.9742],
+      [128, 0.9469],
+      [192, 0.9117],
+      [256, 0.8639],
+      [320, 0.821],
+      [384, 0.7785],
+      [448, 0.7397],
+      [512, 0.7034],
+      [576, 0.6928],
+      [640, 0.6643],
+      [704, 0.6349],
+      [768, 0.6066],
+      [832, 0.5838],
+      [896, 0.5589],
+      [960, 0.5393],
+      [1023, 0.5168],
+    ],
+  },
+  triFoldKnee: 0.3,
+  sawMirrorW: {
+    kind: 'pchip',
+    knots: [
+      [0, 0],
+      [32, 0.025],
+      [64, 0.04],
+      [96, 0.055],
+      [128, 0.0675],
+      [160, 0.085],
+      [192, 0.0975],
+      [224, 0.115],
+      [256, 0.13],
+      [288, 0.145],
+      [320, 0.16],
+      [352, 0.1725],
+      [384, 0.1875],
+      [416, 0.2025],
+      [448, 0.2175],
+      [480, 0.2325],
+      [512, 0.245],
+      [544, 0.26],
+      [576, 0.28],
+      [608, 0.295],
+      [640, 0.31],
+      [672, 0.3275],
+      [704, 0.3425],
+      [736, 0.355],
+      [768, 0.3675],
+      [800, 0.385],
+      [832, 0.395],
+      [864, 0.455],
+      [896, 0.4825],
+      [928, 0.455],
+      [960, 0.4525],
+      [992, 0.48],
+      [1023, 0.5],
+    ],
+  },
 }
 
 /*

@@ -43,11 +43,19 @@ describe('the shipped default', () => {
     expect(activeXdProfile().id).toBe('v3')
   })
 
-  it('keeps every dev-era profile free of a procedure tag (they predate procedure numbering)', () => {
-    // v0-v4 were measured while the rig/extractor were moving targets; only
-    // profiles produced under a numbered procedure (R1+) declare one, which
-    // is what arms the lineage gate (tools/calib/lib/lineage.ts).
-    for (const profile of XD_PROFILES) expect(profile.procedure).toBeUndefined()
+  it('only the R1-produced v1 declares a procedure; dev-era profiles stay untagged', () => {
+    // v0/v2/v3/v4 were measured while the rig/extractor were moving targets
+    // and predate procedure numbering. v1 (R1 re-baseline, 2026-07-13) is the
+    // first procedure-produced profile: the tag + lineage arm the provenance
+    // gate (tools/calib/lib/lineage.ts).
+    for (const profile of XD_PROFILES) {
+      if (profile.id === 'v1') {
+        expect(profile.procedure).toEqual({ id: 'xd-hardware-calibration', revision: 1 })
+        expect(profile.lineage?.baseProfile).toBe('v0')
+      } else {
+        expect(profile.procedure).toBeUndefined()
+      }
+    }
   })
 
   it('reports every calibrated field changed from a profile base', () => {
@@ -81,7 +89,7 @@ describe('profile v0 reproduces the original guessed curves exactly', () => {
   })
 })
 
-describe('profile v1 (measured 2026-07-10)', () => {
+describe('profile v1 (R1 re-baseline 2026-07-13)', () => {
   it('switches and switches back', () => {
     expect(setXdProfile('v1')).toBe(true)
     expect(activeXdProfile().id).toBe('v1')
@@ -91,10 +99,11 @@ describe('profile v1 (measured 2026-07-10)', () => {
     expect(activeXdProfile().id).toBe('v0')
   })
 
-  it('cutoff becomes the measured expMap', () => {
+  it('cutoff becomes the measured table (extrapolated wide-open top knot)', () => {
     setXdProfile('v1')
-    expect(cutoffToHz(0)).toBeCloseTo(24.7, 6)
-    expect(cutoffToHz(1023)).toBeCloseTo(16900, 6)
+    expect(cutoffToHz(0)).toBeCloseTo(15.5376, 3)
+    expect(cutoffToHz(896)).toBeCloseTo(9474.91, 1)
+    expect(cutoffToHz(1023)).toBeCloseTo(23189.8, 0)
   })
 
   it('EG tables pass through every measured knot', () => {
@@ -120,20 +129,32 @@ describe('profile v1 (measured 2026-07-10)', () => {
     }
   })
 
-  it('attack at knob noon is the measured ~0.59 s, 18x the v0 guess', () => {
+  it('attack at knob noon is the measured ~0.59 s, >10x the v0 guess', () => {
     setXdProfile('v0')
     const guess = attackToSec(512)
     setXdProfile('v1')
-    expect(attackToSec(512)).toBeCloseTo(0.58858, 4)
+    expect(attackToSec(512)).toBeCloseTo(0.58563, 4)
     expect(attackToSec(512) / guess).toBeGreaterThan(10)
+  })
+
+  it('fall times are TIME-TO-ZERO of the cubic model (egFallPower 3), one generator', () => {
+    setXdProfile('v1')
+    const prof = activeXdProfile()
+    expect(prof.egFallPower).toBe(3)
+    // decay and release T agree within a few % at every shared knob —
+    // the hardware runs ONE fall generator for both segments
+    expect(decayToSec(1023)).toBeCloseTo(21.612, 2)
+    expect(releaseToSec(1023)).toBeCloseTo(21.3714, 3)
+    expect(Math.abs(Math.log(decayToSec(512) / releaseToSec(512)))).toBeLessThan(0.05)
+    expect(Math.abs(Math.log(decayToSec(1023) / releaseToSec(1023)))).toBeLessThan(0.05)
   })
 
   it('engine pitch follows the measured law; DISPLAY pitch stays documented', () => {
     setXdProfile('v1')
     // measured mid-range is ~0.39x the documented table
-    expect(vcoPitchCents(356)).toBeCloseTo(-98.91, 2)
+    expect(vcoPitchCents(356)).toBeCloseTo(-98.425, 2)
     expect(vcoPitchCents(512)).toBe(0) // recentered dead zone
-    expect(vcoPitchCents(0)).toBeCloseTo(-1201.02, 2)
+    expect(vcoPitchCents(0)).toBeCloseTo(-1199.257, 2)
     // the OLED numbers never change with the profile
     expect(pitchToCents(356)).toBe(-256)
     expect(pitchToCents(512)).toBe(0)
@@ -166,14 +187,16 @@ describe('profile v2 (batch 2)', () => {
     expect(vcoPitchCents(1020)).toBe(vcoPitchCents(1023))
   })
 
-  it('v1 and v2 EG tables agree within the measured repeatability (~12%)', () => {
+  it('v1 and v2 ATTACK agrees within repeatability; fall times are a different convention', () => {
+    // attack semantics are unchanged (10-90 rise based), so the R1 value must
+    // reproduce the dev-era measurement. Decay/release CANNOT be compared
+    // across v1/v2: v2 stores exponential 3*tau displayed times, v1 stores
+    // time-to-zero T of the cubic fall (egFallPower).
     setXdProfile('v1')
-    const v1 = [attackToSec(512), decayToSec(512), releaseToSec(512)]
+    const a1 = attackToSec(512)
     setXdProfile('v2')
-    const v2 = [attackToSec(512), decayToSec(512), releaseToSec(512)]
-    for (let i = 0; i < 3; i++) {
-      expect(Math.abs(Math.log(v2[i] / v1[i]))).toBeLessThan(0.12)
-    }
+    const a2 = attackToSec(512)
+    expect(Math.abs(Math.log(a2 / a1))).toBeLessThan(0.12)
   })
 })
 

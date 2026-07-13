@@ -7,6 +7,6 @@ promoted verification session and refuses incomplete coverage, unsupported
 domain metrics, regressions, changed evidence/profile content, procedure
 mismatches, reused fitting-grid values, or results above the threshold.
 
-Results are write-once. Procedure-R2+ records list the exact `profileFields`
-they authorize; `calib validate-profile <id>` requires every field changed
+Results are write-once. Each record lists the exact `profileFields` it
+authorizes; `calib validate-profile <id>` requires every field changed
 from the profile's declared base to reference one of these records.

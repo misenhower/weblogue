@@ -3,7 +3,7 @@
  * here so evidence promotion, independent verification, and acceptance form
  * one coherent module instead of three loosely-related command handlers.
  */
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { evaluateVerification, type VerificationResult } from './workflow'
 import {
@@ -123,6 +123,15 @@ export function verifyCommand(
     verificationOutDir,
     `${basename(candidateDir)}--${basename(verificationDir)}.json`,
   )
+  // Only a PASSING artifact is immutable (acceptance references it). A FAILed
+  // attempt may be re-run in place — a bad --profile must not burn the name.
+  if (existsSync(verificationOut)) {
+    const prior = JSON.parse(readFileSync(verificationOut, 'utf8')) as { passed?: boolean }
+    if (prior.passed) {
+      throw new Error(`a passing verification artifact already exists: ${relative(root, verificationOut)}`)
+    }
+    unlinkSync(verificationOut)
+  }
   publishJsonImmutable(verificationOut, artifact)
   console.log(`verification ${result.passed ? 'PASS' : 'FAIL'}: ${fmtMetric(result.beforeScore, comparison.unit)} -> ${fmtMetric(result.afterScore, comparison.unit)}`)
   console.log(`artifact: ${relative(root, verificationOut)}`)

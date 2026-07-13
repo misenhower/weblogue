@@ -43,14 +43,11 @@ describe('the shipped default', () => {
     expect(activeXdProfile().id).toBe('v3')
   })
 
-  it('keeps profile versions separate from calibration procedure revisions', () => {
-    expect(XD_PROFILES.find((profile) => profile.id === 'v0')!.procedure).toBeUndefined()
-    for (const id of ['v1', 'v2', 'v3', 'v4']) {
-      expect(XD_PROFILES.find((profile) => profile.id === id)!.procedure).toEqual({
-        id: 'xd-hardware-calibration',
-        revision: 1,
-      })
-    }
+  it('keeps every dev-era profile free of a procedure tag (they predate procedure numbering)', () => {
+    // v0-v4 were measured while the rig/extractor were moving targets; only
+    // profiles produced under a numbered procedure (R1+) declare one, which
+    // is what arms the lineage gate (tools/calib/lib/lineage.ts).
+    for (const profile of XD_PROFILES) expect(profile.procedure).toBeUndefined()
   })
 
   it('reports every calibrated field changed from a profile base', () => {

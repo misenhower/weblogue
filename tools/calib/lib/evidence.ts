@@ -98,14 +98,18 @@ export function verificationDesignReasons(
   ) {
     reasons.push('candidate and verification evidence must use the same versioned calibration procedure')
   }
+  // A profile that declares a procedure must match the evidence exactly.
+  // Dev-era profiles (v0-v4) declare none and may still be verified —
+  // diagnostics stay possible — but the lineage gate (lineage.ts) prevents
+  // untagged profiles from ever authorizing provenance.
   const profileConfig = XD_PROFILES.find((candidate) => candidate.id === profile)
   if (
-    !profileConfig?.procedure ||
-    !candidateManifest.procedure ||
-    profileConfig.procedure.id !== candidateManifest.procedure.id ||
-    profileConfig.procedure.revision !== candidateManifest.procedure.revision
+    profileConfig?.procedure &&
+    (!candidateManifest.procedure ||
+      profileConfig.procedure.id !== candidateManifest.procedure.id ||
+      profileConfig.procedure.revision !== candidateManifest.procedure.revision)
   ) {
-    reasons.push('candidate profile does not declare the evidence procedure revision')
+    reasons.push('candidate profile declares a different procedure than the evidence')
   }
 
   const verificationMeta = JSON.parse(
@@ -202,12 +206,11 @@ export function promoteEvidence(root: string, sessionDir: string, candidateProfi
     throw new Error('session predates versioned calibration procedures and cannot become canonical evidence')
   }
   if (
-    sessionMeta.procedure.revision! >= 2 &&
-    (!sessionMeta.rig?.hardwareUnit?.unitId ||
-      !sessionMeta.rig.captureChain?.interface ||
-      !Number.isFinite(sessionMeta.rig.captureChain.sampleRateHz))
+    !sessionMeta.rig?.hardwareUnit?.unitId ||
+    !sessionMeta.rig.captureChain?.interface ||
+    !Number.isFinite(sessionMeta.rig.captureChain.sampleRateHz)
   ) {
-    throw new Error('procedure-R2+ evidence requires a hardware unit and capture-chain snapshot')
+    throw new Error('versioned-procedure evidence requires a hardware unit and capture-chain snapshot')
   }
 
   const parent = join(root, 'calib', 'evidence')
@@ -307,8 +310,8 @@ export function acceptEvidence(
     proposals?: unknown[]
   }
   const candidateJob = loadJob(join(candidateDir, 'job.json'))
-  if ((verification.procedure.revision ?? 0) >= 2 && !candidateJob.profileFields?.length) {
-    throw new Error('procedure-R2+ candidate job must declare profileFields')
+  if (!candidateJob.profileFields?.length) {
+    throw new Error('candidate job must declare profileFields')
   }
   if (!features.domain || !features.proposals?.length) throw new Error('candidate evidence has no proposals')
   if (features.domain !== verification.domain) throw new Error('verification domain does not match candidate')

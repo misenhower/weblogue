@@ -128,13 +128,13 @@ describe('calibration verification gate', () => {
 })
 
 describe('canonical calibration evidence', () => {
-  it('requires real accepted results for every field changed by an R2 profile', () => {
+  it('requires real accepted results for every field changed by a procedure-declaring profile', () => {
     const root = mkdtempSync(join(tmpdir(), 'calib-lineage-'))
     const base = XD_PROFILES.find((profile) => profile.id === 'v3')!
     const candidate: XdCalibProfile = {
       ...base,
       id: 'v5',
-      procedure: { id: 'xd-hardware-calibration' as const, revision: 2 },
+      procedure: { id: 'xd-hardware-calibration' as const, revision: 1 },
       cutoffHz: { kind: 'expMap' as const, lo: 18, hi: 19_000 },
       lfoMaxPitchCents: base.lfoMaxPitchCents + 1,
       lineage: {
@@ -172,13 +172,13 @@ describe('canonical calibration evidence', () => {
     expect(fabricated.some((problem) => problem.includes('does not reference candidate evidence'))).toBe(true)
   })
 
-  it('rejects a profile whose R2 base has invalid lineage', () => {
+  it('rejects a profile whose procedure-declaring base has invalid lineage', () => {
     const root = mkdtempSync(join(tmpdir(), 'calib-lineage-base-'))
     const legacy = XD_PROFILES.find((profile) => profile.id === 'v3')!
     const invalidBase: XdCalibProfile = {
       ...legacy,
       id: 'v5',
-      procedure: { id: 'xd-hardware-calibration', revision: 2 },
+      procedure: { id: 'xd-hardware-calibration', revision: 1 },
     }
     const child: XdCalibProfile = {
       ...invalidBase,
@@ -186,7 +186,7 @@ describe('canonical calibration evidence', () => {
       lineage: { baseProfile: 'v5', evidence: {} },
     }
     expect(profileLineageProblems(root, child, [legacy, invalidBase, child], 'child-digest')).toContain(
-      'base v5: procedure-R2+ profile has no lineage',
+      'base v5: procedure-declaring profile has no lineage',
     )
   })
 
@@ -201,7 +201,7 @@ describe('canonical calibration evidence', () => {
           name,
           ...(name === 'meta.json'
             ? {
-                procedure: { id: 'xd-hardware-calibration', revision: 2 },
+                procedure: { id: 'xd-hardware-calibration', revision: 1 },
                 rig: {
                   hardwareUnit: { unitId: 'xd-unit-1' },
                   captureChain: { interface: 'test interface', sampleRateHz: 48_000 },
@@ -242,11 +242,15 @@ describe('canonical calibration evidence', () => {
       sweep: { ...base.sweep!, points },
     })
     const procedure = { id: 'xd-hardware-calibration', revision: 1 }
+    const rig = {
+      hardwareUnit: { unitId: 'xd-unit-1' },
+      captureChain: { interface: 'test interface', sampleRateHz: 48_000 },
+    }
     const writeSession = (name: string, value: CalibJob, features: unknown, date: string): string => {
       const dir = join(root, 'calib', 'sessions', name)
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'job.json'), JSON.stringify(value))
-      writeFileSync(join(dir, 'meta.json'), JSON.stringify({ date, procedure }))
+      writeFileSync(join(dir, 'meta.json'), JSON.stringify({ date, procedure, rig }))
       writeFileSync(join(dir, 'features.json'), JSON.stringify(features))
       writeFileSync(join(dir, 'report.md'), `# ${name}\n`)
       return dir
@@ -285,7 +289,11 @@ describe('canonical calibration evidence', () => {
     const verificationDir = promoteEvidence(root, verificationSession).dir
     const verificationPath = join(root, 'calib', 'verifications', 'fit-session--verify-session.json')
     expect(() => acceptEvidence(root, candidate, verificationPath)).toThrow(/not found/)
+    // A FAILed verification (wrong --profile: evidence is bound to v4) writes
+    // its artifact but must not burn the name — the re-run replaces it.
+    expect(verifyCommand(root, candidate, verificationDir, 'v0').passed).toBe(false)
     expect(verifyCommand(root, candidate, verificationDir, 'v4').passed).toBe(true)
+    // A PASSING artifact is immutable: acceptance references it.
     expect(() => verifyCommand(root, candidate, verificationDir, 'v4')).toThrow(/already exists/)
     const verification = JSON.parse(readFileSync(verificationPath, 'utf8'))
     // Acceptance must reproduce the comparison from checksummed evidence,

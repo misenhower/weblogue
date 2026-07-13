@@ -1,4 +1,4 @@
-/* Domain-level provenance validation for procedure-R2+ synth profiles. */
+/* Domain-level provenance validation for procedure-declaring synth profiles. */
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { isAbsolute, relative, resolve } from 'node:path'
@@ -35,14 +35,16 @@ export function profileLineageProblems(
     createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
   const visit = (current: XdCalibProfile, currentDigest: string): string[] => {
-    if ((current.procedure?.revision ?? 0) < 2) return []
+    // Dev-era profiles (v0-v4) predate procedure numbering: exempt from the
+    // gate, and — declaring no procedure — unable to authorize provenance.
+    if (!current.procedure) return []
     if (visiting.has(current.id)) return [`profile lineage cycle includes ${current.id}`]
     visiting.add(current.id)
     const problems: string[] = []
     const lineage = current.lineage
     if (!lineage) {
       visiting.delete(current.id)
-      return ['procedure-R2+ profile has no lineage']
+      return ['procedure-declaring profile has no lineage']
     }
     const base = registry.find((candidate) => candidate.id === lineage.baseProfile)
     if (!base) {

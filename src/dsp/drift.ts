@@ -29,13 +29,13 @@ export interface DriftConfig {
 
 export const DEFAULT_DRIFT_CONFIG: DriftConfig = {
   walkCents: 2.5,
-  walkTauSec: 0.35,
-  walkMinIntervalSec: 0.3,
+  walkTauSec: 0.35, // slew toward the walk target
+  walkMinIntervalSec: 0.3, // spacing between new walk targets
   walkMaxIntervalSec: 1.0,
-  noteOffsetCents: 1.5,
-  jitterCutoffHz: 30,
-  jitterDrive: 2.0,
-  jitterClampCents: 0.2,
+  noteOffsetCents: 1.5, // persistent per-note offset, drawn at noteOn
+  jitterCutoffHz: 30, // one-pole lowpass on the jitter noise
+  jitterDrive: 2.0, // pre-filter noise amplitude (post-filter ~±0.15 pk)
+  jitterClampCents: 0.2, // hard bound on the jitter component
 }
 const FLUSH = 1e-9
 

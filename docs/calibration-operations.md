@@ -18,7 +18,7 @@ belong in [calibration-findings.md](calibration-findings.md).
 | `npm run calib -- evidence <session> [--candidate-profile <id>]` | Promote four derived artifacts into a small, trackable evidence bundle. Bind fitting evidence to the frozen profile ID/content with `--candidate-profile`; raw WAVs stay local. |
 | `npm run calib -- verify <candidate-evidence> --session <verification-evidence> --profile <id>` | Re-render a candidate against a separate promoted capture set and persist the threshold decision. |
 | `npm run calib -- accept <candidate-evidence> --verification <artifact>` | Recheck evidence hashes, profile identity, procedure revision, design, and metrics before writing an accepted result. |
-| `npm run calib -- validate-profile <id>` | Require every field changed by an R2+ profile to name a matching accepted result. Run before making it the default. |
+| `npm run calib -- validate-profile <id>` | Require every field changed by a procedure-declaring profile to name a matching accepted result. Run before making it the default. |
 | `npm run calib -- monitor` / `scope` | Inspect live or historical captures. |
 | `npm run calib -- restore` | Restore a saved edit-buffer backup. |
 
@@ -33,7 +33,7 @@ uses this lifecycle:
 
 1. Run fitting jobs. Repeat questionable domains and review their reports.
 2. Freeze the candidate profile in `src/synths/xd/profiles.ts`, non-default,
-   and declare the procedure that produced it (for example procedure R2).
+   and declare the procedure that produced it (for example procedure R1).
    Predeclare its base and every predictable accepted-result path now—for
    example `calib/results/v5/eg-attack.json`. Lineage is part of the profile
    digest, so adding paths after verification would correctly invalidate it.
@@ -56,14 +56,16 @@ uses this lifecycle:
    to the app default. This subjective promotion gate is deliberately manual;
    `calib accept` certifies measurement thresholds, not listening approval.
 
-Current v1-v4 profiles are legacy partial experiments. They are useful for
-interactive A/B work but are not canonical evidence and should not be used as
-the provenance pattern for the next complete generation.
+Current v1-v4 profiles are transitional dev-era rounds — measured while the
+rig, extractor and models were still moving targets. They remain useful for
+interactive A/B work but are not canonical evidence; the plan of record
+(2026-07-12) is to re-run the full suite under procedure R1, land the results
+as a fresh profile generation, then drop v1-v4.
 
 Profile versions use `vN`; measurement procedures use `RN`. Evidence and
 verification must agree on the procedure ID/revision, and the candidate profile
 is content-hashed so changing it requires a fresh verification artifact.
-Every R2+ job that can alter the emulation declares exact `profileFields`.
+Every fitting job that can alter the emulation declares exact `profileFields`.
 The candidate profile declares `lineage.baseProfile` plus one accepted-result
 path per changed field; `validate-profile` compares the actual structural diff
 and rejects missing, surplus, wrong-profile, or wrong-procedure provenance.

@@ -1,10 +1,13 @@
 # Calibration measurement protocol
 
-Procedure: `xd-hardware-calibration R2` (revision 2). Profile versions and
+Procedure: `xd-hardware-calibration R1` (revision 1). Profile versions and
 procedure revisions are separate timelines: a future synth profile should say,
-for example, “profile v5, produced with procedure R2.” The original July 2026
-plan is retrospectively R1; R2 adds canonical evidence, independent off-grid
+for example, “profile vN, produced with procedure R1.” R1 is the first numbered
+procedure — the suite as it stands: canonical evidence, independent off-grid
 verification, explicit acceptance gates, and structured unit/session metadata.
+The dev-era rounds that produced profiles v1–v4 predate procedure numbering and
+carry no tag; the plan of record (2026-07-12) is to re-run the full suite under
+R1, land the results as a fresh profile generation, then drop v1–v4.
 
 The per-domain measurement methodology behind [hardware-calibration.md](hardware-calibration.md)
 (read that first: parameter tiers, provenance, rig architecture, milestones). Each domain below

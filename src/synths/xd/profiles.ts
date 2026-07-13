@@ -14,10 +14,13 @@
  * Engine.setCalibProfile changes only that engine and re-applies all params
  * so cached physical values re-derive.
  *
- * v1-v4 are legacy PARTIAL rounds retained for listening A/B while a future
- * complete generation is designed. They predate the canonical evidence +
- * independent verification gate and must not be treated as accepted
- * provenance or as the template for v5+.
+ * v1-v4 are transitional dev-era rounds, measured while the rig, extractor
+ * and models were themselves still moving targets. v2/v3 passed listening
+ * review (v3 ships as default) and v4 carries the measured SHAPE models, but
+ * none was produced under a numbered procedure and they carry no procedure
+ * tag. Plan of record (Matt, 2026-07-12): re-run the full suite under
+ * procedure R1 (canonical evidence + independent verification), land the
+ * results as a fresh profile generation, then drop v1-v4.
  *
  * Filter voicing, drift constants, and portamento range are already schema
  * fields, ready for D4/D8/portamento evidence without new injection paths.
@@ -102,11 +105,12 @@ export interface XdCalibProfile {
   /** ISO date the values were established. */
   date: string
   notes?: string
-  /** Measurement-method revision. v1-v4 are attributed to legacy R1;
-   *  future complete profiles must declare their actual revision. */
+  /** Measurement-method revision (tools/calib/lib/procedure.ts). Dev-era
+   *  v0-v4 predate procedure numbering and carry no tag; a profile measured
+   *  under a numbered procedure declares it, which arms the lineage gate. */
   procedure?: { id: 'xd-hardware-calibration'; revision: number }
-  /** R2+ provenance: the profile it builds on and the accepted result that
-   * authorizes every changed emulation field. */
+  /** Provenance for procedure-declaring profiles: the profile it builds on
+   * and the accepted result that authorizes every changed emulation field. */
   lineage?: {
     baseProfile: string
     evidence: Partial<Record<XdCalibrationField, string>>
@@ -156,7 +160,8 @@ export interface XdCalibProfile {
 }
 
 /** Fields whose values affect the emulation and therefore need accepted
- * evidence when a procedure-R2+ profile changes them. Metadata is excluded. */
+ * evidence when a procedure-declaring profile changes them. Metadata is
+ * excluded. */
 export const XD_CALIBRATION_FIELDS = [
   'vcoPitchCents',
   'egAttackSec',
@@ -195,13 +200,13 @@ export function profileChangedFields(
 
 /** v0 — the original guessed values, frozen exactly as first shipped. */
 export const XD_DEFAULT_FILTER_CONFIG: SvfCfg = {
-  kMax: 2.0,
-  kMin: 0.025,
-  resCurve: 1.4,
-  driveGains: [1.0, 2.6, 6.0],
+  kMax: 2.0, // r = 0: critically damped, no resonant hump
+  kMin: 0.025, // r = 1: Q = 40 — rings hard, just shy of self-oscillation
+  resCurve: 1.4, // musical taper: resonance ramps in over the upper half
+  driveGains: [1.0, 2.6, 6.0], // OFF / 50% / 100%
   driveMakeups: [1.0, 0.7, 0.45],
   satLevel: 1.25,
-  bassComp: 0.15,
+  bassComp: 0.15, // xd keeps its low end at high resonance
   resLoss: 0,
   poles: 2,
 }
@@ -249,7 +254,6 @@ const V1: XdCalibProfile = {
   id: 'v1',
   name: 'v1 · partial calibration 2026-07-10',
   date: '2026-07-10',
-  procedure: { id: 'xd-hardware-calibration', revision: 1 },
   notes:
     'First hardware round — PARTIAL: only VCO pitch law, EG time tables, cutoff span and the ' +
     'SQR PW endpoint are measured; everything else (mod depths, LFO, filter voicing, drift) ' +
@@ -360,7 +364,6 @@ const V2: XdCalibProfile = {
   id: 'v2',
   name: 'v2 · partial calibration, batch 2',
   date: '2026-07-10',
-  procedure: { id: 'xd-hardware-calibration', revision: 1 },
   notes:
     'Second hardware round — PARTIAL like v1 (same fields measured, others inherit v0): ' +
     'all-4-voice medians for pitch AND cutoff; EG tables re-measured independently.',
